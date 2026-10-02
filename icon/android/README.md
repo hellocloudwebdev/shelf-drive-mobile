@@ -2,10 +2,10 @@
 
 Complete Android launcher icon implementation derived from the canonical artwork
 (`source/clean_icon.svg`). This is the Android part of the icon work; the
-sibling `windows/` folder contains the Windows/desktop icon set produced
-separately. Do not mix them: `windows/assets/android/` holds Tauri's *default*
-icon output (white `#fff` background color, no themed icon), while this folder
-holds the full custom implementation described below.
+Windows/desktop icon set lives in the desktop repository. Do not mix them:
+Tauri's *default* icon output (white `#fff` background color, no themed icon)
+belongs to the desktop set, while this folder holds the full custom
+implementation described below.
 
 ## Contents
 

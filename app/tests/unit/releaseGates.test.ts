@@ -15,7 +15,7 @@ describe('release safety gates', () => {
     const release = workflow('release.yml');
     const createReleaseJob = release.slice(
       release.indexOf('  create-release:'),
-      release.indexOf('  build-tauri:'),
+      release.indexOf('  build-android:'),
     );
 
     expect(release).toContain('  verify-release:');
@@ -78,95 +78,10 @@ describe('release safety gates', () => {
     expect(release).toContain('android-update.json.sig');
   });
 
-  it('runs frontend regression tests in the native desktop matrix', () => {
-    const desktop = workflow('desktop-sync-ci.yml');
-    expect(desktop).toContain('run: npm test');
-    expect(desktop).toContain('run: cargo fmt --all -- --check');
-    expect(desktop).toContain('run: cargo clippy --lib --all-targets -- -D warnings');
-    expect(desktop).toContain('run: npm run tauri -- build --no-bundle');
-    expect(desktop).toContain('  desktop-ui-e2e:');
-    expect(desktop).toContain('run: npm run visual:test');
-    expect(desktop).toContain('run: npm run i18n:check');
-  });
-
   it('blocks releases when native formatting or clippy gates fail', () => {
     const release = workflow('release.yml');
     expect(release).toContain('run: cargo fmt --all -- --check');
     expect(release).toContain('run: cargo clippy --lib --all-targets -- -D warnings');
-  });
-
-  it('never mutates an AppImage after Tauri signs and uploads release artifacts', () => {
-    const release = workflow('release.yml');
-    const desktopBuild = release.slice(
-      release.indexOf('  build-tauri:'),
-      release.indexOf('  build-arch:'),
-    );
-
-    expect(desktopBuild).toContain('tauri-apps/tauri-action@');
-    expect(desktopBuild).not.toMatch(/Patch AppImage|appimagetool|squashfs-root|LD_PRELOAD|NO_AT_BRIDGE/);
-    expect(release).not.toContain('AppImageKit/releases/download/continuous');
-    expect(release).not.toContain('WEBKIT_DISABLE_DMABUF_RENDERER=1');
-  });
-
-  it('builds a checksum-locked pacman-owned package before release assurance', () => {
-    const release = workflow('release.yml');
-    const archCi = workflow('arch-package.yml');
-    const archBuild = release.slice(
-      release.indexOf('  build-arch:'),
-      release.indexOf('  release-assurance:'),
-    );
-    const pkgbuild = repositoryFile('packaging', 'arch', 'PKGBUILD.in');
-    const launcher = repositoryFile('packaging', 'arch', 'shelf-drive');
-    const installationInfo = readFileSync(
-      resolve(process.cwd(), 'src-tauri', 'src', 'installation.rs'),
-      'utf8',
-    );
-    const updateHook = readFileSync(
-      resolve(process.cwd(), 'src', 'hooks', 'useUpdateCheck.ts'),
-      'utf8',
-    );
-    const settingsModal = readFileSync(
-      resolve(process.cwd(), 'src', 'components', 'desktop', 'dashboard', 'SettingsModal.tsx'),
-      'utf8',
-    );
-
-    expect(archBuild).toContain('needs: [create-release, build-tauri]');
-    expect(archBuild).toMatch(/archlinux:base-devel-[^\s]+@sha256:[0-9a-f]{64}/);
-    expect(archBuild).toContain("--pattern '*.deb'");
-    expect(archBuild).toContain('scripts/render-arch-pkgbuild.sh');
-    expect(archBuild).toContain('runuser -u arch-builder');
-    expect(archBuild).toContain('makepkg --printsrcinfo');
-    expect(archBuild).toContain('namcap arch-package/PKGBUILD');
-    expect(archBuild).toContain('desktop-file-utils');
-    expect(archBuild).toContain('scripts/verify-arch-package.sh');
-    expect(archBuild).toContain('pacman -U --noconfirm');
-    expect(archBuild).toContain('xvfb-run -a timeout --kill-after=5s 15s shelf-drive');
-    expect(archBuild).toContain('scripts/generate-arch-runtime-sbom.sh');
-    expect(archBuild).toContain('gh release upload "$GITHUB_REF_NAME"');
-
-    expect(pkgbuild).toContain('pkgname=shelf-drive-bin');
-    expect(pkgbuild).toContain("arch=('x86_64')");
-    expect(pkgbuild).toContain("license=('LicenseRef-Upstream-Unspecified')");
-    expect(pkgbuild).toContain("options=('!strip' '!debug')");
-    expect(pkgbuild).not.toContain("license=('MIT')");
-    expect(pkgbuild).not.toContain('SKIP');
-    expect(pkgbuild).not.toContain('/usr/local');
-    expect(launcher).toContain('SHELF_DRIVE_PACKAGE_MANAGER=pacman');
-    expect(installationInfo).toContain('managed_by_package_manager: package_manager.is_some()');
-    expect(installationInfo).toContain('cmd_get_installation_info');
-    expect(updateHook).toContain('if (state.managedByPackageManager)');
-    expect(updateHook).toContain('await openUrl(RELEASES_URL)');
-    expect(updateHook.indexOf('if (state.managedByPackageManager)')).toBeLessThan(
-      updateHook.indexOf('await installVerifiedUpdate('),
-    );
-    expect(settingsModal).toContain('if (installationInfo?.managedByPackageManager)');
-    expect(settingsModal).toContain("installationInfo?.managedByPackageManager ? t('common.open')");
-    expect(archCi).toContain('  pull_request:');
-    expect(archCi).toMatch(/archlinux:base-devel-[^\s]+@sha256:[0-9a-f]{64}/);
-    expect(archCi).toContain('d229a414025650d44211521ca350298d67c7d8136001f8300636bb3ea2ecc35f');
-    expect(archCi).toContain('makepkg --printsrcinfo');
-    expect(archCi).toContain('scripts/verify-arch-package.sh');
-    expect(archCi).not.toContain("sha256sums=('SKIP')");
   });
 
   it('runs axe in the Playwright accessibility gate', () => {
@@ -196,22 +111,6 @@ describe('release safety gates', () => {
     // The wizard persists credentials through the API boundary, whose
     // auth.storeApiHash routes to the secure cmd_store_api_hash command.
     expect(authWizard).toContain('auth.storeApiHash(');
-  });
-
-  it('keeps the product-site screenshot lightbox keyboard operable', () => {
-    const site = repositoryFile('Docs', 'Telegram-Drive.html');
-    expect(site).toContain("image.setAttribute('role', 'button')");
-    expect(site).toContain('image.tabIndex = 0');
-    expect(site).toContain("event.key === 'Enter' || event.key === ' '");
-    expect(site).toContain("imageDialog.addEventListener('close'");
-    expect(site).toContain('lightboxTrigger?.focus()');
-  });
-
-  it('prepares required Windows resources with PowerShell 7 and a legacy fallback', () => {
-    const tauriCli = readFileSync(resolve(process.cwd(), 'scripts', 'tauri-cli.cjs'), 'utf8');
-    expect(tauriCli).toContain('prepareWindowsRuntime();');
-    expect(tauriCli).not.toContain("if (!args.includes('--no-bundle'))");
-    expect(tauriCli).toContain("['pwsh.exe', 'powershell.exe']");
   });
 
   it('keeps untranslated UI literal debt on a non-increasing budget', () => {
@@ -373,10 +272,13 @@ describe('release safety gates', () => {
     expect(release).toContain('node scripts/generate-sboms.cjs release-assurance');
     expect(release).toContain('node scripts/generate-checksums.cjs release-assets release-assets/SHA256SUMS.txt');
     expect(release).toContain('subject-checksums: release-assurance/SUBJECTS.sha256');
-    expect(release).toContain('needs: [create-release, build-tauri, build-arch, collect-android]');
-    expect(release).toContain('subject-checksums: release-assurance/ARCH_SUBJECT.sha256');
-    expect(release).toContain('sbom-path: release-assets/shelf-drive-arch-runtime-sbom.cdx.json');
-    expect(release).toContain('needs: [create-release, build-tauri, build-arch, release-assurance]');
+    expect(release).toContain('needs: [create-release, collect-android]');
+    expect(release).toContain('needs: [create-release, release-assurance]');
+    // Mobile repository: desktop packaging jobs and artifacts must not return.
+    expect(release).not.toContain('build-tauri');
+    expect(release).not.toContain('build-arch');
+    expect(release).not.toContain('ARCH_SUBJECT');
+    expect(release).not.toContain('arch-runtime-sbom');
     const sourceSbom = repositoryFile('scripts', 'generate-sboms.cjs');
     expect(sourceSbom).toContain('applicationVersion');
     expect(sourceSbom).not.toContain("version: '3.7.0'");
