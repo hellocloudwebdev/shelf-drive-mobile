@@ -73,7 +73,7 @@ node scripts/create-android-release-manifest.cjs \
   --apk "$release_dir/ShelfDrive_${version}.apk" \
   --version "$version" \
   --version-code "$version_code" \
-  --repository "${GITHUB_REPOSITORY:-Neeraj-shaw/shelf-drive}" \
+  --repository "${GITHUB_REPOSITORY:-hellocloudwebdev/shelf-drive-mobile}" \
   --tag "${GITHUB_REF_NAME:-v${version}}" \
   --output "$release_dir/android-update.json"
 
