@@ -120,11 +120,13 @@ jobs:
           const path = require('path');
           const key = process.env.KEY.trim();
           if (!key) throw new Error('TAURI_SIGNING_PRIVATE_KEY is required for Android release manifests.');
-          const raw = key.startsWith('untrusted comment:')
-            ? key
-            : Buffer.from(key, 'base64').toString('utf8');
+          // `tauri signer sign -f` strict-base64-decodes the whole file and
+          // rejects trailing newlines, so the key must be a single base64 line.
+          const b64 = key.startsWith('untrusted comment:')
+            ? Buffer.from(key).toString('base64')
+            : key;
           const keyPath = path.join(process.env.RUNNER_TEMP, 'shelf-drive-updater.key');
-          fs.writeFileSync(keyPath, raw + '\n', { mode: 0o600 });
+          fs.writeFileSync(keyPath, b64, { mode: 0o600 });
           fs.appendFileSync(process.env.GITHUB_ENV, `TAURI_PRIVATE_KEY_PATH=${keyPath}\n`);
 
       - name: Build universal APK and App Bundle
