@@ -1,16 +1,49 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="Shelf Drive — More than storage, it's your digital shelf">
+  <img src="./assets/readme/hero-animated.svg" width="100%" alt="Shelf Drive — More than storage, it's your digital shelf">
 </p>
 
 <p align="center">
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/hellocloudwebdev/shelf-drive-mobile?style=flat-square&color=4FC3F7&label=Latest%20Release" alt="Latest Release"></a>
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-0e7490?style=flat-square" alt="License: MIT"></a>
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/actions"><img src="https://img.shields.io/github/actions/workflow/status/hellocloudwebdev/shelf-drive-mobile/quality-assurance.yml?style=flat-square&label=CI&color=34d399" alt="CI Status"></a>
-  <img src="https://img.shields.io/badge/Platforms-Android%20%7C%20Google%20TV-4FC3F7?style=flat-square" alt="Platforms">
-  <img src="https://img.shields.io/badge/Languages-24-fbbf24?style=flat-square" alt="24 Languages">
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/hellocloudwebdev/shelf-drive-mobile?style=for-the-badge&color=4FC3F7&label=Latest%20Release&logo=android&logoColor=white" alt="Latest Release"></a>
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-0e7490?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/actions"><img src="https://img.shields.io/github/actions/workflow/status/hellocloudwebdev/shelf-drive-mobile/quality-assurance.yml?style=for-the-badge&label=CI&color=34d399" alt="CI Status"></a>
 </p>
 
-<br>
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-7.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 7.0+">
+  <img src="https://img.shields.io/badge/Google%20TV-supported-4FC3F7?style=flat-square&logo=googletv&logoColor=white" alt="Google TV">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19">
+  <img src="https://img.shields.io/badge/Rust-stable-DEA584?style=flat-square&logo=rust&logoColor=black" alt="Rust">
+  <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=black" alt="Tauri 2">
+  <img src="https://img.shields.io/badge/Languages-24-fbbf24?style=flat-square" alt="24 Languages">
+  <img src="https://img.shields.io/badge/Themes-15-c084fc?style=flat-square" alt="15 Themes">
+  <img src="https://img.shields.io/badge/Telemetry-none-1DE9B6?style=flat-square" alt="No telemetry">
+</p>
+
+<p align="center">
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/stargazers"><img src="https://img.shields.io/github/stars/hellocloudwebdev/shelf-drive-mobile?style=social" alt="Stars"></a>
+  &nbsp;
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/network/members"><img src="https://img.shields.io/github/forks/hellocloudwebdev/shelf-drive-mobile?style=social" alt="Forks"></a>
+</p>
+
+<p align="center">
+  <a href="https://readme-typing-svg.demolab.com">
+    <img src="https://readme-typing-svg.demolab.com?font=Segoe+UI&weight=600&size=22&duration=3200&pause=900&color=4FC3F7&center=true&vCenter=true&width=760&lines=Your+Telegram+account+%E2%86%92+a+beautiful+personal+drive;Folders%2C+search%2C+streaming+%26+sync+%E2%80%94+on+your+phone;Zero+relay+servers.+Zero+tracking.+100%25+open+source.;Sideload+the+APK+and+own+your+cloud+%E2%98%81%EF%B8%8F" alt="Typing animation">
+  </a>
+</p>
+
+<p align="center">
+  <a href="#-app-tour"><b>App Tour</b></a> &nbsp;•&nbsp;
+  <a href="#at-a-glance"><b>Features</b></a> &nbsp;•&nbsp;
+  <a href="#download-android"><b>Download</b></a> &nbsp;•&nbsp;
+  <a href="#privacy--security"><b>Security</b></a> &nbsp;•&nbsp;
+  <a href="#quick-start"><b>Quick Start</b></a> &nbsp;•&nbsp;
+  <a href="#build-from-source-android"><b>Build</b></a> &nbsp;•&nbsp;
+  <a href="#tech-stack"><b>Tech</b></a>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/divider.svg" width="100%" alt="">
+</p>
 
 <p align="center">
   <strong><em>"More than storage — it's your digital shelf."</em></strong>
@@ -19,6 +52,26 @@
 <p align="center">
   The mobile home of Shelf Drive — a local-first file workspace powered by your own Telegram account.<br>
   Open-source. Free to use. No third-party servers. Your files never leave your control.
+</p>
+
+<p align="center">
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F%20Download%20APK-4FC3F7?style=for-the-badge&labelColor=0b1220" alt="Download APK" height="44"></a>
+</p>
+
+<a id="-app-tour"></a>
+
+<h2 align="center">📱 App Tour</h2>
+
+<p align="center">
+  <img src="./assets/readme/showcase.gif" width="900" alt="Animated tour of Shelf Drive: sign-in, splash, home screen, folders, dark mode, transfers and settings">
+</p>
+
+<p align="center">
+  <sub>Seven screens, one icy-cyan identity — captured straight from a real Android device.</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/marquee.svg" width="100%" alt="React 19 · TypeScript · Tauri 2 · Rust · Tailwind 4 · Grammers · SQLite · Vite">
 </p>
 
 <br>
