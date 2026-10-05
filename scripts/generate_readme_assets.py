@@ -8,17 +8,19 @@ import math
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
+LIVE_SHOTS = ROOT / "screenshots" / "live"
 SHOTS = ROOT / "screenshots"
 OUT = ROOT / "assets" / "readme"
 
 SCREENS = [
-    ("MobileAuthScreen.png", "Frosted-glass sign in"),
-    ("AndroidTelegram-DriveSplash.png", "Instant, polished splash"),
-    ("AndroidHomeScreenWithIcon.png", "Lives on your home screen"),
-    ("AndroidFolderList.png", "Folders that feel native"),
-    ("AndroidDarkModeFolderView.png", "Dark mode, done right"),
-    ("AndroidTransferQue.png", "Durable transfer queue"),
-    ("AndroidSettingsPage.png", "15 themes · 24 languages"),
+    ("04-home.png", "Touch-first home dashboard"),
+    ("05-folder.png", "Organized folders & 2-way sync"),
+    ("06-photos.png", "Vibrant photo gallery grid"),
+    ("07-videos.png", "4K video streaming & offline cache"),
+    ("08-documents.png", "TDENC2 encrypted document vault"),
+    ("09-settings.png", "Storage telemetry & bandwidth limits"),
+    ("11-light-home.png", "Pristine frosted light theme"),
+    ("01-tour-cloud.png", "Interactive onboarding tour"),
 ]
 
 W, H = 1100, 700
@@ -55,7 +57,8 @@ def background():
 
 
 def phone(path):
-    img = Image.open(SHOTS / path).convert("RGB")
+    file_path = LIVE_SHOTS / path if (LIVE_SHOTS / path).exists() else (SHOTS / path)
+    img = Image.open(file_path).convert("RGB")
     # cover-crop to the phone aspect ratio
     ratio = PW / PH
     w, h = img.size

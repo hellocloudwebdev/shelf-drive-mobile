@@ -63,11 +63,11 @@
 <h2 align="center">📱 App Tour</h2>
 
 <p align="center">
-  <img src="./assets/readme/showcase.gif" width="900" alt="Animated tour of Shelf Drive: sign-in, splash, home screen, folders, dark mode, transfers and settings">
+  <img src="./assets/readme/showcase.gif" width="900" alt="Animated tour of Shelf Drive: home, folders, photos, videos, encrypted documents, settings, and light mode">
 </p>
 
 <p align="center">
-  <sub>Seven screens, one icy-cyan identity — captured straight from a real Android device.</sub>
+  <sub>Eight real-time screens, one unified frosted-glass identity — captured directly from the live application runtime.</sub>
 </p>
 
 <p align="center">
@@ -122,24 +122,46 @@ Telegram gives every user generous cloud storage through Saved Messages and chan
 The mobile interface features a **frosted glass navigation system** with a 5-tab bottom bar, floating upload button, and fluid gesture-driven interactions — designed from the ground up for touch.
 
 <p align="center">
-  <img src="./screenshots/MobileAuthScreen.png" width="280" alt="Mobile authentication screen with frosted glass design">
+  <img src="./screenshots/live/04-home.png" width="280" alt="Touch-first home dashboard with recent files and folders">
   &nbsp;&nbsp;&nbsp;
-  <img src="./screenshots/AndroidDarkModeFolderView.png" width="280" alt="Android dark mode folder view">
+  <img src="./screenshots/live/06-photos.png" width="280" alt="Photos tab with vibrant media grid and tags">
   &nbsp;&nbsp;&nbsp;
-  <img src="./screenshots/AndroidSettingsPage.png" width="280" alt="Android settings page">
+  <img src="./screenshots/live/08-documents.png" width="280" alt="Encrypted document and vault storage">
 </p>
 
 <p align="center">
-  <em>Mobile: frosted glass auth · folder view · settings — all with the icy cyan accent.</em>
+  <em>Core Mobile Views: Home Dashboard with instant search · Photos Gallery grid · Encrypted Documents Vault</em>
 </p>
 
-<details>
-<summary><strong>📸 More Mobile Screenshots</strong></summary>
 <br>
 
-| Home Screen | Folder List | Transfer Queue | Splash |
+<h4 align="center">🌓 Dark Mode vs. Light Mode</h4>
+
+<p align="center">
+  <img src="./screenshots/live/04-home.png" width="270" alt="Android dark mode home view">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="./screenshots/live/11-light-home.png" width="270" alt="Android light mode home view">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="./screenshots/live/09-settings.png" width="270" alt="Android dark settings view">
+</p>
+
+<p align="center">
+  <em>Fluid theme engine: Dark AMOLED · Pristine Light · 15 adaptive palettes with system preference sync</em>
+</p>
+
+<br>
+
+<details>
+<summary><strong>📸 View More Live Application Screens (Folders, Video Player &amp; Onboarding)</strong></summary>
+<br>
+
+| Folder View &amp; 2-Way Sync | 4K Video Streaming | Storage Telemetry | Onboarding Experience |
 |:---:|:---:|:---:|:---:|
-| <img src="./screenshots/AndroidHomeScreenWithIcon.png" width="200" alt="Home screen with app icon"> | <img src="./screenshots/AndroidFolderList.png" width="200" alt="Android folder list"> | <img src="./screenshots/AndroidTransferQue.png" width="200" alt="Transfer queue"> | <img src="./screenshots/AndroidTelegram-DriveSplash.png" width="200" alt="Splash screen"> |
+| <img src="./screenshots/live/05-folder.png" width="220" alt="Organized folder view with upload and sync"> | <img src="./screenshots/live/07-videos.png" width="220" alt="4K video player with streaming buffers"> | <img src="./screenshots/live/09-settings.png" width="220" alt="Storage quotas and bandwidth limits"> | <img src="./screenshots/live/01-tour-cloud.png" width="220" alt="Guided tour: Telegram becomes your cloud"> |
+
+<p align="center">
+  <em>All screenshots captured live from the running mobile runtime with real interactive UI states.</em>
+</p>
 
 </details>
 
