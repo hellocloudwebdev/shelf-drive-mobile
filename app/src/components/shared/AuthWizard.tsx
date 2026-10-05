@@ -382,7 +382,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             >
                 <div className="mb-6 text-center">
                     <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center">
-                        <img src="/logo.png" alt="Logo" className="w-full h-full" />
+                        <img src="/logo.svg" alt="Logo" className="w-full h-full" />
                     </div>
                     <h1 className="text-app-title font-semibold tracking-[-0.01em] text-app-text">{i18n.t("common.app_title")}</h1>
                     <p className="mt-1 text-metadata text-app-text-secondary">{i18n.t("auth.tagline")}</p>

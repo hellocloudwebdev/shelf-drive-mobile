@@ -1,0 +1,29 @@
+<svg width="1061" height="1061" viewBox="0 0 1061 1061" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+<g id="Transparent cloud icon export">
+<g id="Front blue gradient tile" filter="url(#filter0_d_0_1)">
+<rect x="14.0549" y="10.0392" width="1024" height="1024" rx="112.439" fill="url(#paint0_linear_0_1)"/>
+<rect x="14.5569" y="10.5411" width="1023" height="1023" rx="111.937" stroke="#B8DBED" stroke-opacity="0.7" stroke-width="1.00392"/>
+</g>
+<ellipse id="Cloud left lobe" cx="336.816" cy="571.745" rx="140.047" ry="149.082" fill="white"/>
+<ellipse id="Cloud top lobe" cx="577.255" cy="463.824" rx="200.784" ry="203.796" fill="white"/>
+<ellipse id="Cloud right lobe" cx="739.055" cy="580.059" rx="129" ry="141" fill="white"/>
+<rect id="Cloud base" x="298.055" y="500.059" width="480" height="221" rx="56.2196" fill="white"/>
+</g>
+<defs>
+<filter id="filter0_d_0_1" x="0" y="-3.05176e-05" width="1060.14" height="1060.14" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="4.01569" dy="8.03137"/>
+<feGaussianBlur stdDeviation="9.03529"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.03 0 0 0 0 0.27 0 0 0 0 0.56 0 0 0 0.13 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_1"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_1" result="shape"/>
+</filter>
+<linearGradient id="paint0_linear_0_1" x1="247.409" y1="567.331" x2="807.707" y2="677.397" gradientUnits="userSpaceOnUse">
+<stop stop-color="#C9E8FA"/>
+<stop offset="0.499256" stop-color="#59BFF7"/>
+<stop offset="1" stop-color="#007AE8"/>
+</linearGradient>
+</defs>
+</svg>

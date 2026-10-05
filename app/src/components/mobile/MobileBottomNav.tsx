@@ -1,5 +1,6 @@
 import { Clapperboard, FileText, House, Image as ImageIcon, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { isMobilePreview } from '../../hooks/usePlatform';
 import { cx } from '../ui/cx';
 
 export type MobileTab = 'home' | 'photos' | 'videos' | 'documents' | 'settings';
@@ -36,13 +37,16 @@ export function MobileBottomNav({ activeTab, onChange, isAndroid, isTelevision }
 
   const activeIndex = Math.max(0, items.findIndex(item => item.id === activeTab));
 
-  // Phones: 16px side margins with safe-area clearance. Larger screens:
-  // content-width pill centered. TV keeps its own ten-foot positioning.
+  // Phones (and the ?mobile preview standing in for them): 16px side
+  // margins, the pill hugging the bottom edge with safe-area clearance.
+  // Larger screens: content-width pill centered. TV keeps its own
+  // ten-foot positioning.
+  const androidSpacing = isAndroid || isMobilePreview();
   const positionClass = isTelevision
     ? 'tv-primary-nav'
     : cx(
-        isAndroid
-          ? 'bottom-[calc(1.75rem+env(safe-area-inset-bottom,0px))]'
+        androidSpacing
+          ? 'bottom-[calc(0.25rem+env(safe-area-inset-bottom,0px)*0.5)]'
           : 'bottom-[calc(1rem+env(safe-area-inset-bottom,0px))]',
         'left-4 w-[calc(100%-2rem)] sm:left-1/2 sm:w-fit sm:-translate-x-1/2',
       );

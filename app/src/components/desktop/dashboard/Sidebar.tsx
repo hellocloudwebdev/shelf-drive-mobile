@@ -175,7 +175,7 @@ export function Sidebar({
         >
             <div className={`desktop-chrome-row flex-nowrap ${settings.sidebarCollapsed ? 'sidebar-header-rail justify-center gap-1' : 'justify-between'}`}>
                 <div className="flex min-w-0 items-center gap-2">
-                    <img src="/logo.png" className={`shrink-0 ${settings.sidebarCollapsed ? 'h-[22px] w-[22px]' : 'h-6 w-6'}`} alt="Logo" />
+                    <img src="/logo.svg" className={`shrink-0 ${settings.sidebarCollapsed ? 'h-[22px] w-[22px]' : 'h-6 w-6'}`} alt="Logo" />
                     {!settings.sidebarCollapsed && (
                         <span className="truncate text-app-title font-semibold tracking-[-0.01em] text-app-text">{t('common.app_title')}</span>
                     )}

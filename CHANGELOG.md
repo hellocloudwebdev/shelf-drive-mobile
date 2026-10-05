@@ -1,3 +1,18 @@
+## [4.0.1] - 2026-10-05
+
+### Interface
+
+- Replaced the mobile launcher and in-app branding with the new cloud icon, shipping the in-app logo as a crisp vector with a raster fallback.
+- Reshaped the mobile floating upload button into a circle and kept a clear gap above the bottom navigation bar.
+- Tightened the bottom navigation clearance on Android so the bar sits closer to the screen edge, with the browser preview mirroring the phone layout.
+- Removed the duplicate upload button from the mobile Recent empty state.
+- Added a mobile update prompt that pops up when a newer signed release is on GitHub, with a Settings → Updates row to check manually and an in-app download that hands off to Android's installer.
+
+### Fixes
+
+- Fixed mobile uploads and downloads failing instantly with ACCOUNT_CHANGED by passing the account owner to the transfer hooks.
+- Restored toast notifications in the mobile browser preview by mounting the shared toaster there.
+
 ## [4.0.0] - 2026-10-01
 
 ### Interface

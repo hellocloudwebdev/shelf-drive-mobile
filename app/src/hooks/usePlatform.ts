@@ -56,3 +56,13 @@ export function usePlatform() {
 
   return platformInfo;
 }
+
+/**
+ * True in the ?mobile browser preview that stands in for an Android
+ * phone. Layout-only affordance: phone spacing applies, while platform
+ * APIs stay browser-safe (unlike flipping `isAndroid` itself, which
+ * gates Tauri event listeners and JNI calls).
+ */
+export function isMobilePreview(): boolean {
+  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('mobile');
+}

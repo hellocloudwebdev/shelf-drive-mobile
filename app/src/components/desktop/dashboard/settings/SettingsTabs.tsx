@@ -256,7 +256,7 @@ export function AboutSettingsTab({ appVersion, diagnosticsLoading, t, onCopyDiag
   return (
     <motion.section key="about" {...tabMotion} className="w-full space-y-4">
       <div className="flex flex-col items-center space-y-5 py-6">
-        <img src="/logo.png" className="h-16 w-16 drop-shadow-lg" alt="Shelf Drive Logo" />
+        <img src="/logo.svg" className="h-16 w-16 drop-shadow-lg" alt="Shelf Drive Logo" />
         <div className="text-center"><h3 className="text-base font-bold text-telegram-text">{i18n.t("common.app_title")}</h3><p className="mt-0.5 text-xs text-telegram-subtext">v{appVersion}</p></div>
         <div className="h-px w-12 bg-telegram-border" />
         <button onClick={onCopyDiagnostics} disabled={diagnosticsLoading} className="flex items-center gap-1.5 rounded-lg border border-telegram-border bg-telegram-hover px-3 py-1.5 text-xs font-medium text-telegram-subtext transition hover:bg-telegram-border/30 hover:text-telegram-text disabled:opacity-50">

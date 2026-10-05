@@ -1,22 +1,37 @@
 import { ArrowUp, ChevronRight, Clapperboard, FolderUp, FileUp, Image as ImageIcon, Smartphone } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { usePlatform, isMobilePreview } from '../../hooks/usePlatform';
 import { BottomSheet } from './glass';
 
 /**
- * Frosted ice-blue capsule upload button with an upward arrow. The single
+ * Bottom offset tracking the bottom nav's own anchor, per platform: the
+ * Android nav hugs the screen edge (4px + half inset), other platforms
+ * keep the roomier 16px + full inset. Either way the button floats a
+ * clear 14px above the nav's top edge.
+ */
+function useFloatingBottomClass(): string {
+  const { isAndroid } = usePlatform();
+  return isAndroid || isMobilePreview()
+    ? 'bottom-[calc(5.75rem+env(safe-area-inset-bottom,0px)*0.5)]'
+    : 'bottom-[calc(6.5rem+env(safe-area-inset-bottom,0px))]';
+}
+
+/**
+ * Frosted ice-blue circular upload button with an upward arrow. The single
  * saturated element on the screen; floats above the bottom navigation,
  * clear of the safe area. Visuals (icy radial glow, white rim, soft blue
  * shadow, press response) come from .glass-fab; this markup adds the
  * transition hooks and the 56px hit target.
  */
 export function FloatingUploadButton({ onClick }: { onClick: () => void }) {
+  const floatingBottomClass = useFloatingBottomClass();
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label="Upload"
-      className="glass-fab fixed bottom-[calc(6.5rem+env(safe-area-inset-bottom,0px))] right-4 z-40 flex h-14 w-20 items-center justify-center rounded-full text-white transition-transform duration-200 ease-out motion-reduce:transition-none active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent"
+      className={`glass-fab fixed ${floatingBottomClass} right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full text-white transition-transform duration-200 ease-out motion-reduce:transition-none active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent`}
     >
       <ArrowUp className="h-6 w-6" strokeWidth={2.5} aria-hidden="true" />
     </button>
@@ -38,6 +53,7 @@ interface TransferIndicatorProps {
  * count badge anchors the pill; the thin progress bar tracks activity.
  */
 export function TransferIndicator({ activeCount, pausedCount, progress, speedBytesPerSec, onOpen }: TransferIndicatorProps) {
+  const floatingBottomClass = useFloatingBottomClass();
   if (activeCount === 0 && pausedCount === 0) return null;
   const summary = activeCount > 0
     ? `${activeCount} active${speedBytesPerSec > 0 ? ` · ${progress}%` : ''}`
@@ -46,7 +62,7 @@ export function TransferIndicator({ activeCount, pausedCount, progress, speedByt
     <button
       type="button"
       onClick={onOpen}
-      className="glass-strong press-row fixed bottom-[calc(6.5rem+env(safe-area-inset-bottom,0px))] left-4 right-[4.75rem] z-40 mx-auto flex h-11 max-w-md items-center gap-2.5 rounded-full px-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent"
+      className={`glass-strong press-row fixed ${floatingBottomClass} left-4 right-[4.75rem] z-40 mx-auto flex h-11 max-w-md items-center gap-2.5 rounded-full px-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-accent`}
       aria-label="Open transfers"
     >
       <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full bg-app-accent px-1.5 text-xs font-bold text-app-accent-contrast tabular-nums">

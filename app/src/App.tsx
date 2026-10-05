@@ -58,7 +58,6 @@ function AppContent() {
     percent: 8,
   });
   const [whatsNew, setWhatsNew] = useState<WhatsNewDetails | null>(() => consumeWhatsNew(appVersion));
-  const { theme } = useTheme();
   const { available, version, downloading, progress, phase, managedByPackageManager, downloadAndInstall, dismissUpdate } = useUpdateCheck();
   const { isMobile, isTelevision } = usePlatform();
   useTvSpatialNavigation(isTelevision);
@@ -190,7 +189,7 @@ function AppContent() {
     return (
       <main className="h-screen w-screen flex items-center justify-center bg-telegram-bg">
         <div className="flex w-full max-w-sm flex-col items-center gap-5 px-8" role="status" aria-live="polite">
-          <img src="/logo.png" className="w-16 h-16 drop-shadow-lg animate-pulse" alt={i18n.t("common.app_title")} />
+          <img src="/logo.svg" className="w-16 h-16 drop-shadow-lg animate-pulse" alt={i18n.t("common.app_title")} />
           <div className="w-full text-center">
             <p className="text-sm font-semibold text-telegram-text">{visibleProgress.label}</p>
             <p className="mt-1 text-xs text-telegram-subtext">{visibleProgress.detail}</p>
@@ -215,7 +214,7 @@ function AppContent() {
         onUpdate={downloadAndInstall}
         onDismiss={dismissUpdate}
       />
-      <Toaster theme={theme} position="bottom-center" />
+      <AppToaster />
       <TelegramCooldownBanner />
       {persistenceStatus === 'error' && (
         <div className="fixed inset-x-4 top-4 z-[400] mx-auto flex max-w-xl items-center justify-between gap-3 rounded-lg border border-app-danger/30 bg-app-surface-raised px-4 py-3 text-sm text-app-text shadow-xl" role="alert">
@@ -252,6 +251,12 @@ function AppContent() {
 }
 
 
+/** Sonner toaster shared by the desktop shell and the ?mobile preview branch. */
+function AppToaster() {
+  const { theme } = useTheme();
+  return <Toaster theme={theme} position="bottom-center" />;
+}
+
 function App() {
   const showDesignGallery = Boolean(
     DesignGallery && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('design-gallery')
@@ -279,6 +284,7 @@ function App() {
       ) : showMobileDashboard ? (
         <Suspense fallback={<div className="h-screen bg-app-canvas" />}>
           <ErrorBoundary>
+            <AppToaster />
             <MobileDashboard />
           </ErrorBoundary>
         </Suspense>

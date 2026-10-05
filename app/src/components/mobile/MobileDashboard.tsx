@@ -15,6 +15,7 @@ import { ShareDialog } from '../desktop/dashboard/ShareDialog';
 import { RenameFolderSheet } from './RenameFolderSheet';
 import { GlassSearch, FilterChipRow, SectionHeader, GlassIconButton } from './glass';
 import { FloatingUploadButton, TransferIndicator, UploadSheet } from './FloatingUploadButton';
+import { MobileUpdatePrompt } from './MobileUpdatePrompt';
 import { FileActionSheet } from './FileActionSheet';
 import { RenameFileSheet, MoveFileSheet } from './FileSheets';
 import { FileRow, FileRowSkeleton } from './FileRow';
@@ -22,10 +23,11 @@ import { PhotoGrid, PhotoGridSkeleton } from './PhotoGrid';
 import { VideoList, VideoListSkeleton } from './VideoRow';
 import { DocumentList, DocumentListSkeleton } from './DocumentRow';
 import { SettingsSection, SettingsRow, SettingsToggleRow } from './SettingsSection';
-import { usePlatform } from '../../hooks/usePlatform';
+import { usePlatform, isMobilePreview } from '../../hooks/usePlatform';
 import { useTelegramConnection } from '../../hooks/useTelegramConnection';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { useFileDownload } from '../../hooks/useFileDownload';
+import { useUpdateCheck } from '../../hooks/useUpdateCheck';
 import { useFileOperations } from '../../hooks/useFileOperations';
 import { useGlobalFileSearch } from '../../hooks/useGlobalFileSearch';
 import { formatBytes, isMediaFile, isPdfFile, isImageFile, isVideoFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
@@ -147,6 +149,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const [activeTab, setActiveTab] = useState<MobileTab>('home');
   const [transfersOpen, setTransfersOpen] = useState(false);
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
+  const [updatePromptOpen, setUpdatePromptOpen] = useState(false);
   const [homeSearch, setHomeSearch] = useState('');
   const [mediaSearchOpen, setMediaSearchOpen] = useState(false);
   const [mediaSearch, setMediaSearch] = useState('');
@@ -301,15 +304,43 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   ]);
 
   const {
-    uploadQueue, setUploadQueue, handleManualUpload, handleFolderUpload, clearFinished: clearUploads,
+    uploadQueue, setUploadQueue, handleManualUpload: rawManualUpload, handleFolderUpload: rawFolderUpload, clearFinished: clearUploads,
     cancelAll: cancelUploads, pauseAll: pauseUploads, resumeAll: resumeUploads,
     cancelItem: cancelUpload, retryItem: retryUpload,
-  } = useFileUpload(activeFolderId, store, transferAllowed, transferWaitingReason);
+  } = useFileUpload(activeFolderId, store, transferAllowed, transferWaitingReason, accountId ?? undefined);
+
+  // The ?mobile browser preview has no Tauri backend: no account, no picker,
+  // no upload pipeline. Say so instead of failing silently on ACCOUNT_CHANGED.
+  const uploadBlockedInPreview = useCallback((action: () => void) => () => {
+    if (isMobilePreview()) {
+      toast.info('Browser preview — uploading needs the Shelf Drive app on a device.');
+      return;
+    }
+    action();
+  }, []);
+  const handleManualUpload = uploadBlockedInPreview(() => void rawManualUpload());
+  const handleFolderUpload = uploadBlockedInPreview(() => void rawFolderUpload());
+
+  // GitHub-release update check: the hook auto-checks shortly after
+  // startup, the prompt pops open when a newer signed release exists,
+  // and Settings → Updates reopens it on demand. The browser preview has
+  // no IPC backend, so there it only explains itself instead.
+  const update = useUpdateCheck();
+  useEffect(() => {
+    if (update.available) setUpdatePromptOpen(true);
+  }, [update.available]);
+  const openUpdatePrompt = useCallback(() => {
+    if (isMobilePreview()) {
+      toast.info('Browser preview — update checks need the Shelf Drive app on a device.');
+      return;
+    }
+    setUpdatePromptOpen(true);
+  }, []);
   const {
     downloadQueue, queueDownload, queueBulkDownload, clearFinished: clearDownloads,
     cancelAll: cancelDownloads, pauseAll: pauseDownloads, resumeAll: resumeDownloads,
     cancelItem: cancelDownload, retryItem: retryDownload,
-  } = useFileDownload(store, transferAllowed, transferWaitingReason);
+  } = useFileDownload(store, transferAllowed, transferWaitingReason, accountId ?? undefined);
 
   const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
   const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
@@ -1105,7 +1136,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             <header className="flex items-center justify-between gap-3 pt-1">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-app-accent/12 shadow-[var(--shadow-raised)]">
-                  <img src="/logo.png" className="h-full w-full scale-[1.28] object-cover" alt="" aria-hidden="true" />
+                  <img src="/logo.svg" className="h-full w-full scale-[1.28] object-cover" alt="" aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
                   <h1 className="text-lg font-semibold tracking-tight text-app-text">{i18n.t('common.app_title')}</h1>
@@ -1276,7 +1307,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                       <FileRow key={file.id} file={file} onOpen={handlePreview} onActions={setActionFile} />
                     ))
                   ) : (
-                    <MediaEmptyState icon={Clock3} title="Nothing here yet" hint="Files you upload or open will appear in Recent." onUpload={handleManualUpload} />
+                    <MediaEmptyState icon={Clock3} title="Nothing here yet" hint="Files you upload or open will appear in Recent." />
                   )}
                 </section>
 
@@ -1456,7 +1487,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             <SettingsSection title="Account">
               <div className="flex items-center gap-3 px-4 pb-3.5 pt-3">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-app-accent/12 shadow-[var(--shadow-raised)]" aria-hidden="true">
-                  <img src="/logo.png" className="h-full w-full scale-[1.28] object-cover" alt="" />
+                  <img src="/logo.svg" className="h-full w-full scale-[1.28] object-cover" alt="" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-app-text">{i18n.t('common.app_title')}</p>
@@ -1829,7 +1860,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
             <SettingsSection title="About">
               <div className="flex flex-col items-center px-4 py-5">
-                <img src="/logo.png" className="h-14 w-14 drop-shadow-lg" alt="Shelf Drive Logo" />
+                <img src="/logo.svg" className="h-14 w-14 drop-shadow-lg" alt="Shelf Drive Logo" />
                 <p className="mt-3 text-sm font-bold text-app-text">{i18n.t('common.app_title')}</p>
                 <p className="mt-0.5 text-[11px] text-app-text-secondary">v{appVersion}</p>
                 <p className="mt-3 text-xs font-semibold text-app-text">Neeraj Singh</p>
@@ -1852,6 +1883,22 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                 <p className="mt-3 px-2 text-center text-[10px] leading-relaxed text-app-text-secondary">{t('settings.tagline')}</p>
                 <p className="mt-2 px-2 text-center text-[10px] leading-relaxed text-app-text-secondary">Credentials and settings stay on this device. File transfers go directly between this app and Telegram.</p>
               </div>
+            </SettingsSection>
+
+            <SettingsSection title={t('settings.updates')}>
+              <SettingsRow
+                icon={<RefreshCw className={`h-4.5 w-4.5 ${update.checking ? 'animate-spin text-app-accent' : ''}`} aria-hidden="true" />}
+                title={update.available ? t('settings.update_available') : t('settings.check_for_updates')}
+                description={
+                  update.available
+                    ? t('settings.update_available_toast', { version: update.version ?? '' })
+                    : update.downloading
+                      ? `${update.progress}%`
+                      : t('settings.check_updates_desc')
+                }
+                onClick={openUpdatePrompt}
+                chevron
+              />
             </SettingsSection>
 
             <button onClick={handleLogout} className="press-row flex w-full items-center justify-center gap-2 rounded-2xl border border-app-danger/20 bg-app-danger/10 py-3 text-xs font-semibold text-app-danger transition-all duration-200">
@@ -1879,7 +1926,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
         <div className="flex items-center justify-between gap-2 px-4 pb-2">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-app-accent/12 shadow-[var(--shadow-raised)]">
-              <img src="/logo.png" className="h-full w-full scale-[1.28] object-cover" alt="Logo" />
+              <img src="/logo.svg" className="h-full w-full scale-[1.28] object-cover" alt="Logo" />
             </span>
             <span className="truncate text-base font-semibold tracking-tight text-app-text">{i18n.t("common.app_title")}</span>
           </div>
@@ -2163,6 +2210,21 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
           onFromDevice={handleManualUpload}
         />
       )}
+
+      {/* GitHub-release update prompt (auto-opens on a newer signed release) */}
+      <MobileUpdatePrompt
+        open={updatePromptOpen}
+        onClose={() => setUpdatePromptOpen(false)}
+        checking={update.checking}
+        available={update.available}
+        downloading={update.downloading}
+        progress={update.progress}
+        phase={update.phase}
+        version={update.version}
+        error={update.error}
+        onCheck={() => void update.checkForUpdates()}
+        onUpdate={() => void update.downloadAndInstall()}
+      />
 
       {/* Glass file action sheet (Home recent, search, media tabs) */}
       {actionFile && (
