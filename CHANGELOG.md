@@ -1,3 +1,9 @@
+## [4.0.2] - 2026-10-06
+
+### Fixes
+
+- Fixed the Android launcher icon showing the template's robot artwork: the generated project keeps a v24-qualified variant of the template foreground that resource resolution prefers over the overridden default, so the cloud foreground is now shipped for that bucket as well.
+
 ## [4.0.1] - 2026-10-05
 
 ### Interface

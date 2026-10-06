@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- cloud glyph, fitted inside the 66dp safe circle. Mirrors
+     drawable/ic_launcher_foreground.xml in the v24 bucket so it beats the
+     template's robot vector, which resource resolution prefers on API 24+.
+     The cloud is a solid fill (no gradient), so the same art is valid for
+     every qualifier bucket. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M22.919,61.519a12.969,13.805 0 1 1 25.937,0a12.969,13.805 0 1 1 -25.937,0z M39.559,51.526a18.593,18.872 0 1 1 37.186,0a18.593,18.872 0 1 1 -37.186,0z M61.19,62.289a11.946,13.057 0 1 1 23.891,0a11.946,13.057 0 1 1 -23.891,0z M37.504,54.881h34.037a5.206,5.206 0 0 1 5.206,5.206v10.053a5.206,5.206 0 0 1 -5.206,5.206h-34.037a5.206,5.206 0 0 1 -5.206,-5.206v-10.053a5.206,5.206 0 0 1 5.206,-5.206z" />
+</vector>

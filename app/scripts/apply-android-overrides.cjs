@@ -44,6 +44,7 @@ const required = [
   'app/src/main/res/drawable/ic_launcher_background.xml',
   'app/src/main/res/drawable/ic_launcher_foreground.xml',
   'app/src/main/res/drawable/ic_launcher_monochrome.xml',
+  'app/src/main/res/drawable-v24/ic_launcher_foreground.xml',
   'app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml',
   'app/src/main/res/values/strings.xml',
   'app/src/main/res/xml/backup_rules.xml',
