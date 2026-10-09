@@ -19,7 +19,7 @@ Desktop reference: [hellocloudwebdev/shelf-drive](https://github.com/hellocloudw
 | Compare `main...release/v4.0.3` | Release branch is 2 commits ahead; reliability implementation and v4.0.3 version changes are not on `main` |
 | Commit `b0d5542` | Exists; adds protection sheet, blocked-transfer banner, bounded Android environment retries, concurrency controls, tests and v4.0.3 version bump |
 | Android Debug APK run [37978844409](https://github.com/hellocloudwebdev/shelf-drive-mobile/actions/runs/37978844409) | Completed successfully; one artifact `shelf-drive-android-debug-apk`, 122,984,101 bytes; unsigned debug build |
-| Dependency assurance run [37974647052](https://github.com/hellocloudwebdev/shelf-drive-mobile/actions/runs/37974647052) | Failed: new high-severity `GHSA-68FV-2MGG-JV7Q` via `source-map-js`; reviewed-baseline checker intentionally fails closed |
+| Dependency assurance run [37974647052](https://github.com/hellocloudwebdev/shelf-drive-mobile/actions/runs/37974647052) | Failed on main because `GHSA-68FV-2MGG-JV7Q` (high, `source-map-js`) was new to the temporary npm advisory allowlist. The release branch lockfile already contains patched `source-map-js` 1.2.2; main still contains 1.2.1. The candidate branch still needs a fresh successful dependency-assurance run |
 | i18n validation run `37974647049` | Passed on main |
 | Existing `Docs/CROSS_PLATFORM_MIGRATION_AUDIT.md` | Present; audit is dated 2026-10-02 and needs validation against current code |
 | `MOBILE_RELEASE_MASTER_PLAN.md` | Did not exist at repository root when checked |
@@ -44,11 +44,11 @@ Severity meanings: **P0** = release blocker/security/data integrity; **P1** = im
 - **Acceptance:** choose the intended integration path; compare the full diff; verify package, Tauri, Cargo, lockfile and changelog versions agree; run version-contract tests. Do not tag either branch until a single reviewed release commit is selected.
 
 #### R-002 — Clear the dependency-assurance gate
-- **Finding:** latest observed main CI fails because `GHSA-68FV-2MGG-JV7Q` (high, `source-map-js`) is new to the temporary npm advisory allowlist.
-- **Severity/status:** P0 / failure reproduced in CI log.
-- **Dependencies:** R-001 not required to investigate; resolve on the intended integration branch.
+- **Finding:** main CI fails because `GHSA-68FV-2MGG-JV7Q` (high, `source-map-js`) is new to the temporary npm advisory allowlist. Source inspection confirms `main` locks `source-map-js` 1.2.1, while `release/v4.0.3` already locks patched version 1.2.2 (its parent commit `56d830c` documents the advisory fix).
+- **Severity/status:** P0 / failure reproduced on main; dependency fix present on release branch but not yet proven by a fresh successful candidate CI run.
+- **Dependencies:** R-001 determines how the fix is integrated.
 - **Affected files:** `app/package-lock.json`, `dependency-policy/npm-audit-allowlist.json`, `scripts/check-npm-audit.cjs`.
-- **Acceptance:** prefer a compatible patched dependency and regenerate the lockfile; run `npm audit` and dependency-assurance workflow. Do not merely whitelist a high-severity advisory without documented risk acceptance and expiry. Confirm no stale allowlist entries remain.
+- **Acceptance:** run `npm audit` and dependency-assurance on the exact candidate commit and confirm the new advisory is resolved without adding an allowlist entry. Ensure the patched lockfile reaches the selected release/main branch. Do not merely whitelist a high-severity advisory. Confirm no stale allowlist entries remain.
 
 #### R-003 — Prove production signing configuration without exposing credentials
 - **Finding:** `android.yml` has fail-closed checks for Android keystore and Tauri updater signing material; secret presence cannot be independently verified from the available API.
