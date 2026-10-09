@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useFileUpload } from '../../src/hooks/useFileUpload';
 import { useFileDownload } from '../../src/hooks/useFileDownload';
 const mocks = vi.hoisted(() => ({
-  open: vi.fn(), save: vi.fn(), invoke: vi.fn(), enqueue: vi.fn(), confirm: vi.fn(), choose: vi.fn(), collision: vi.fn(), client: {},
+  open: vi.fn(), save: vi.fn(), invoke: vi.fn(), enqueue: vi.fn(), confirm: vi.fn(), choose: vi.fn(), collision: vi.fn(), client: {}, passphrase: vi.fn(),
   settings: { maxConcurrentUploads: 1, maxConcurrentDownloads: 1, encryptionDefaultMode: 'standard', encryptionProtectMetadata: true, videoUploadMode: 'file' },
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -13,6 +13,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ revealItemInDir: vi.fn() }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => mocks.client }));
 vi.mock('../../src/context/SettingsContext', () => ({ useSettings: () => ({ settings: mocks.settings, updateSetting: vi.fn() }) }));
 vi.mock('../../src/context/UploadChoiceContext', () => ({ useUploadChoice: () => ({ chooseUploadProtection: mocks.choose }) }));
+vi.mock('../../src/context/EncryptionPromptContext', () => ({ useEncryptionPrompt: () => ({ requestFilePassphrase: mocks.passphrase }) }));
 vi.mock('../../src/context/ConfirmContext', () => ({ useConfirm: () => ({ confirm: mocks.confirm, chooseDownloadCollision: mocks.collision }) }));
 vi.mock('../../src/utils', async () => ({ isAndroidPlatform: false, pickWithFallback: async (pick: () => Promise<unknown>) => pick(), showFileDialogFallback: vi.fn(), sanitizeFilename: (await vi.importActual<typeof import('../../src/utils/files')>('../../src/utils/files')).sanitizeFilename, formatBytes: (size: number) => String(size) }));
 vi.mock('../../src/services/desktopTransferEngine', async () => ({ ...(await vi.importActual('../../src/services/desktopTransferEngine')),
@@ -20,7 +21,7 @@ vi.mock('../../src/services/desktopTransferEngine', async () => ({ ...(await vi.
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
-beforeEach(() => { vi.clearAllMocks(); mocks.enqueue.mockResolvedValue([]); mocks.choose.mockResolvedValue('store'); mocks.confirm.mockResolvedValue(true); mocks.collision.mockResolvedValue('keep_both'); mocks.invoke.mockResolvedValue({ state: 'plain', protection_mode: 'standard' }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.enqueue.mockResolvedValue([]); mocks.choose.mockResolvedValue('store'); mocks.confirm.mockResolvedValue(true); mocks.collision.mockResolvedValue('keep_both'); mocks.passphrase.mockResolvedValue(null); mocks.invoke.mockResolvedValue({ state: 'plain', protection_mode: 'standard' }); });
 
 describe('transfer ownership at user action time', () => {
   it('rejects an upload if the account changes while its file picker is open', async () => {

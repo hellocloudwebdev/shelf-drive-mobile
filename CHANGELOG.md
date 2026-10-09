@@ -1,3 +1,16 @@
+## [4.0.3] - 2026-10-09
+
+### Interface
+
+- Replaced native `window.prompt` and `window.confirm` upload and download protection prompts with an in-app mobile sheet and dialog, avoiding dialog suppression and unintentional transfer cancellations on Android WebViews.
+- Added a dismissible blocked-transfer banner on Home that explains the active network or policy restriction and provides a quick retry action to re-evaluate conditions.
+- Exposed upload and download concurrency settings in Settings → Files, allowing parallel transfers to be adjusted between 1 and 10 on mobile.
+
+### Reliability
+
+- Added bounded retries with exponential backoff for Android transfer environment queries, preventing transient JNI initialization failures from locking transfer queues.
+- Hardened upload and download pumps with fail-safe gates that preserve queued transfers when Android transfer conditions cannot be determined.
+
 ## [4.0.2] - 2026-10-06
 
 ### Fixes

@@ -11,6 +11,7 @@ import { useSettings } from '../context/SettingsContext';
 import type { Store } from '@tauri-apps/plugin-store';
 import { useTranslation } from 'react-i18next';
 import { useUploadChoice, type UploadChoice } from '../context/UploadChoiceContext';
+import { useEncryptionPrompt } from '../context/EncryptionPromptContext';
 import { triggerHaptic } from '../services/feedback';
 import { isTransientNetworkError, restoreUploadQueue, serializeUploadQueue } from '../services/transferQueuePolicy';
 import { userFacingError } from '../services/userFacingError';
@@ -64,6 +65,7 @@ export function useFileUpload(
     const queryClient = useQueryClient();
     const { settings } = useSettings();
     const { chooseUploadProtection } = useUploadChoice();
+    const { requestFilePassphrase } = useEncryptionPrompt();
     const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([]);
     const [initialized, setInitialized] = useState(false);
     const initializingRef = useRef(false);
@@ -486,24 +488,18 @@ export function useFileUpload(
             return Array.from({ length: count }, () => ({ ...base }));
         }
 
-        const accepted = window.confirm(t('settings.encryption_disclaimer_body'));
-        if (!accepted) return null;
+        // The in-app sheet validates the minimum length and the confirmation
+        // entry itself; a dismissed or suppressed prompt resolves null and
+        // aborts queueing instead of ever downgrading to unprotected storage.
+        const passphrase = await requestFilePassphrase({
+            title: t('settings.encryption_disclaimer_title'),
+            requireAcknowledgement: true,
+            confirmPassphrase: true,
+            passphraseLabel: t('settings.encryption_mode_passphrase'),
+            confirmLabel: t('settings.confirm_passphrase'),
+        });
         requireCurrent();
-        const passphrase = window.prompt(
-            `${t('settings.encryption_mode_passphrase')}\n${t('settings.min_passphrase_length')}`,
-        );
         if (!passphrase) return null;
-        requireCurrent();
-        if (new TextEncoder().encode(passphrase).length < 8) {
-            toast.error(t('settings.min_passphrase_length'));
-            return null;
-        }
-        const confirmation = window.prompt(t('settings.confirm_passphrase'));
-        requireCurrent();
-        if (confirmation !== passphrase) {
-            toast.error(t('settings.passphrases_no_match'));
-            return null;
-        }
         try {
             const tokens = await Promise.all(
                 Array.from({ length: count }, () => vault.stageFilePassphrase(passphrase)),

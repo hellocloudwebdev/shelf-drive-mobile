@@ -4,7 +4,7 @@ import { save, open } from '@tauri-apps/plugin-dialog';
 import { emit, listen, UnlistenFn } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { DownloadItem, TelegramFile } from '../types';
-import { android, files, transfers, vault as vaultApi } from '../api/index';
+import { files, transfers, vault as vaultApi } from '../api/index';
 import { isAndroidPlatform, showFileDialogFallback, pickWithFallback, sanitizeFilename } from '../utils';
 import { useSettings } from '../context/SettingsContext';
 import type { Store } from '@tauri-apps/plugin-store';
@@ -15,7 +15,9 @@ import { formatBytes } from '../utils';
 import { triggerHaptic } from '../services/feedback';
 import { isTransientNetworkError, restoreDownloadQueue, serializeDownloadQueue } from '../services/transferQueuePolicy';
 import { userFacingError } from '../services/userFacingError';
-import { evaluateAndroidTransferPolicy } from '../services/androidTransferPolicy';
+import { evaluateAndroidTransferPolicy, type AndroidTransferEnvironment } from '../services/androidTransferPolicy';
+import { queryAndroidTransferEnvironment } from '../services/transferEnvironment';
+import { useEncryptionPrompt } from '../context/EncryptionPromptContext';
 import {
     clearTerminalTransfers,
     downloadItemToTransferRequest,
@@ -35,6 +37,11 @@ interface ProgressPayload {
     total_bytes: number;
     speed_bytes_per_sec: number;
 }
+
+/** Per-item rounds for the scheduled re-pump after an environment query fails. */
+const MAX_ENVIRONMENT_RETRY_ROUNDS = 3;
+/** Backoff between re-pump rounds: 2s, then 4s. */
+const ENVIRONMENT_RETRY_BASE_MS = 2_000;
 
 export function useFileDownload(
     store: Store | null,
@@ -68,12 +75,35 @@ export function useFileDownload(
     androidNetworkAvailableRef.current = androidNetworkAvailable;
     const { settings, updateSetting } = useSettings();
     const { confirm, chooseDownloadCollision } = useConfirm();
+    const { requestFilePassphrase } = useEncryptionPrompt();
     const lastDownloadDirectoryRef = useRef<string | null>(null);
     const webDavTipShownRef = useRef(settings.downloadWebdavTipSeen);
+    // A failed environment read used to leave items stuck in `pending` with no
+    // retry and no visible state. Failed items now wait visibly and a bounded
+    // timer re-triggers the pump; the tick lives in state so the pump re-runs.
+    const [environmentRetryTick, setEnvironmentRetryTick] = useState(0);
+    const environmentRetryRoundsRef = useRef(new Map<string, number>());
+    const environmentRetryTimersRef = useRef(new Map<string, number>());
 
     useEffect(() => {
         webDavTipShownRef.current = settings.downloadWebdavTipSeen;
     }, [settings.downloadWebdavTipSeen]);
+
+    useEffect(() => () => {
+        for (const timer of environmentRetryTimersRef.current.values()) window.clearTimeout(timer);
+        environmentRetryTimersRef.current.clear();
+    }, []);
+
+    const scheduleEnvironmentRetry = (itemId: string, round: number) => {
+        const timers = environmentRetryTimersRef.current;
+        const existing = timers.get(itemId);
+        if (existing !== undefined) window.clearTimeout(existing);
+        const timer = window.setTimeout(() => {
+            timers.delete(itemId);
+            setEnvironmentRetryTick(tick => tick + 1);
+        }, ENVIRONMENT_RETRY_BASE_MS * round);
+        timers.set(itemId, timer);
+    };
 
     const directoryFromPath = (path: string) => {
         const separator = path.includes('\\') ? '\\' : '/';
@@ -326,7 +356,7 @@ export function useFileDownload(
                 if (!isCurrent() && ownerRef.current === item.ownerId) setDownloadQueue(queue => [...queue]);
             });
         }
-    }, [downloadQueue, settings.maxConcurrentDownloads, androidNetworkAvailable, initialized, store, ownerId]);
+    }, [downloadQueue, settings.maxConcurrentDownloads, androidNetworkAvailable, initialized, store, ownerId, environmentRetryTick]);
 
     const enqueueDownloadItems = async (items: DownloadItem[]) => {
         if (items.length === 0) return;
@@ -393,8 +423,38 @@ export function useFileDownload(
     const processItem = async (item: DownloadItem) => {
         if (!ownsItem(item)) return;
         if (isAndroidPlatform) {
-            const environment = await android.getTransferEnvironment().catch(() => null);
-            if (!isCurrent() || !environment) return;
+            let environment: AndroidTransferEnvironment | null = null;
+            try {
+                environment = await queryAndroidTransferEnvironment();
+            } catch (error) {
+                console.warn('[Download] Android transfer conditions are unavailable:', error);
+            }
+            if (!isCurrent()) return;
+            if (!environment) {
+                // Fail safe: an unknown environment blocks the transfer. The
+                // item waits visibly and the pump re-runs on a bounded timer;
+                // after the final round it surfaces as a retryable error
+                // instead of stalling silently.
+                const rounds = (environmentRetryRoundsRef.current.get(item.id) ?? 0) + 1;
+                environmentRetryRoundsRef.current.set(item.id, rounds);
+                const exhausted = rounds >= MAX_ENVIRONMENT_RETRY_ROUNDS;
+                if (exhausted) {
+                    environmentRetryRoundsRef.current.delete(item.id);
+                    environmentRetryTimersRef.current.get(item.id) && window.clearTimeout(environmentRetryTimersRef.current.get(item.id));
+                    environmentRetryTimersRef.current.delete(item.id);
+                } else {
+                    scheduleEnvironmentRetry(item.id, rounds);
+                }
+                setDownloadQueue(queue => queue.map(candidate => candidate.id === item.id ? {
+                    ...candidate,
+                    status: exhausted ? 'error' as const : 'waiting_for_network' as const,
+                    error: exhausted
+                        ? 'Android transfer conditions stayed unavailable after several attempts. Retry the download.'
+                        : 'Waiting for Android transfer conditions',
+                } : candidate));
+                return;
+            }
+            environmentRetryRoundsRef.current.delete(item.id);
             const gate = evaluateAndroidTransferPolicy(environment, settings, item.totalBytes ?? 0);
             if (!gate.allowed) {
                 setDownloadQueue(queue => queue.map(candidate => candidate.id === item.id ? {
@@ -429,11 +489,14 @@ export function useFileDownload(
             }
             if (needsPassphrase && !promptToken) {
                 if (!isCurrent()) return;
-                const passphrase = window.prompt(
-                    protectionMode === 'vault_and_passphrase'
-                        ? `${t('settings.vault_is_locked')}\n${t('settings.encryption_mode_passphrase')}`
-                        : t('settings.encryption_mode_passphrase'),
-                );
+                // The in-app sheet replaces the native prompt, which Android
+                // WebViews may suppress — a suppressed prompt used to resolve
+                // null and park the item invisibly. A dismissed sheet keeps
+                // the item in `waiting_for_unlock` with a visible error.
+                const passphrase = await requestFilePassphrase({
+                    title: t('settings.encryption_mode_passphrase'),
+                    message: protectionMode === 'vault_and_passphrase' ? t('settings.vault_is_locked') : undefined,
+                });
                 if (!isCurrent()) return;
                 if (!passphrase) {
                     setDownloadQueue(q => q.map(i => i.id === item.id ? {

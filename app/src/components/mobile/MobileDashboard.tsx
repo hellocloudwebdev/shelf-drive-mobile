@@ -15,6 +15,7 @@ import { ShareDialog } from '../desktop/dashboard/ShareDialog';
 import { RenameFolderSheet } from './RenameFolderSheet';
 import { GlassSearch, FilterChipRow, SectionHeader, GlassIconButton } from './glass';
 import { FloatingUploadButton, TransferIndicator, UploadSheet } from './FloatingUploadButton';
+import { BlockedTransferBanner } from './BlockedTransferBanner';
 import { MobileUpdatePrompt } from './MobileUpdatePrompt';
 import { FileActionSheet } from './FileActionSheet';
 import { RenameFileSheet, MoveFileSheet } from './FileSheets';
@@ -40,6 +41,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfirm } from '../../context/ConfirmContext';
 import { BandwidthWidget } from '../desktop/dashboard/BandwidthWidget';
 import { evaluateAndroidTransferPolicy, type AndroidTransferEnvironment } from '../../services/androidTransferPolicy';
+import { queryAndroidTransferEnvironment } from '../../services/transferEnvironment';
 import { effectiveVideoUploadMode } from '../../services/videoUploadMode';
 import i18n from '../../i18n';
 
@@ -259,8 +261,12 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
   const { data: androidTransferEnvironment } = useQuery({
     queryKey: ['android-transfer-environment'],
-    queryFn: () => android.getTransferEnvironment(),
+    // The retry service owns backoff; a failed chain surfaces as an errored
+    // query so the gate stays closed (fail-safe) until the periodic tick or
+    // the blocked-transfers banner re-checks it.
+    queryFn: () => queryAndroidTransferEnvironment(),
     enabled: isAndroid,
+    retry: false,
     refetchInterval: isAndroid ? 60_000 : false,
     refetchOnWindowFocus: true,
   });
@@ -350,6 +356,26 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const [bulkShareLoading, setBulkShareLoading] = useState(false);
   const [bulkShareCopied, setBulkShareCopied] = useState<Set<string>>(new Set());
   const [uploadingCacheFiles, setUploadingCacheFiles] = useState<Set<string>>(new Set());
+  const [blockedBannerDismissedReason, setBlockedBannerDismissedReason] = useState<string | null>(null);
+
+  const blockedTransferCount = useMemo(() => {
+    return uploadQueue.filter(item => ['pending', 'waiting_for_network'].includes(item.status)).length
+      + downloadQueue.filter(item => ['pending', 'waiting_for_network'].includes(item.status)).length;
+  }, [uploadQueue, downloadQueue]);
+
+  useEffect(() => {
+    if (transferAllowed || blockedTransferCount === 0) {
+      setBlockedBannerDismissedReason(null);
+    }
+  }, [transferAllowed, blockedTransferCount]);
+
+  const showBlockedBanner = !transferAllowed && blockedTransferCount > 0 && blockedBannerDismissedReason !== transferWaitingReason;
+
+  const handleRecheckTransfers = useCallback(() => {
+    if (isAndroid) {
+      void queryClient.invalidateQueries({ queryKey: ['android-transfer-environment'] });
+    }
+  }, [isAndroid, queryClient]);
   const transferIdCounter = useRef(0);
   const transferServiceRunningRef = useRef(false);
   const transferNotificationTimerRef = useRef<number | null>(null);
@@ -1153,6 +1179,16 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
               </div>
             </header>
 
+            {showBlockedBanner && (
+              <BlockedTransferBanner
+                blockedCount={blockedTransferCount}
+                reason={transferWaitingReason}
+                onRetry={handleRecheckTransfers}
+                onOpenTransfers={() => setTransfersOpen(true)}
+                onDismiss={() => setBlockedBannerDismissedReason(transferWaitingReason)}
+              />
+            )}
+
             {!isBrowsing && (
               <>
                 <GlassSearch value={homeSearch} onChange={setHomeSearch} placeholder="Search files and folders..." />
@@ -1535,6 +1571,46 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             </SettingsSection>
 
             <SettingsSection title="Files">
+              <SettingsRow
+                icon={<UploadCloud className="h-4.5 w-4.5" aria-hidden="true" />}
+                title={t('settings.concurrent_uploads')}
+                description={t('settings.max_uploads_desc')}
+                trailing={
+                  <select
+                    value={settings.maxConcurrentUploads}
+                    onChange={event => {
+                      const value = Math.max(1, Math.min(10, Number(event.target.value) || 1));
+                      updateSetting('maxConcurrentUploads', value);
+                    }}
+                    aria-label={t('settings.concurrent_uploads')}
+                    className="min-h-11 shrink-0 rounded-lg border border-app-border bg-app-surface-raised px-2 text-xs text-app-text"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(count => (
+                      <option key={count} value={count}>{count}</option>
+                    ))}
+                  </select>
+                }
+              />
+              <SettingsRow
+                icon={<Download className="h-4.5 w-4.5" aria-hidden="true" />}
+                title={t('settings.concurrent_downloads')}
+                description={t('settings.max_downloads_desc')}
+                trailing={
+                  <select
+                    value={settings.maxConcurrentDownloads}
+                    onChange={event => {
+                      const value = Math.max(1, Math.min(10, Number(event.target.value) || 1));
+                      updateSetting('maxConcurrentDownloads', value);
+                    }}
+                    aria-label={t('settings.concurrent_downloads')}
+                    className="min-h-11 shrink-0 rounded-lg border border-app-border bg-app-surface-raised px-2 text-xs text-app-text"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(count => (
+                      <option key={count} value={count}>{count}</option>
+                    ))}
+                  </select>
+                }
+              />
               <SettingsRow
                 icon={<UploadCloud className="h-4.5 w-4.5" aria-hidden="true" />}
                 title={t('settings.video_upload_default')}

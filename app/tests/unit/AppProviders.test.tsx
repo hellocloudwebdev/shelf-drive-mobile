@@ -46,6 +46,12 @@ vi.mock('../../src/hooks/useEncryption', () => ({
   ),
 }));
 
+vi.mock('../../src/context/EncryptionPromptContext', () => ({
+  EncryptionPromptProvider: ({ children }: { children: ReactNode }) => (
+    <section data-provider="encryption-prompt">{children}</section>
+  ),
+}));
+
 function QueryClientProbe({ clients }: { clients: QueryClient[] }) {
   clients.push(useQueryClient());
   return <span data-testid="provider-child">ready</span>;
@@ -74,6 +80,7 @@ describe('AppProviders', () => {
       'sync',
       'upload-choice',
       'encryption',
+      'encryption-prompt',
     ]);
   });
 
