@@ -85,6 +85,13 @@ Severity meanings: **P0** = release blocker/security/data integrity; **P1** = im
 - **Affected files:** `app/src/components/shared/EncryptionPromptSheet.tsx`, `app/src/context/EncryptionPromptContext.tsx`, `app/src/components/mobile/BlockedTransferBanner.tsx`, `app/src/services/transferEnvironment.ts`, `app/src/services/androidTransferPolicy.ts`, `app/src/hooks/useFileUpload.ts`, `app/src/hooks/useFileDownload.ts`, `app/src/components/mobile/MobileDashboard.tsx`, Kotlin services/workers in `app/android-overrides/app/src/main/java/`.
 - **Acceptance matrix:** upload unprotected/protected; cancel and dismiss protection sheet; wrong/cancelled passphrase; small/large file; download and MediaStore save; concurrency 1 and >1; Wi-Fi, metered mobile data, offline/online transition, roaming/battery policy; JNI query transient failure/timeout; app background/foreground; screen lock; process death/relaunch; reboot/recovery worker; partial failure and retry; duplicate filename; storage full/permission denial; verify queued items are not silently dropped, duplicated, or marked complete incorrectly. Record Android version/device model, steps, logs with secrets/PII removed, expected vs actual and outcome.
 
+#### R-009 — Align Android CI Node runtime with the declared PDF.js engine requirement
+- **Finding:** the successful debug APK log shows `npm warn EBADENGINE` for `pdfjs-dist@6.3.289`, which declares Node `>=22.13.0 || >=24`; both Android workflows currently set up Node 20. The build succeeded despite running outside the dependency's declared support range.
+- **Severity/status:** P0 / toolchain mismatch verified in run log; no observed build failure yet.
+- **Dependencies:** can be fixed independently, but must land on the selected candidate before final CI.
+- **Affected files:** `.github/workflows/android.yml`, `.github/workflows/android-debug-apk.yml`, `app/package.json` only if the dependency engine contract is intentionally changed.
+- **Acceptance:** use a supported Node 22.13+ runtime consistently for npm install/build/test in Android workflows; rerun debug build and full Android release workflow; confirm no EBADENGINE warning remains. Do not suppress the warning or downgrade the dependency without compatibility review.
+
 #### R-008 — Run complete CI release gates on the selected release commit
 - **Finding:** debug workflow passed; dependency assurance failed on main. This is not a production release verification.
 - **Severity/status:** P0 / pending.
@@ -194,9 +201,9 @@ For every batch:
 ## 6. First execution order
 
 1. Resolve the branch integration/version discrepancy (R-001) without publishing.
-2. Fix the source-map-js advisory and rerun dependency assurance (R-002).
-3. Conduct the updater-key exposure assessment (R-004) and verify signing configuration safely (R-003).
-4. Verify the actual package ID and release artifact contracts (R-005/R-006).
-5. Run the device transfer/recovery matrix (R-007), fixing failures in small batches.
-6. Complete full CI release gates (R-008).
-7. Start P1 feature batches in order: Vault → Sharing/Settings backup → Folder Sync → WebDAV/REST (after network-security decision) → Offline packs/Cleanup → Archive → remaining settings.
+2. Align Android workflow Node runtime (R-009), then rerun debug build and Android CI.
+3. Fix/verify the source-map-js advisory on the selected branch and rerun dependency assurance (R-002).
+4. Conduct the updater-key exposure assessment (R-004) and verify signing configuration safely (R-003).
+5. Verify the actual package ID and release artifact contracts (R-005/R-006).
+6. Run the device transfer/recovery matrix (R-007), fixing failures in small batches.
+7. Complete full CI release gates (R-008), then start P1 feature batches in order: Vault → Sharing/Settings backup → Folder Sync → WebDAV/REST (after network-security decision) → Offline packs/Cleanup → Archive → remaining settings.
