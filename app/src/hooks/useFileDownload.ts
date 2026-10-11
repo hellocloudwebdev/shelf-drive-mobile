@@ -15,7 +15,7 @@ import { formatBytes } from '../utils';
 import { triggerHaptic } from '../services/feedback';
 import { isTransientNetworkError, restoreDownloadQueue, serializeDownloadQueue } from '../services/transferQueuePolicy';
 import { userFacingError } from '../services/userFacingError';
-import { evaluateAndroidTransferPolicy } from '../services/androidTransferPolicy';
+import { evaluateAndroidTransferPolicy, type AndroidTransferEnvironment } from '../services/androidTransferPolicy';
 import {
     clearTerminalTransfers,
     downloadItemToTransferRequest,
@@ -35,6 +35,12 @@ interface ProgressPayload {
     total_bytes: number;
     speed_bytes_per_sec: number;
 }
+
+/** Automatic attempts are capped for both transient transfer failures and
+ * transfer-environment reads; exhaustion is a terminal, user-visible error. */
+const MAX_TRANSIENT_ATTEMPTS = 3;
+const MAX_ENVIRONMENT_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 2_000;
 
 export function useFileDownload(
     store: Store | null,
@@ -64,6 +70,19 @@ export function useFileDownload(
     const androidNetworkAvailableRef = useRef(androidNetworkAvailable);
     const desktopRevisionsRef = useRef<Map<string, number>>(new Map());
     const desktopStatusesRef = useRef<Map<string, string>>(new Map());
+    // Environment-acquisition retries stay separate from actual download
+    // retries: their counters, timers, and backoff are tracked independently.
+    const environmentRetryCountsRef = useRef(new Map<string, number>());
+    const environmentRetryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    const transientRetryCountsRef = useRef(new Map<string, number>());
+    const transientRetryTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    // Telegram FLOOD_WAIT cooldown flips are scheduled work too: they are
+    // tracked so cancel, pause, account switching, and unmount can retract
+    // them instead of letting a stale timer fire into a dead queue.
+    const cooldownTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    // Concurrent environment reads share one in-flight request so a burst of
+    // scheduler restarts cannot flood the JNI bridge.
+    const transferEnvironmentRequestRef = useRef<Promise<AndroidTransferEnvironment | null> | null>(null);
     downloadQueueRef.current = downloadQueue;
     androidNetworkAvailableRef.current = androidNetworkAvailable;
     const { settings, updateSetting } = useSettings();
@@ -86,9 +105,74 @@ export function useFileDownload(
         return directory.endsWith(separator) ? `${directory}${filename}` : `${directory}${separator}${filename}`;
     };
 
+    const clearRetryTimer = (registry: Map<string, ReturnType<typeof setTimeout>>, id: string) => {
+        const timer = registry.get(id);
+        if (timer !== undefined) {
+            registry.delete(id);
+            window.clearTimeout(timer);
+        }
+    };
+
+    const clearEnvironmentRetryState = (id: string) => {
+        clearRetryTimer(environmentRetryTimersRef.current, id);
+        environmentRetryCountsRef.current.delete(id);
+    };
+
+    const clearCooldownTimer = (id: string) => {
+        const timer = cooldownTimersRef.current.get(id);
+        if (timer !== undefined) {
+            cooldownTimersRef.current.delete(id);
+            window.clearTimeout(timer);
+        }
+    };
+
+    const clearItemRetryBookkeeping = (id: string) => {
+        clearEnvironmentRetryState(id);
+        clearRetryTimer(transientRetryTimersRef.current, id);
+        transientRetryCountsRef.current.delete(id);
+        clearCooldownTimer(id);
+    };
+
+    const clearAllRetryBookkeeping = () => {
+        for (const timer of environmentRetryTimersRef.current.values()) window.clearTimeout(timer);
+        for (const timer of transientRetryTimersRef.current.values()) window.clearTimeout(timer);
+        for (const timer of cooldownTimersRef.current.values()) window.clearTimeout(timer);
+        environmentRetryTimersRef.current.clear();
+        transientRetryTimersRef.current.clear();
+        cooldownTimersRef.current.clear();
+        environmentRetryCountsRef.current.clear();
+        transientRetryCountsRef.current.clear();
+    };
+
+    /** Flip a waiting item back to pending after its backoff elapses. The
+     * status guard keeps the flip from overriding pause, cancel, or removal. */
+    const schedulePendingFlip = (
+        registry: Map<string, ReturnType<typeof setTimeout>>,
+        itemId: string,
+        delayMs: number,
+    ) => {
+        clearRetryTimer(registry, itemId);
+        const timer = window.setTimeout(() => {
+            registry.delete(itemId);
+            if (!isCurrent()) return;
+            setDownloadQueue(q => q.map(i => ownsItem(i) && i.id === itemId && i.status === 'waiting_for_network'
+                ? { ...i, status: 'pending' as const, error: undefined }
+                : i));
+        }, delayMs);
+        registry.set(itemId, timer);
+    };
+
+    const getTransferEnvironmentCoalesced = () => {
+        transferEnvironmentRequestRef.current ??= android.getTransferEnvironment()
+            .catch(() => null)
+            .finally(() => { transferEnvironmentRequestRef.current = null; });
+        return transferEnvironmentRequestRef.current;
+    };
+
     // Listen for progress events from Rust
     useEffect(() => {
         if (!isAndroidPlatform) return;
+        let disposed = false;
         let unlisten: UnlistenFn | undefined;
         listen<ProgressPayload>('download-progress', (event) => {
             setDownloadQueue(q => q.map(i =>
@@ -100,11 +184,26 @@ export function useFileDownload(
                     speedBytesPerSec: event.payload.speed_bytes_per_sec,
                 } : i
             ));
-        }).then(fn => { unlisten = fn; });
-        return () => { unlisten?.(); };
+        }).then(fn => {
+            if (disposed) {
+                fn();
+                return;
+            }
+            unlisten = fn;
+        }).catch(() => undefined);
+        return () => {
+            disposed = true;
+            unlisten?.();
+        };
+    }, []);
+
+    // Unmount must not leave scheduled retries firing into a dead component.
+    useEffect(() => () => {
+        clearAllRetryBookkeeping();
     }, []);
 
     useEffect(() => {
+        clearAllRetryBookkeeping();
         if (isAndroidPlatform) {
             setDownloadQueue(queue => queue.map(item => {
                 if (item.ownerId === ownerId || !['downloading', 'decrypting', 'verifying'].includes(item.status)) return item;
@@ -296,7 +395,10 @@ export function useFileDownload(
     useEffect(() => {
         if (!isAndroidPlatform) return;
         if (isAndroidPlatform && !androidNetworkAvailable) return;
-        if (isAndroidPlatform && (!store || !initialized)) return;
+        // Block only while the saved-queue restore is in flight; a restore that
+        // already failed must not gate the scheduler forever — the
+        // persistenceHealthy check below degrades those items to 'error'.
+        if (isAndroidPlatform && (!store || (!initialized && initializingRef.current))) return;
         const maxConcurrent = settings.maxConcurrentDownloads || 1;
         const available = maxConcurrent - activeCountRef.current;
         if (available <= 0) return;
@@ -323,7 +425,10 @@ export function useFileDownload(
                 await processItem(current);
             })().finally(() => {
                 startingItemsRef.current.delete(item.id);
-                if (!isCurrent() && ownerRef.current === item.ownerId) setDownloadQueue(queue => [...queue]);
+                // Reconsider pending work once the start slot frees: a manual
+                // retry may have re-queued this item while the previous start
+                // was still unwinding.
+                setDownloadQueue(queue => [...queue]);
             });
         }
     }, [downloadQueue, settings.maxConcurrentDownloads, androidNetworkAvailable, initialized, store, ownerId]);
@@ -393,8 +498,37 @@ export function useFileDownload(
     const processItem = async (item: DownloadItem) => {
         if (!ownsItem(item)) return;
         if (isAndroidPlatform) {
-            const environment = await android.getTransferEnvironment().catch(() => null);
-            if (!isCurrent() || !environment) return;
+            const environment = await getTransferEnvironmentCoalesced();
+            if (!isCurrent()) return;
+            // Cancellation during the environment window must not reach the
+            // backend: the transfer does not exist yet.
+            if (cancelledRef.current.has(item.id)) {
+                cancelledRef.current.delete(item.id);
+                return;
+            }
+            if (!environment) {
+                // A failed environment read is not a download failure: wait,
+                // then retry the read on a bounded backoff.
+                setDownloadQueue(queue => queue.map(candidate => candidate.id === item.id ? {
+                    ...candidate,
+                    status: 'waiting_for_network' as const,
+                    error: 'Waiting for the Android transfer environment',
+                } : candidate));
+                const attempts = (environmentRetryCountsRef.current.get(item.id) ?? 0) + 1;
+                environmentRetryCountsRef.current.set(item.id, attempts);
+                if (attempts >= MAX_ENVIRONMENT_ATTEMPTS) {
+                    clearEnvironmentRetryState(item.id);
+                    setDownloadQueue(queue => queue.map(candidate => candidate.id === item.id ? {
+                        ...candidate,
+                        status: 'error' as const,
+                        error: `Transfer environment unavailable after ${MAX_ENVIRONMENT_ATTEMPTS} attempts`,
+                    } : candidate));
+                    toast.error(`Download failed: ${item.filename}`);
+                    return;
+                }
+                schedulePendingFlip(environmentRetryTimersRef.current, item.id, RETRY_BASE_DELAY_MS * attempts);
+                return;
+            }
             const gate = evaluateAndroidTransferPolicy(environment, settings, item.totalBytes ?? 0);
             if (!gate.allowed) {
                 setDownloadQueue(queue => queue.map(candidate => candidate.id === item.id ? {
@@ -404,6 +538,7 @@ export function useFileDownload(
                 } : candidate));
                 return;
             }
+            clearEnvironmentRetryState(item.id);
         }
         runningItemsRef.current.set(item.id, isCurrent);
         activeCountRef.current++;
@@ -486,9 +621,14 @@ export function useFileDownload(
                 }
             }
 
-            // Pause can be requested while metadata, credentials, or a save
-            // destination are being resolved, before the backend transfer exists.
+            // Pause or cancel can be requested while metadata, credentials, or
+            // a save destination are being resolved, before the backend
+            // transfer exists.
             if (!isCurrent()) return;
+            if (cancelledRef.current.has(item.id)) {
+                cancelledRef.current.delete(item.id);
+                return;
+            }
             if (pausedRef.current.has(item.id)) {
                 pausedRef.current.delete(item.id);
                 return;
@@ -510,6 +650,7 @@ export function useFileDownload(
             // downloaded again on resume.
             pausedRef.current.delete(item.id);
             networkPausedRef.current.delete(item.id);
+            clearItemRetryBookkeeping(item.id);
             if (cancelledRef.current.has(item.id)) {
                 cancelledRef.current.delete(item.id);
             } else {
@@ -546,11 +687,14 @@ export function useFileDownload(
                     const retryAt = Date.now() + seconds * 1000;
                     setDownloadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'cooldown', error: `Telegram cooling down (${seconds}s)` } : i));
                     void emit('telegram-cooldown', { operation: 'Download', retryAt, seconds, active: true });
-                    window.setTimeout(() => {
+                    clearCooldownTimer(item.id);
+                    const cooldownTimer = window.setTimeout(() => {
+                        cooldownTimersRef.current.delete(item.id);
                         if (!isCurrent()) return;
                         void emit('telegram-cooldown', { operation: 'Download', retryAt, seconds: 0, active: false });
                         setDownloadQueue(q => q.map(i => i.id === item.id && i.status === 'cooldown' ? { ...i, status: 'pending', error: undefined } : i));
                     }, seconds * 1000);
+                    cooldownTimersRef.current.set(item.id, cooldownTimer);
                 } else if (errMsg.includes('Transfer cancelled')) {
                     setDownloadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'cancelled' } : i));
                 } else if (errMsg.includes('VAULT_LOCKED') || errMsg.includes('KEY_REQUIRED')) {
@@ -562,11 +706,27 @@ export function useFileDownload(
                     } : i));
                     toast.warning(t('settings.encryption_mode_passphrase'));
                 } else if (isAndroidPlatform && isTransientNetworkError(errMsg)) {
-                    setDownloadQueue(q => q.map(i => i.id === item.id ? {
-                        ...i,
-                        status: 'waiting_for_network',
-                        error: 'Waiting for a stable network connection',
-                    } : i));
+                    // Ordinary transient failures retry automatically, but only
+                    // a bounded number of times; exhaustion is terminal so the
+                    // queue cannot loop forever on a flaky link.
+                    const attempts = (transientRetryCountsRef.current.get(item.id) ?? 0) + 1;
+                    transientRetryCountsRef.current.set(item.id, attempts);
+                    if (attempts >= MAX_TRANSIENT_ATTEMPTS) {
+                        transientRetryCountsRef.current.delete(item.id);
+                        setDownloadQueue(q => q.map(i => i.id === item.id ? {
+                            ...i,
+                            status: 'error',
+                            error: `Download failed after ${MAX_TRANSIENT_ATTEMPTS} attempts: ${errMsg}`,
+                        } : i));
+                        toast.error(`Download failed: ${item.filename}`);
+                    } else {
+                        setDownloadQueue(q => q.map(i => i.id === item.id ? {
+                            ...i,
+                            status: 'waiting_for_network',
+                            error: `Waiting for a stable network connection (attempt ${attempts + 1} of ${MAX_TRANSIENT_ATTEMPTS})`,
+                        } : i));
+                        schedulePendingFlip(transientRetryTimersRef.current, item.id, RETRY_BASE_DELAY_MS * attempts);
+                    }
                 } else {
                     setDownloadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: errMsg } : i));
                     toast.error(`Download failed: ${item.filename}`);
@@ -756,16 +916,25 @@ export function useFileDownload(
             toast.info('All downloads cancelled');
             return;
         }
+        clearAllRetryBookkeeping();
         setDownloadQueue(q => {
             const active = q.filter(i => ownsItem(i) && ['downloading', 'decrypting', 'verifying'].includes(i.status));
-            const removable = q.filter(i => ownsItem(i) && ['pending', 'paused', 'waiting_for_network', 'waiting_for_unlock', 'cooldown', 'error'].includes(i.status));
-            for (const item of active) {
+            const removable = q.filter(i => ownsItem(i)
+                && ['pending', 'paused', 'waiting_for_network', 'waiting_for_unlock', 'cooldown', 'error'].includes(i.status)
+                && !startingItemsRef.current.has(i.id)
+                && !runningItemsRef.current.has(i.id));
+            // Items mid-start cannot be unscheduled: flag them like active
+            // transfers so their pending start aborts before the backend call.
+            const starting = q.filter(i => ownsItem(i)
+                && ['pending', 'paused', 'waiting_for_network', 'waiting_for_unlock', 'cooldown', 'error'].includes(i.status)
+                && (startingItemsRef.current.has(i.id) || runningItemsRef.current.has(i.id)));
+            for (const item of [...active, ...starting]) {
                 cancelledRef.current.add(item.id);
                 transfers.cancel(item.id).catch(() => {});
             }
             return q
                 .filter(i => !removable.some(candidate => candidate.id === i.id))
-                .map(i => active.some(activeItem => activeItem.id === i.id) ? { ...i, status: 'cancelled' as const } : i);
+                .map(i => [...active, ...starting].some(activeItem => activeItem.id === i.id) ? { ...i, status: 'cancelled' as const } : i);
         });
         toast.info('All downloads cancelled');
     };
@@ -784,10 +953,19 @@ export function useFileDownload(
                 transfers.cancel(item.id).catch(() => {});
                 return { ...item, status: 'paused' as const, error: undefined };
             }
-            return item.status === 'pending' || item.status === 'cooldown'
-                ? { ...item, status: 'paused' as const, error: undefined }
-                : item;
+            if (item.status === 'pending' || item.status === 'cooldown' || item.status === 'waiting_for_network') {
+                // A waiting item left as waiting_for_network would be flipped
+                // back to pending by the next reconnect, resuming work the
+                // user just paused. Pause it and drop its network-pause flag
+                // so a later manual resume surfaces real errors again.
+                if (item.status === 'waiting_for_network') networkPausedRef.current.delete(item.id);
+                return { ...item, status: 'paused' as const, error: undefined };
+            }
+            return item;
         }));
+        // A scheduled retry flip must not override a bulk pause and restart
+        // work the user just paused.
+        clearAllRetryBookkeeping();
         toast.info('Downloads paused. Active items will restart safely when resumed.');
     };
 
@@ -810,6 +988,7 @@ export function useFileDownload(
             void transferItemAction('cancel', id, ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
             return;
         }
+        clearItemRetryBookkeeping(id);
         setDownloadQueue(q => {
             const item = q.find(i => ownsItem(i) && i.id === id);
             if (item && ['downloading', 'decrypting', 'verifying'].includes(item.status)) {
@@ -818,6 +997,15 @@ export function useFileDownload(
                 return q.map(i => i.id === id ? { ...i, status: 'cancelled' as const } : i);
             }
             if (item && ['pending', 'paused', 'waiting_for_network', 'waiting_for_unlock', 'cooldown', 'error'].includes(item.status)) {
+                // A start already underway cannot be unscheduled: flag the
+                // cancellation so the pending start aborts before the backend
+                // transfer is created, and cancel the transfer if it just
+                // managed to start.
+                if (startingItemsRef.current.has(id) || runningItemsRef.current.has(id)) {
+                    cancelledRef.current.add(id);
+                    transfers.cancel(id).catch(() => {});
+                    return q.map(i => i.id === id ? { ...i, status: 'cancelled' as const } : i);
+                }
                 return q.filter(i => i.id !== id);
             }
             return q;
@@ -826,8 +1014,8 @@ export function useFileDownload(
 
     const retryItem = async (id: string) => {
         if (!isCurrent()) return;
-        if (cancelledRef.current.has(id)) return;
         if (!isAndroidPlatform) {
+            if (cancelledRef.current.has(id)) return;
             const item = downloadQueue.find(candidate => ownsItem(candidate) && candidate.id === id);
             if (!item) return;
             if (item.status === 'waiting_for_unlock') {
@@ -841,6 +1029,16 @@ export function useFileDownload(
             }
             await transferItemAction('retry', id, ownerId);
             return;
+        }
+        // A user-initiated retry overrides any in-flight cancellation and
+        // grants a fresh set of automatic attempts. Cancellation bookkeeping
+        // is only cleared once no start is unwinding, so a late
+        // 'Transfer cancelled' cannot clobber the retry's state.
+        pausedRef.current.delete(id);
+        networkPausedRef.current.delete(id);
+        clearItemRetryBookkeeping(id);
+        if (!startingItemsRef.current.has(id) && !runningItemsRef.current.has(id)) {
+            cancelledRef.current.delete(id);
         }
         setDownloadQueue(q => q.map(i =>
             ownsItem(i) && i.id === id && (i.status === 'error' || i.status === 'cancelled' || i.status === 'waiting_for_unlock')
@@ -858,6 +1056,9 @@ export function useFileDownload(
             pausedRef.current.add(id);
             void transfers.cancel(id).catch(() => undefined);
         }
+        if (item.status === 'waiting_for_network') networkPausedRef.current.delete(id);
+        // A scheduled retry flip must not override the pause.
+        clearItemRetryBookkeeping(id);
         setDownloadQueue(queue => queue.map(candidate => candidate.id === id
             ? { ...candidate, status: 'paused', speedBytesPerSec: 0, error: undefined }
             : candidate));

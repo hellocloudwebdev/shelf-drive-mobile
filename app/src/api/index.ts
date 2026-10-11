@@ -204,6 +204,12 @@ export type AndroidStreamPlayerIntent = {
   streamUrl: string; title: string; mimeType: string; mediaId: string; preferencesJson: string;
 };
 
+/** A file shared into the app via Android's share sheet, cached for upload
+ * (mirrors the Rust `CachedFileEntry` serialization: snake_case `file_size`). */
+export type CachedFileEntry = {
+  uri: string; cached_path: string; file_name: string; file_size: number;
+};
+
 // ── Domain: files ─────────────────────────────────────────────────────────
 
 export const files = {
@@ -793,9 +799,7 @@ export const android = {
     return tauriInvoke<AndroidPlaybackHistoryEntry[]>("cmd_get_android_playback_history");
   },
   listCachedFiles() {
-    return tauriInvoke<{ uri: string; cached_path: string; file_name: string; size: number }[]>(
-      "cmd_list_cached_files",
-    );
+    return tauriInvoke<CachedFileEntry[]>("cmd_list_cached_files");
   },
   removeCachedPath(uri: string) {
     return tauriInvokeVoid("cmd_remove_cached_path", { uri });

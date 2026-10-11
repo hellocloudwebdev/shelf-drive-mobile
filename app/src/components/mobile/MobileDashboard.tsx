@@ -1,6 +1,6 @@
 import { lazy, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, Lock, ChevronDown, ChevronRight, Share2, Link, Copy, Check, X, Loader2, Activity, Zap, Eye, EyeOff, HelpCircle, Pause, Play, RotateCcw, CheckCircle2, Database, Clock3, Star, Files as FilesIcon, Image as ImageIcon, Film as FilmIcon, FileText as FileTextIcon, Plus, FileWarning, Clapperboard, ArrowLeft, Send, Monitor, Languages, LifeBuoy, FileArchive, Paintbrush, Search } from 'lucide-react';
-import { android, files as filesApi, media, settings as settingsApi, shares, system } from '../../api/index';
+import { android, files as filesApi, media, settings as settingsApi, shares, system, type CachedFileEntry } from '../../api/index';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { listen } from '@tauri-apps/api/event';
@@ -40,6 +40,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfirm } from '../../context/ConfirmContext';
 import { BandwidthWidget } from '../desktop/dashboard/BandwidthWidget';
 import { evaluateAndroidTransferPolicy, type AndroidTransferEnvironment } from '../../services/androidTransferPolicy';
+import { fileQueryKey, invalidateFolderFileQueries, refreshFolderFiles } from '../../services/fileListRefresh';
 import { effectiveVideoUploadMode } from '../../services/videoUploadMode';
 import i18n from '../../i18n';
 
@@ -550,19 +551,9 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   }, [isAndroid]);
 
   // ── Android cached shared files ───────────────────────────────────────
-  interface CachedFileEntry {
-    uri: string;
-    cached_path: string;
-    file_name: string;
-    file_size: number;
-  }
-
   const { data: cachedFiles = [], refetch: refetchCachedFiles } = useQuery({
     queryKey: ['cached-files'],
-    // The backend serializes CachedFileEntry.file_size; the facade's declared
-    // return type is out of date, so the payload is viewed through the local
-    // interface that matches the Rust struct.
-    queryFn: () => android.listCachedFiles() as unknown as Promise<CachedFileEntry[]>,
+    queryFn: () => android.listCachedFiles(),
     enabled: isAndroid,
     refetchOnWindowFocus: true,
   });
@@ -607,56 +598,57 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     }
   }, [cachedFiles, refetchCachedFiles]);
 
-  // Real files loader: folders stream chunked; smart views use the activity
-  // and offline-cache commands shared with the desktop sidebar.
+  // Folder loads belong to one account/view generation: a response that
+  // outlives its scope must never repaint the current view.
+  const fileLoadSequenceRef = useRef(0);
+  const fileLoadScope = JSON.stringify([accountId, activeView, activeFolderId]);
+  const fileLoadScopeRef = useRef({ key: fileLoadScope, generation: 0 });
+  if (fileLoadScopeRef.current.key !== fileLoadScope) {
+    fileLoadScopeRef.current = { key: fileLoadScope, generation: fileLoadScopeRef.current.generation + 1 };
+  }
+  useEffect(() => () => { fileLoadSequenceRef.current++; }, [fileLoadScope]);
+
+  // Real files loader: folders stream chunked through the canonical refresh
+  // service; smart views use the activity and offline-cache commands shared
+  // with the desktop sidebar.
   const { data: allFiles = [], isLoading } = useQuery({
-    queryKey: ['files', activeFolderId, activeView, accountId],
-    queryFn: async () => {
+    queryKey: fileQueryKey(accountId, activeFolderId, activeView ?? 'folder'),
+    queryFn: async ({ signal }) => {
+      if (!accountId) throw new Error('ACCOUNT_REQUIRED');
+      const requestSequence = ++fileLoadSequenceRef.current;
+      const generation = fileLoadScopeRef.current.generation;
+      const isCurrent = () => !signal.aborted
+        && fileLoadScopeRef.current.generation === generation
+        && fileLoadSequenceRef.current === requestSequence;
       if (activeView) {
         if (activeView === 'offline') {
-          const files = await filesApi.listOfflineFiles(accountId!, 250);
-          return shapeMobileFiles(files);
+          return shapeMobileFiles(await filesApi.listOfflineFiles(accountId, 250));
         }
         if (activeView === 'large' || activeView === 'duplicates') {
           const insight = await filesApi.getStorageInsight({
             view: activeView,
-            ownerId: accountId!,
+            ownerId: accountId,
             largeThresholdBytes: 100 * 1024 * 1024,
             oldFileDays: 365,
           });
           return shapeMobileFiles(insight.files);
         }
-        const files = await filesApi.listFileActivity(accountId!, activeView, 250);
-        return shapeMobileFiles(files);
+        return shapeMobileFiles(await filesApi.listFileActivity(accountId, activeView, 250));
       }
 
-      let accumulatedFiles: any[] = [];
-      queryClient.setQueryData(['files', activeFolderId, activeView], []);
-
-      const unlisten = await listen<any>('folder-load-chunk', (event) => {
-        const payload = event.payload;
-        if (payload.folderId === activeFolderId) {
-          const newChunk = payload.files.map((f: any) => ({
-            ...f,
-            sizeStr: formatBytes(f.size),
-            type: f.icon_type || (f.name.endsWith('/') ? 'folder' : 'file')
-          }));
-          accumulatedFiles = [...accumulatedFiles, ...newChunk];
-          queryClient.setQueryData(['files', activeFolderId, activeView], accumulatedFiles);
-        }
+      const queryKey = fileQueryKey(accountId, activeFolderId);
+      return refreshFolderFiles({
+        ownerId: accountId,
+        folderId: activeFolderId,
+        requestId: `mobile-${crypto.randomUUID()}`,
+        signal,
+        isCurrent,
+        cachedFiles: queryClient.getQueryData<TelegramFile[]>(queryKey),
+        onFiles: files => queryClient.setQueryData(queryKey, files),
+        onProgress: () => {},
       });
-
-      try {
-        // The mobile loader intentionally sends no owner/request id; the
-        // backend derives both, and `undefined` fields are dropped during IPC
-        // serialization so the payload stays unchanged.
-        await filesApi.list(activeFolderId, undefined as unknown as string);
-        return accumulatedFiles;
-      } finally {
-        unlisten();
-      }
     },
-    enabled: !!store,
+    enabled: !!store && !!accountId,
   });
 
   // Home: recent activity for the Recent section (root context only).
@@ -859,7 +851,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     try {
       await media.getPreview(file.id, folderId);
       await media.setPreviewPinned(file.id, folderId, true);
-      await Promise.all([refetchOfflineCache(), queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] })]);
+      await Promise.all([refetchOfflineCache(), invalidateFolderFileQueries(queryClient, activeFolderId, accountId ?? undefined)]);
       toast.success(`${file.name} will be kept offline`, { id: toastId });
     } catch (error) {
       toast.error(`Could not keep this file offline: ${error}`, { id: toastId });
@@ -871,7 +863,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     try {
       await media.setPreviewPinned(file.id, folderId, false);
       await media.deletePreviewForMessage(file.id, folderId);
-      await Promise.all([refetchOfflineCache(), queryClient.invalidateQueries({ queryKey: ['files', activeFolderId] })]);
+      await Promise.all([refetchOfflineCache(), invalidateFolderFileQueries(queryClient, activeFolderId, accountId ?? undefined)]);
       toast.success(`Removed the offline copy of ${file.name}`);
     } catch (error) {
       toast.error(`Could not remove the offline copy: ${error}`);

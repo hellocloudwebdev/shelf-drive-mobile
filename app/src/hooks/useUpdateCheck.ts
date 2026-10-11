@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { type as osType } from '@tauri-apps/plugin-os';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { android } from '../api/index';
+import { isMobilePreview } from './usePlatform';
 import { installVerifiedUpdate, type UpdateInstallPhase } from '../services/updateReliability';
 import { getInstallationInfo, RELEASES_URL } from '../services/installationInfo';
 
@@ -47,6 +48,9 @@ export function useUpdateCheck() {
     })();
 
     const checkForUpdates = useCallback(async () => {
+        // The ?mobile browser preview has no IPC backend to ask. Real Android
+        // devices never run as a preview, so the native update path is intact.
+        if (isMobilePreview()) return;
         setState(s => ({ ...s, checking: true, error: null }));
         try {
             if (isAndroid) {
@@ -153,6 +157,9 @@ export function useUpdateCheck() {
     }, []);
 
     useEffect(() => {
+        // Skip the startup auto-check in the browser preview entirely — there
+        // is no updater to reach.
+        if (isMobilePreview()) return;
         const timer = setTimeout(() => {
             checkForUpdates().catch(console.error);
         }, 5000);

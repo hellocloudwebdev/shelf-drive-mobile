@@ -5,7 +5,9 @@ export interface InstallationInfo {
     packageManager: 'pacman' | null;
 }
 
-export const RELEASES_URL = 'https://github.com/hellocloudwebdev/shelf-drive/releases/latest';
+// Mobile repository divergence (Docs/SHARED_CORE_SYNC.md): this repo's
+// releases — including the signed android-update.json — are published here.
+export const RELEASES_URL = 'https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest';
 
 const SELF_MANAGED_INSTALLATION: InstallationInfo = {
     managedByPackageManager: false,

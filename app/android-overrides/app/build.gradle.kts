@@ -123,8 +123,14 @@ android {
     }
 }
 
-val requireReleaseSigning = providers.gradleProperty("shelfDrive.requireReleaseSigning")
-    .map(String::toBoolean)
+// Fail closed: only the exact strings "true" and "false" are accepted, so a
+// malformed property can never silently disable the protected-release gate.
+// The name must match the workflow's delivery spelling:
+// ORG_GRADLE_PROJECT_shelfDrive_requireReleaseSigning maps to the Gradle
+// property "shelfDrive_requireReleaseSigning" (Gradle does not normalize
+// underscores to dots).
+val requireReleaseSigning = providers.gradleProperty("shelfDrive_requireReleaseSigning")
+    .map(String::toBooleanStrict)
     .orElse(false)
 
 tasks.configureEach {
