@@ -1,3 +1,20 @@
+## [4.4.0] - 2026-10-11
+
+### Reliability and downloads
+
+- Rebuilt mobile folder loading on the shared refresh service: canonical query keys, request-id and owner scoping, cancellation-safe progressive updates, cached-row preservation, and terminal-snapshot pruning.
+- Bounded automatic retries for downloads: separate budgets for transfer-environment reads and transient transfer failures, with explicit terminal errors after exhaustion and fresh budgets on manual retry.
+- Made Android release builds fail closed when the signing-gate property is malformed, and fixed the property mapping so the workflow's value actually reaches the gate.
+- Kept Telegram FLOOD_WAIT cooldowns cancellable with the queue: cancel, pause, account switching, and unmount retract pending cooldown flips.
+- Pause-all now also pauses downloads waiting for a stable network so a reconnect cannot resume work the user paused.
+
+### Security and release integrity
+
+- Scoped the Android opener capability to default-scheme URLs (https/http/mailto/tel) instead of the unscoped opener default.
+- Enforced Android version-code monotonicity against the previous signed update manifest, with asset-presence checks that fail closed on download errors.
+- Expanded Rust dependency auditing to all four shipped Android ABIs.
+- Upgraded source-map-js to 1.2.2 (GHSA-68FV-2MGG-JV7Q) and pinned Android/i18n CI to Node 22.
+
 ## [4.0.3] - 2026-10-11
 
 ### Reliability and downloads
