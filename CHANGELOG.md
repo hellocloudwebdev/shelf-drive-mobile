@@ -1,5 +1,18 @@
-## [4.0.2] - 2026-10-06
+## [4.0.3] - 2026-10-11
 
+### Reliability and downloads
+
+- Added bounded download retries and improved recovery when restoring interrupted mobile downloads.
+- Refreshes folder contents after download completion or recovery so the interface reflects the latest files.
+- Hardened update checks and Android release-signing validation.
+
+### Security and release integrity
+
+- Restricted Android external URL opening to approved default URL schemes.
+- Enforced monotonic Android version codes against the previous signed update manifest.
+- Expanded dependency auditing to all four Android ABIs.
+
+## [4.0.2] - 2026-10-06
 ### Fixes
 
 - Fixed the Android launcher icon showing the template's robot artwork: the generated project keeps a v24-qualified variant of the template foreground that resource resolution prefers over the overridden default, so the cloud foreground is now shipped for that bucket as well.
