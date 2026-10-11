@@ -21,9 +21,8 @@ describe('release safety gates', () => {
     expect(release).toContain('  verify-release:');
     expect(release).toContain('run: npm run test:coverage');
     expect(release).toContain('run: npm run build:verify');
-    expect(release).toContain(
-      'run: npm run release:version:check -- --tag "$GITHUB_REF_NAME" --changelog ../CHANGELOG.md',
-    );
+    expect(release).toContain('args=(--tag "$GITHUB_REF_NAME" --changelog ../CHANGELOG.md)');
+    expect(release).toContain('npm run release:version:check -- "${args[@]}"');
     expect(release).toContain('run: cargo test --lib');
     expect(createReleaseJob).toContain('needs: [verify-release, dependency-assurance]');
     expect(release).toContain('uses: ./.github/workflows/dependency-assurance.yml');
@@ -76,6 +75,25 @@ describe('release safety gates', () => {
     expect(release).toContain('ShelfDrive_${version}.apk');
     expect(release).toContain('ShelfDrive_${version}.aab');
     expect(release).toContain('android-update.json.sig');
+  });
+
+  it('validates Android version monotonicity against the previous release manifest', () => {
+    const release = workflow('release.yml');
+    expect(release).toContain('--previous-manifest "$previous_manifest"');
+    expect(release).toContain("gh release download --dir \"$RUNNER_TEMP/previous-release\" --pattern 'android-update.json'");
+    // The previous asset's presence is decided by listing the release's
+    // assets: a listed manifest that fails to download must fail the step
+    // instead of silently skipping the monotonicity gate.
+    expect(release).toContain("gh release view --json assets --jq '.assets[].name' | grep -qx 'android-update.json'");
+  });
+
+  it('audits the dependency graph of every shipped Android ABI', () => {
+    const deny = repositoryFile('deny.toml');
+    const android = workflow('android.yml');
+    for (const triple of ['aarch64-linux-android', 'armv7-linux-androideabi', 'i686-linux-android', 'x86_64-linux-android']) {
+      expect(deny).toContain(`triple = "${triple}"`);
+      expect(android).toContain(triple);
+    }
   });
 
   it('blocks releases when native formatting or clippy gates fail', () => {

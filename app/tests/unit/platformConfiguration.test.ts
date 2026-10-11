@@ -14,6 +14,7 @@ describe('target-specific Tauri capabilities', () => {
     const mobile = readJson('src-tauri/capabilities/mobile.json') as {
       identifier: string;
       platforms?: string[];
+      permissions?: string[];
     };
     const desktop = readJson('src-tauri/capabilities/default.json') as {
       platforms?: string[];
@@ -25,5 +26,18 @@ describe('target-specific Tauri capabilities', () => {
     expect(mobile.platforms).toEqual(['android']);
     expect(desktop.platforms).toEqual(['linux', 'macOS', 'windows']);
     expect(desktop.permissions).toContain('updater:default');
+  });
+
+  it('scopes the Android opener permission to default-scheme URLs only', () => {
+    // Every mobile openUrl call targets an https:// page (releases page,
+    // privacy policy, project site). opener:default would additionally grant
+    // the unscoped open_url command (arbitrary paths) and reveal-item-in-dir,
+    // neither of which the mobile app uses.
+    const mobile = readJson('src-tauri/capabilities/mobile.json') as {
+      permissions?: string[];
+    };
+
+    expect(mobile.permissions).toContain('opener:allow-default-urls');
+    expect(mobile.permissions).not.toContain('opener:default');
   });
 });

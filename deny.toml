@@ -1,10 +1,16 @@
 [graph]
+# Every target the shipped artifacts are built for must stay audited:
+# the desktop triples, all four Android ABIs from .github/workflows/android.yml,
+# and the iOS targets from the mobile configuration gates.
 targets = [
   { triple = "x86_64-unknown-linux-gnu" },
   { triple = "x86_64-pc-windows-msvc" },
   { triple = "x86_64-apple-darwin" },
   { triple = "aarch64-apple-darwin" },
   { triple = "aarch64-linux-android" },
+  { triple = "armv7-linux-androideabi" },
+  { triple = "i686-linux-android" },
+  { triple = "x86_64-linux-android" },
   { triple = "aarch64-apple-ios" },
   { triple = "aarch64-apple-ios-sim" },
 ]
