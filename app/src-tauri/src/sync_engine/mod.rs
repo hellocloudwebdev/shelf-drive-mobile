@@ -536,7 +536,8 @@ async fn scan_remote_once(
         .values()
         .filter_map(|entry| entry.message_id.map(|id| (id, entry.relative_path.clone())))
         .collect();
-    let mut messages = client.iter_messages(&peer);
+    let peer = crate::commands::utils::peer_to_ref(&peer).await?;
+    let mut messages = client.iter_messages(peer);
     let mut tree = FileTree::new();
     const MAX_REMOTE_FILES: usize = 50_000;
     let mut scanned_files = 0usize;
@@ -546,10 +547,10 @@ async fn scan_remote_once(
             continue;
         };
         let (document_name, media_id) = match &media {
-            grammers_client::types::Media::Document(document) => {
-                (document.name().to_string(), document.id())
+            grammers_client::media::Media::Document(document) => {
+                (document.name().unwrap_or("unknown").to_string(), document.id())
             }
-            grammers_client::types::Media::Photo(photo) => ("Photo.jpg".to_string(), photo.id()),
+            grammers_client::media::Media::Photo(photo) => ("Photo.jpg".to_string(), photo.id()),
             _ => continue,
         };
         scanned_files += 1;
@@ -563,7 +564,7 @@ async fn scan_remote_once(
             if is_safe_relative(caption) {
                 Some(caption.to_string())
             } else if is_safe_relative(&document_name) {
-                Some(document_name)
+                Some(document_name.clone())
             } else {
                 None
             }
@@ -575,11 +576,11 @@ async fn scan_remote_once(
         let remote_date = message
             .edit_date()
             .unwrap_or_else(|| message.date())
-            .timestamp();
+            .as_second();
         let fingerprint = remote_fingerprint(
             file_size,
-            message.date().timestamp(),
-            message.edit_date().map(|date| date.timestamp()),
+            message.date().as_second(),
+            message.edit_date().map(|date| date.as_second()),
             message.id(),
             media_id,
         );
@@ -623,19 +624,19 @@ fn remote_fingerprint(
     )
 }
 
-fn message_fingerprint(message: &grammers_client::types::Message) -> Result<String, String> {
+fn message_fingerprint(message: &grammers_client::message::Message) -> Result<String, String> {
     let media = message
         .media()
         .ok_or("The remote file has no downloadable media")?;
     let media_id = match &media {
-        grammers_client::types::Media::Document(document) => document.id(),
-        grammers_client::types::Media::Photo(photo) => photo.id(),
+        grammers_client::media::Media::Document(document) => document.id(),
+        grammers_client::media::Media::Photo(photo) => photo.id(),
         _ => return Err("The remote media type cannot be compared safely".into()),
     };
     Ok(remote_fingerprint(
         media_size(&media),
-        message.date().timestamp(),
-        message.edit_date().map(|date| date.timestamp()),
+        message.date().as_second(),
+        message.edit_date().map(|date| date.as_second()),
         message.id(),
         media_id,
     ))
@@ -696,8 +697,9 @@ async fn retry_pending_cleanup(
             .clone()
             .ok_or("Telegram is offline; replacement cleanup will retry when connected")?;
         let peer = resolve_peer(&client, Some(pair.channel_id), &telegram.peer_cache).await?;
+        let peer = crate::commands::utils::peer_to_ref(&peer).await?;
         let messages = client
-            .get_messages_by_id(&peer, &[item.old_message_id, item.new_message_id])
+            .get_messages_by_id(peer, &[item.old_message_id, item.new_message_id])
             .await
             .map_err(|error| {
                 format!("Uploaded replacement is preserved; cleanup will retry: {error}")

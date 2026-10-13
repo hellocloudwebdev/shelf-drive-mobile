@@ -6,11 +6,10 @@
     }
   },
   "productName": "Shelf Drive",
-  "version": "4.4.0",
+  "version": "4.4.1",
   "identifier": "com.hellocloudweb.shelfdrive",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },

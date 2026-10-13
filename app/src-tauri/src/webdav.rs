@@ -11,8 +11,9 @@ use dav_server::fs::{
 use dav_server::memls::MemLs;
 use dav_server::DavHandler;
 use futures::stream;
-use grammers_client::types::{Media, Peer};
-use grammers_client::InputMessage;
+use grammers_client::media::Media;
+use grammers_client::message::InputMessage;
+use grammers_client::peer::Peer;
 use grammers_tl_types as tl;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -370,8 +371,11 @@ impl TelegramDavFs {
         let peer = resolve_peer(&client, folder_id, &self.state.peer_cache)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
+        let peer = crate::commands::utils::peer_to_ref(&peer)
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
         let account = self.account()?;
-        let mut messages = client.iter_messages(&peer);
+        let mut messages = client.iter_messages(peer);
         let mut raw_files = Vec::new();
         while raw_files.len() < MAX_LISTED_FILES {
             let Some(message) = messages.next().await.map_err(|_| FsError::GeneralFailure)? else {
@@ -391,7 +395,7 @@ impl TelegramDavFs {
             .await?;
             let size = media_size(&media);
             let remote_name = match media {
-                Media::Document(document) => document.name().to_string(),
+                Media::Document(document) => document.name().unwrap_or("unknown").to_string(),
                 Media::Photo(_) => "Photo.jpg".to_string(),
                 _ => continue,
             };
@@ -401,7 +405,7 @@ impl TelegramDavFs {
             } else {
                 caption.to_string()
             };
-            let timestamp = message.date().timestamp().max(0) as u64;
+            let timestamp = message.date().as_second().max(0) as u64;
             raw_files.push((
                 message.id(),
                 name,
@@ -497,8 +501,11 @@ impl TelegramDavFs {
         let peer = resolve_peer(&client, folder_id, &self.state.peer_cache)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
+        let peer = crate::commands::utils::peer_to_ref(&peer)
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
         let messages = client
-            .get_messages_by_id(&peer, &[message_id])
+            .get_messages_by_id(peer, &[message_id])
             .await
             .map_err(|_| FsError::GeneralFailure)?;
         let message = messages
@@ -523,7 +530,7 @@ impl TelegramDavFs {
         let size = media_size(&media);
         let metadata = DavMetadata {
             len: size,
-            modified: UNIX_EPOCH + Duration::from_secs(message.date().timestamp().max(0) as u64),
+            modified: UNIX_EPOCH + Duration::from_secs(message.date().as_second().max(0) as u64),
             is_dir: false,
             etag: Some(format!("td-{message_id}-{size}")),
         };
@@ -572,6 +579,9 @@ impl TelegramDavFs {
         let peer = resolve_peer(&client, folder_id, &self.state.peer_cache)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
+        let peer = crate::commands::utils::peer_to_ref(&peer)
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
         let mut file = tokio::fs::File::open(temp_path)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
@@ -585,7 +595,7 @@ impl TelegramDavFs {
         let mut last_error = String::new();
         for attempt in 0..=self.network.retry_attempts() {
             self.account()?;
-            match client.send_message(&peer, outgoing.clone()).await {
+            match client.send_message(peer, outgoing.clone()).await {
                 Ok(message) => {
                     sent = Some(message);
                     break;
@@ -626,25 +636,27 @@ impl TelegramDavFs {
         }) = existing
         {
             if let Ok(old_peer) = resolve_peer(&client, old_folder, &self.state.peer_cache).await {
-                self.account()?;
-                if let Err(error) = client.delete_messages(&old_peer, &[old_message]).await {
-                    log::error!(
-                        "WebDAV replacement uploaded as message {} but old message {} could not be deleted: {}",
-                        sent.id(),
-                        old_message,
-                        error
-                    );
-                    return Err(FsError::GeneralFailure);
+                if let Ok(old_peer_ref) = crate::commands::utils::peer_to_ref(&old_peer).await {
+                    self.account()?;
+                    if let Err(error) = client.delete_messages(old_peer_ref, &[old_message]).await {
+                        log::error!(
+                            "WebDAV replacement uploaded as message {} but old message {} could not be deleted: {}",
+                            sent.id(),
+                            old_message,
+                            error
+                        );
+                        return Err(FsError::GeneralFailure);
+                    }
+                    crate::workspace::remote_changes::record(
+                        &self.account()?,
+                        vec![crate::workspace::remote_changes::Change::Delete {
+                            folder: old_folder,
+                            message: old_message,
+                        }],
+                    )
+                    .await
+                    .map_err(|_| FsError::GeneralFailure)?;
                 }
-                crate::workspace::remote_changes::record(
-                    &self.account()?,
-                    vec![crate::workspace::remote_changes::Change::Delete {
-                        folder: old_folder,
-                        message: old_message,
-                    }],
-                )
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
             }
         }
         self.invalidate(&folder_path).await;
@@ -674,9 +686,12 @@ impl TelegramDavFs {
         let peer = resolve_peer(&client, *folder_id, &self.state.peer_cache)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
+        let peer = crate::commands::utils::peer_to_ref(&peer)
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
         self.account()?;
         client
-            .delete_messages(&peer, &[*message_id])
+            .delete_messages(peer, &[*message_id])
             .await
             .map_err(|_| FsError::GeneralFailure)?;
         crate::workspace::remote_changes::record(
@@ -713,6 +728,7 @@ impl TelegramDavFs {
                 schedule_date: None,
                 quick_reply_shortcut_id: None,
                 schedule_repeat_period: None,
+                rich_message: None,
             })
             .await
             .map_err(|_| FsError::GeneralFailure)?;
@@ -766,9 +782,15 @@ impl TelegramDavFs {
             let target_peer = resolve_peer(&client, target_folder_id, &self.state.peer_cache)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
+            let target_peer_ref = crate::commands::utils::peer_to_ref(&target_peer)
+                .await
+                .map_err(|_| FsError::GeneralFailure)?;
+            let source_peer_ref = crate::commands::utils::peer_to_ref(&source_peer)
+                .await
+                .map_err(|_| FsError::GeneralFailure)?;
             self.account()?;
             let forwarded = client
-                .forward_messages(&target_peer, &[message_id], &source_peer)
+                .forward_messages(target_peer_ref, &[message_id], source_peer_ref)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
             let new_message_id = forwarded
@@ -782,7 +804,7 @@ impl TelegramDavFs {
             if move_file {
                 self.account()?;
                 client
-                    .delete_messages(&source_peer, &[message_id])
+                    .delete_messages(source_peer_ref, &[message_id])
                     .await
                     .map_err(|_| FsError::GeneralFailure)?;
                 crate::workspace::remote_changes::record(

@@ -1,3 +1,14 @@
+## [4.4.1] - 2026-10-13
+
+### Reliability, media, and transfers
+
+- Upgraded Telegram protocol client to Grammers 0.10.0 (Layer 230) on Codeberg.
+- Fixed file uploads sticking at 0% by preserving progress event listeners across window visibility and focus transitions, and preventing silent error swallowing.
+- Fixed Android video streaming failure ("could not play this format") by inferring specific container MIME types instead of passing wildcard video/* to ExoPlayer.
+- Fixed image preview spinner hanging indefinitely by adding bounded download timeouts and client-side watchdog guards.
+- Fixed Android in-app update checks by properly base64-decoding Minisign signatures from release assets.
+- Initialized Rustls 0.23 process-wide crypto provider on startup to prevent native crashes in network components.
+
 ## [4.4.0] - 2026-10-11
 
 ### Reliability and downloads

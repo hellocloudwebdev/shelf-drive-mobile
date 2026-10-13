@@ -270,14 +270,14 @@ pub async fn cmd_prepare_fmp4_stream(
     let setup: Result<_, String> = async {
         let client = state.client.lock().await.clone().ok_or("Not connected to Telegram")?;
         let actual = client.get_me().await.map_err(|e| e.to_string())?;
-        if actual.bare_id() != account.owner { return Err("ACCOUNT_CHANGED".into()); }
+        if actual.id().bare_id().unwrap_or(0) != account.owner { return Err("ACCOUNT_CHANGED".into()); }
         account.validate()?;
         let peer = crate::commands::utils::resolve_peer(&client, folder_id, &state.peer_cache).await?;
-        let message = client.get_messages_by_id(&peer, &[message_id]).await.map_err(|e| e.to_string())?
+        let message = client.get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id]).await.map_err(|e| e.to_string())?
             .into_iter().flatten().next().ok_or("Message not found")?;
         let media = message.media().ok_or("No media")?;
         if message.text() == "TDENC2"
-            || matches!(&media, grammers_client::types::Media::Document(document) if document.name().to_ascii_lowercase().ends_with(".tdenc")) {
+            || matches!(&media, grammers_client::media::Media::Document(document) if document.name().unwrap_or("").to_ascii_lowercase().ends_with(".tdenc")) {
             return Err("ENCRYPTED_PREVIEW_UNAVAILABLE".into());
         }
         let ffmpeg = manager.ffmpeg_path.lock().await.clone().ok_or("FFmpeg is not available")?;
@@ -524,13 +524,13 @@ mod tests {
         use grammers_session::{storages::SqliteSession, types::PeerInfo, Session};
         let root = std::env::temp_dir().join(format!("fmp4-account-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-        session.cache_peer(&PeerInfo::User {
+        let session = SqliteSession::open(root.join("telegram.session")).await.unwrap();
+        session.cache_peer(PeerInfo::User {
             id: 22,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        }).await.unwrap();
         drop(session);
         let manager = Arc::new(TranscodeManager::new(root.join("streaming")));
         for key in ["11_0_42", "22_0_42", "0_42"] {

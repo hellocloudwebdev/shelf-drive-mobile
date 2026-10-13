@@ -111,6 +111,7 @@ class MediaPlayerActivity : AppCompatActivity() {
           override fun onIsPlayingChanged(isPlaying: Boolean) = updatePictureInPictureParams()
           override fun onVideoSizeChanged(videoSize: VideoSize) = updatePictureInPictureParams()
           override fun onPlayerError(error: PlaybackException) {
+            android.util.Log.e("ShelfDrivePlayer", "ExoPlayer playback error: ${error.errorCodeName} (code=${error.errorCode}) - ${error.message}", error)
             showError(getString(R.string.media_playback_format_error))
           }
         })
@@ -131,10 +132,15 @@ class MediaPlayerActivity : AppCompatActivity() {
     if (player.currentMediaItem?.mediaId == mediaId) return
     val privateMetadata = preferences().optBoolean("privateMetadata", true)
     val visibleTitle = if (privateMetadata) getString(R.string.media_private_title) else intent.getStringExtra(EXTRA_TITLE) ?: getString(R.string.media_default_title)
-    val mediaItem = MediaItem.Builder()
+    val rawMime = intent.getStringExtra(EXTRA_MIME_TYPE)
+    val mimeType = if (rawMime.isNullOrBlank() || rawMime.endsWith("/*") || rawMime == "application/octet-stream") null else rawMime
+    val builder = MediaItem.Builder()
       .setUri(streamUrl)
       .setMediaId(mediaId)
-      .setMimeType(intent.getStringExtra(EXTRA_MIME_TYPE))
+    if (mimeType != null) {
+      builder.setMimeType(mimeType)
+    }
+    val mediaItem = builder
       .setMediaMetadata(MediaMetadata.Builder().setTitle(visibleTitle).setDisplayTitle(visibleTitle).build())
       .build()
     player.setMediaItem(mediaItem, PlaybackService.getResumePosition(this, mediaId))

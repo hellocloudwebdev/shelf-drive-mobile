@@ -89,7 +89,7 @@ export function useFileUpload(
 
         listen<ProgressPayload>('upload-progress', (event) => {
             setUploadQueue(q => q.map(i =>
-                i.id === event.payload.id && runningItemsRef.current.get(i.id)?.() ? {
+                i.id === event.payload.id ? {
                     ...i,
                     progress: event.payload.percent,
                     uploadedBytes: event.payload.uploaded_bytes,
@@ -101,7 +101,7 @@ export function useFileUpload(
 
         listen<RemoteProgressPayload>('remote-upload-progress', (event) => {
             setUploadQueue(q => q.map(i =>
-                i.id === event.payload.id && runningItemsRef.current.get(i.id)?.() && !['paused', 'cancelled', 'waiting_for_network'].includes(i.status) ? {
+                i.id === event.payload.id && !['paused', 'cancelled', 'waiting_for_network'].includes(i.status) ? {
                     ...i,
                     status: event.payload.phase,
                     progress: event.payload.percent,
@@ -418,7 +418,6 @@ export function useFileUpload(
             }
             if (!keepTemporaryFileForResume) await cleanupResumableSource(item);
         } catch (e) {
-            if (!isCurrent()) return;
             if (networkPausedRef.current.has(item.id)) {
                 networkPausedRef.current.delete(item.id);
                 keepTemporaryFileForResume = true;
@@ -437,10 +436,10 @@ export function useFileUpload(
                         error: errMsg,
                         protection: i.protection ? { ...i.protection, promptToken: undefined } : protection,
                     } : i));
-                    toast.warning(t('settings.encryption_mode_passphrase'));
+                    if (isCurrent()) toast.warning(t('settings.encryption_mode_passphrase'));
                 } else if (errMsg.includes('FILE_TOO_BIG') || errMsg.includes('too large') || errMsg.includes('2 GB')) {
                     setUploadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: errMsg } : i));
-                    toast.error(`Upload failed: Telegram has a 2 GB file size limit. Try splitting large folders.`);
+                    if (isCurrent()) toast.error(`Upload failed: Telegram has a 2 GB file size limit. Try splitting large folders.`);
                 } else if (isAndroidPlatform && isTransientNetworkError(errMsg)) {
                     keepTemporaryFileForResume = true;
                     setUploadQueue(q => q.map(i => i.id === item.id ? {
@@ -452,7 +451,7 @@ export function useFileUpload(
                     keepTemporaryFileForResume = Boolean(item.tempZipPath || item.androidStaged);
                     const displayPath = item.url || item.path;
                     setUploadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'error', error: errMsg } : i));
-                    toast.error(`Upload failed for ${displayPath.split('/').pop()}: ${e}`);
+                    if (isCurrent()) toast.error(`Upload failed for ${displayPath.split('/').pop()}: ${e}`);
                 }
             } else if (cancelledRef.current.has(item.id)) {
                 cancelledRef.current.delete(item.id);

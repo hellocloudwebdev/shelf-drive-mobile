@@ -339,7 +339,7 @@ async fn verify_remote_precondition(
     let peer =
         commands::utils::resolve_peer(&client, Some(pair.channel_id), &telegram.peer_cache).await?;
     let message = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|error| error.to_string())?
         .into_iter()

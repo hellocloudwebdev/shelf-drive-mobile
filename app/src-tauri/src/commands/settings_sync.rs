@@ -1,4 +1,3 @@
-use crate::commands::utils::resolve_peer;
 use crate::crypto::kdf::derive_passphrase_key;
 use crate::TelegramState;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -6,7 +5,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     XChaCha20Poly1305, XNonce,
 };
-use grammers_client::types::InputMessage;
+use grammers_client::message::InputMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -316,20 +315,20 @@ fn device_id(path: &Path) -> Result<String, String> {
 
 async fn client_and_peer(
     state: &TelegramState,
-) -> Result<(grammers_client::Client, grammers_client::types::Peer), String> {
+) -> Result<(grammers_client::Client, grammers_session::types::PeerRef), String> {
     let client = state
         .client
         .lock()
         .await
         .clone()
         .ok_or_else(|| "Connect to Telegram before syncing settings".to_string())?;
-    let peer = resolve_peer(&client, None, &state.peer_cache).await?;
+    let peer = crate::commands::utils::resolve_peer_ref(&client, None, &state.peer_cache).await?;
     Ok((client, peer))
 }
 
 async fn settings_messages(
     client: &grammers_client::Client,
-    peer: &grammers_client::types::Peer,
+    peer: grammers_session::types::PeerRef,
 ) -> Result<Vec<(i32, String)>, String> {
     let mut messages = client.iter_messages(peer).limit(MESSAGE_SCAN_LIMIT);
     let mut found = Vec::new();
@@ -354,7 +353,7 @@ pub async fn cmd_get_settings_sync_status(
             .join(DEVICE_ID_FILE),
     )?;
     let (client, peer) = client_and_peer(state.inner()).await?;
-    let Some((_, message)) = settings_messages(&client, &peer).await?.into_iter().next() else {
+    let Some((_, message)) = settings_messages(&client, peer).await?.into_iter().next() else {
         return Ok(SettingsSyncStatus {
             available: false,
             updated_at: None,
@@ -393,17 +392,17 @@ pub async fn cmd_upload_settings_sync(
     .await
     .map_err(|error| format!("Settings encryption task failed: {error}"))??;
     let (client, peer) = client_and_peer(state.inner()).await?;
-    let old_ids = settings_messages(&client, &peer)
+    let old_ids = settings_messages(&client, peer)
         .await?
         .into_iter()
         .map(|(id, _)| id)
         .collect::<Vec<_>>();
     client
-        .send_message(&peer, InputMessage::new().text(message.clone()))
+        .send_message(peer, InputMessage::new().text(message.clone()))
         .await
         .map_err(|error| format!("Unable to upload encrypted settings: {error}"))?;
     for old_id_batch in old_ids.chunks(100) {
-        if let Err(error) = client.delete_messages(&peer, old_id_batch).await {
+        if let Err(error) = client.delete_messages(peer, old_id_batch).await {
             log::warn!("Unable to remove superseded settings sync messages: {error}");
         }
     }
@@ -422,7 +421,7 @@ pub async fn cmd_download_settings_sync(
     passphrase: String,
 ) -> Result<SettingsSyncDownload, String> {
     let (client, peer) = client_and_peer(state.inner()).await?;
-    let (_, message) = settings_messages(&client, &peer)
+    let (_, message) = settings_messages(&client, peer)
         .await?
         .into_iter()
         .next()

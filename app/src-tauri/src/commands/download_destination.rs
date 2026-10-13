@@ -637,13 +637,13 @@ mod tests {
             ] {
                 let _ = std::fs::remove_file(directory.0.join(file));
             }
-            let session = SqliteSession::open(directory.0.join("telegram.session")).unwrap();
-            session.cache_peer(&PeerInfo::User {
+            let session = crate::test_block_on(SqliteSession::open(directory.0.join("telegram.session"))).unwrap();
+            crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: owner,
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            });
+            })).unwrap();
         };
         sign_in(101);
         let account = crate::workspace::AccountGuard::open(&directory.0, Some("101")).unwrap();

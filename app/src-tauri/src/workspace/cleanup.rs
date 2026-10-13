@@ -10,7 +10,8 @@ use crate::commands::{
     TelegramState,
 };
 use grammers_client::{
-    types::{Media, Message, Peer},
+    media::Media,
+    message::Message,
     Client,
 };
 use serde::{Deserialize, Serialize};
@@ -56,7 +57,7 @@ fn fingerprint(message: &Message) -> Result<String, String> {
                 media_size(&media),
                 message
                     .edit_date()
-                    .map(|date| date.timestamp())
+                    .map(|date| date.as_second())
                     .unwrap_or(0),
                 message.text()
             )
@@ -69,7 +70,7 @@ async fn message(
     app: &tauri::AppHandle,
     account: &AccountGuard,
     file: &WorkspaceFile,
-) -> Result<(Client, Peer, Option<Message>), String> {
+) -> Result<(Client, grammers_session::types::PeerRef, Option<Message>), String> {
     account.validate()?;
     let state = app.state::<TelegramState>();
     let client = state
@@ -81,9 +82,12 @@ async fn message(
     let peer = resolve_peer(&client, file.file.folder_id, &state.peer_cache)
         .await
         .map_err(|_| "NETWORK_UNAVAILABLE")?;
+    let peer = crate::commands::utils::peer_to_ref(&peer)
+        .await
+        .map_err(|_| "NETWORK_UNAVAILABLE")?;
     let id = i32::try_from(file.file.id).map_err(|_| "INVALID_FILE")?;
     let value = client
-        .get_messages_by_id(&peer, &[id])
+        .get_messages_by_id(peer, &[id])
         .await
         .map_err(|_| "NETWORK_UNAVAILABLE")?
         .into_iter()
@@ -306,7 +310,7 @@ pub async fn cmd_cleanup_process(
             || account.validate(),
             || async {
                 client
-                    .delete_messages(&peer, &[id])
+                    .delete_messages(peer, &[id])
                     .await
                     .map(|_| ())
                     .map_err(|_| "NETWORK_UNAVAILABLE".into())

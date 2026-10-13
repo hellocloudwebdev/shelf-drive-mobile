@@ -25,7 +25,7 @@ use tokio::sync::{Mutex, Notify, RwLock};
 
 use crate::commands::TelegramState;
 use crate::mp4_utils;
-use grammers_client::types::Media;
+use grammers_client::media::Media;
 use tauri::Manager;
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -701,7 +701,7 @@ pub async fn cache_original(
 ) -> Result<u64, String> {
     account.validate()?;
     let total_size = match media {
-        Media::Document(d) => d.size() as u64,
+        Media::Document(d) => d.size().map_or(0, |s| s as u64),
         _ => return Err("Not a document".to_string()),
     };
 
@@ -1313,7 +1313,7 @@ pub async fn cmd_prepare_transcoded_stream(
             .clone()
             .ok_or("Not connected to Telegram")?;
         let actual = client.get_me().await.map_err(|e| e.to_string())?;
-        if actual.bare_id() != account.owner {
+        if actual.id().bare_id().unwrap_or(0) != account.owner {
             return Err("ACCOUNT_CHANGED".into());
         }
         account.validate()?;
@@ -1328,7 +1328,7 @@ pub async fn cmd_prepare_transcoded_stream(
         )
         .await?;
         let message = client
-            .get_messages_by_id(&peer, &[message_id])
+            .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
             .await
             .map_err(|e| e.to_string())?
             .into_iter()
@@ -1337,7 +1337,7 @@ pub async fn cmd_prepare_transcoded_stream(
             .ok_or("Message not found")?;
         let media = message.media().ok_or("No media")?;
         if message.text() == "TDENC2"
-            || matches!(&media, Media::Document(document) if document.name().to_ascii_lowercase().ends_with(".tdenc"))
+            || matches!(&media, Media::Document(document) if document.name().unwrap_or("").to_ascii_lowercase().ends_with(".tdenc"))
         {
             return Err("ENCRYPTED_PREVIEW_UNAVAILABLE".into());
         }
@@ -1399,7 +1399,7 @@ async fn get_duration_from_media(
     .await?;
 
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1412,7 +1412,7 @@ async fn get_duration_from_media(
     let media = msg.media().ok_or_else(|| "No media".to_string())?;
 
     let size = match &media {
-        Media::Document(d) => d.size() as u64,
+        Media::Document(d) => d.size().map_or(0, |s| s as u64),
         _ => return Err("Not a document".to_string()),
     };
 
@@ -2286,13 +2286,13 @@ mod cache_tests {
         ] {
             let _ = std::fs::remove_file(root.join(file));
         }
-        let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-        session.cache_peer(&PeerInfo::User {
+        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: owner,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        })).unwrap();
     }
 
     impl TestCache {

@@ -230,6 +230,7 @@ pub async fn cmd_test_proxy_traffic(
         rt.block_on(async {
             // Open a fresh in-memory-ish SQLite session
             let session = grammers_session::storages::SqliteSession::open(&session_path_str)
+                .await
                 .map_err(|e| format!("Failed to open test session: {}", e))?;
             let session = std::sync::Arc::new(session);
 
@@ -251,10 +252,14 @@ pub async fn cmd_test_proxy_traffic(
                 conn_params,
             );
 
-            let client = grammers_client::Client::new(&pool);
+            let grammers_mtsender::SenderPool {
+                runner,
+                updates: test_updates,
+                handle: test_handle,
+            } = pool;
+            let client = grammers_client::Client::new(test_handle);
 
             // Spawn the runner briefly
-            let grammers_mtsender::SenderPool { runner, .. } = pool;
             let runner_handle = tokio::spawn(async move {
                 runner.run().await;
             });
@@ -265,6 +270,7 @@ pub async fn cmd_test_proxy_traffic(
 
             // Abort runner regardless of outcome
             runner_handle.abort();
+            drop(test_updates);
 
             // Clean up test session files
             let _ = std::fs::remove_file(&session_path_str);

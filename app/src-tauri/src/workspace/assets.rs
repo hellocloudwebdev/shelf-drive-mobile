@@ -11,7 +11,7 @@ use crate::{
     vpn_optimizer::NetworkConfig,
 };
 use grammers_client::{
-    types::{Downloadable, Media},
+    media::{Downloadable, Media},
     Client,
 };
 use sha2::{Digest, Sha256};
@@ -445,9 +445,12 @@ pub async fn remote_media(
         .clone()
         .ok_or("NETWORK_UNAVAILABLE: Reconnect to Telegram")?;
     let peer = resolve_peer(&client, file.file.folder_id, &state.peer_cache).await?;
+    let peer = crate::commands::utils::peer_to_ref(&peer)
+        .await
+        .map_err(|_| "NETWORK_UNAVAILABLE: Could not read this Telegram file")?;
     let id = i32::try_from(file.file.id).map_err(|_| "Invalid message identifier")?;
     let message = client
-        .get_messages_by_id(&peer, &[id])
+        .get_messages_by_id(peer, &[id])
         .await
         .map_err(|_| "NETWORK_UNAVAILABLE: Could not read this Telegram file")?
         .into_iter()
@@ -458,7 +461,7 @@ pub async fn remote_media(
         .media()
         .ok_or("FILE_NOT_FOUND: This message has no file")?;
     if message.text() == "TDENC2"
-        || matches!(&media,Media::Document(d) if d.name().to_ascii_lowercase().ends_with(".tdenc"))
+        || matches!(&media, Media::Document(d) if d.name().unwrap_or("").to_ascii_lowercase().ends_with(".tdenc"))
     {
         return Err(
             "ENCRYPTED_PREVIEW_UNAVAILABLE: Open protected files through the unlocked vault".into(),

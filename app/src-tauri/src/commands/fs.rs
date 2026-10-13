@@ -18,8 +18,9 @@ use crate::models::{FileMetadata, FolderMetadata};
 use crate::vpn_optimizer::{backoff_ms, NetworkConfig};
 use crate::TelegramState;
 use base64::Engine;
-use grammers_client::types::{Attribute, Media, Peer};
-use grammers_client::InputMessage;
+use grammers_client::media::{Attribute, Media};
+use grammers_client::message::InputMessage;
+use grammers_client::peer::Peer;
 use grammers_tl_types as tl;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -333,7 +334,7 @@ async fn resolve_remote_envelope_with_probe(
     let Media::Document(document) = media else {
         return Ok(None);
     };
-    if !envelope_cache::suspected_envelope(document.name(), caption) {
+    if !envelope_cache::suspected_envelope(document.name().unwrap_or(""), caption) {
         return Ok(None);
     }
     let identity = envelope_cache::RemoteEnvelopeIdentity {
@@ -347,7 +348,7 @@ async fn resolve_remote_envelope_with_probe(
     registry_record_from_header(
         folder_id,
         message_id,
-        document.name().to_string(),
+        document.name().unwrap_or("unknown").to_string(),
         identity.ciphertext_size,
         header,
         "owner_document_bound",
@@ -1052,11 +1053,11 @@ pub async fn create_folder_inner(
             let chat = u.chats.first().ok_or("No chat in updates")?;
             match chat {
                 tl::enums::Chat::Channel(c) => {
-                    let channel_obj = grammers_client::types::Channel { raw: c.clone() };
-                    peer_cache
-                        .write()
-                        .await
-                        .insert(c.id, grammers_client::types::Peer::Channel(channel_obj));
+                    let peer = grammers_client::peer::Peer::from_raw(
+                        client,
+                        tl::enums::Chat::Channel(c.clone()),
+                    );
+                    peer_cache.write().await.insert(c.id, peer);
                     (c.id, c.access_hash.unwrap_or(0))
                 }
                 _ => return Err("Created chat is not a channel".to_string()),
@@ -1973,7 +1974,7 @@ async fn cmd_upload_file_inner(
 
     for attempt in 0..=max_retries {
         transfer_account.validate()?;
-        match client.send_message(&peer, message.clone()).await {
+        match client.send_message(crate::commands::utils::peer_to_ref(&peer).await?, message.clone()).await {
             Ok(sent) => {
                 upload_reservation.commit();
                 if !tid.is_empty() {
@@ -2349,7 +2350,7 @@ async fn cmd_upload_file_encrypted(
 
     for attempt in 0..=max_retries {
         transfer_account.validate()?;
-        match client.send_message(&peer, message.clone()).await {
+        match client.send_message(crate::commands::utils::peer_to_ref(&peer).await?, message.clone()).await {
             Ok(_sent) => {
                 bandwidth_reservation.commit();
                 if !tid.is_empty() {
@@ -2533,7 +2534,7 @@ pub async fn cmd_rename_file(
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     account.validate()?;
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|error| error.to_string())?;
     let message = messages
@@ -2587,6 +2588,7 @@ pub async fn cmd_rename_file(
             schedule_date: None,
             quick_reply_shortcut_id: None,
             schedule_repeat_period: None,
+            rich_message: None,
         })
         .await
         .map_err(|e| format!("Failed to rename file: {}", e))?;
@@ -2627,7 +2629,7 @@ pub async fn cmd_delete_file(
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     account.validate()?;
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|error| error.to_string())?;
     if messages.iter().flatten().next().is_none() {
@@ -2635,7 +2637,7 @@ pub async fn cmd_delete_file(
     }
     account.validate()?;
     client
-        .delete_messages(&peer, &[message_id])
+        .delete_messages(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|error| error.to_string())?;
     if let Err(error) = crate::workspace::remote_changes::record(
@@ -2811,7 +2813,7 @@ async fn cmd_download_file_owned(
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     envelope_account.validate()?;
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|e| e.to_string())?;
     envelope_account.validate()?;
@@ -3173,7 +3175,7 @@ async fn cmd_download_encrypted_file(
 
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|e| e.to_string())?;
     let msg = messages
@@ -3186,13 +3188,13 @@ async fn cmd_download_encrypted_file(
         .ok_or_else(|| "No media in message".to_string())?;
 
     let ciphertext_size = match &media {
-        Media::Document(d) => d.size() as u64,
+        Media::Document(d) => d.size().map_or(0, |size| size as u64),
         _ => {
             return Err("Encrypted file must be a document".to_string());
         }
     };
     let remote_name = match &media {
-        Media::Document(document) => document.name().to_string(),
+        Media::Document(document) => document.name().unwrap_or("encrypted.tdenc").to_string(),
         _ => "encrypted.tdenc".to_string(),
     };
 
@@ -3528,9 +3530,11 @@ pub async fn cmd_move_files(
     account.validate_client(&client).await?;
     let source_peer = resolve_peer(&client, source_folder_id, &state.peer_cache).await?;
     let target_peer = resolve_peer(&client, target_folder_id, &state.peer_cache).await?;
+    let source_peer_ref = crate::commands::utils::peer_to_ref(&source_peer).await?;
+    let target_peer_ref = crate::commands::utils::peer_to_ref(&target_peer).await?;
     account.validate()?;
     let forwarded = client
-        .forward_messages(&target_peer, &message_ids, &source_peer)
+        .forward_messages(target_peer_ref, &message_ids, source_peer_ref)
         .await
         .map_err(|error| format!("Forward failed: {error}"))?;
     verify_forwarded_messages(&message_ids, &forwarded)?;
@@ -3538,7 +3542,7 @@ pub async fn cmd_move_files(
     // files intact. It can never authorize deletion through another session.
     account.validate()?;
     client
-        .delete_messages(&source_peer, &message_ids)
+        .delete_messages(source_peer_ref, &message_ids)
         .await
         .map_err(|error| format!("Delete original failed: {error}"))?;
     let changes = message_ids
@@ -3691,13 +3695,13 @@ mod folder_listing_tests {
             let root =
                 std::env::temp_dir().join(format!("folder-refresh-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
-            let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-            session.cache_peer(&PeerInfo::User {
+            let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+            crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: 100,
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            });
+            })).unwrap();
             drop(session);
             let store = Store::open(&root, 100).unwrap();
             store
@@ -4067,13 +4071,13 @@ mod folder_listing_tests {
     async fn a_changed_account_cannot_finalize_an_old_scan() {
         let fixture = Fixture::new();
         std::fs::remove_file(fixture.root.join("telegram.session")).unwrap();
-        let session = SqliteSession::open(fixture.root.join("telegram.session")).unwrap();
-        session.cache_peer(&PeerInfo::User {
+        let session = SqliteSession::open(fixture.root.join("telegram.session")).await.unwrap();
+        session.cache_peer(PeerInfo::User {
             id: 200,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        }).await.unwrap();
         drop(session);
         assert!(finalize_folder_scan(
             &fixture.account,
@@ -4160,7 +4164,7 @@ pub async fn cmd_get_files(
         let vault_key = crypto_state.get_current_wrapping_key().ok();
         workspace_account.validate()?;
 
-        let mut msgs = client.iter_messages(&peer);
+        let mut msgs = client.iter_messages(crate::commands::utils::peer_to_ref(&peer).await?);
         let mut last_msg_id: Option<i32> = None;
         let mut file_count = 0usize;
         let mut scan_complete = true;
@@ -4226,7 +4230,7 @@ pub async fn cmd_get_files(
                 let declared_size = media_size(&doc);
                 let (mut name, mut size, mut mime, mut ext, remote_document_name) = match &doc {
                     Media::Document(d) => {
-                        let doc_name = d.name().to_string();
+                        let doc_name = d.name().unwrap_or("unknown").to_string();
                         // Prefer the message caption (set by rename via EditMessage) over the
                         // document's built-in filename attribute, so renames persist across refreshes.
                         let caption = msg.text();
@@ -4579,7 +4583,7 @@ pub async fn cmd_search_global(
 
     let me = client.get_me().await;
     account.validate()?;
-    let client_owner = me.map_err(map_error)?.bare_id();
+    let client_owner = me.map_err(map_error)?.id().bare_id().unwrap_or(0);
     validate_search_client(&account, client_owner)?;
 
     let result = client
@@ -4596,6 +4600,7 @@ pub async fn cmd_search_global(
             broadcasts_only: false,
             groups_only: false,
             users_only: false,
+            community: None,
         })
         .await;
     account.validate()?;
@@ -6177,7 +6182,7 @@ async fn cmd_upload_from_url_owned(
 
     for attempt in 0..=max_retries {
         transfer_account.validate()?;
-        match client.send_message(&peer, message.clone()).await {
+        match client.send_message(crate::commands::utils::peer_to_ref(&peer).await?, message.clone()).await {
             Ok(_) => {
                 send_success = true;
                 break;

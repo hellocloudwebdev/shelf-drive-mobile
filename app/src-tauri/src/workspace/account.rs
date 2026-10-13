@@ -3,6 +3,14 @@ use grammers_session::{
     types::{PeerId, PeerInfo},
     Session,
 };
+
+fn block_on_future<F: std::future::Future>(future: F) -> F::Output {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(future))
+    } else {
+        tokio::runtime::Runtime::new().unwrap().block_on(future)
+    }
+}
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::{
     collections::HashMap,
@@ -62,7 +70,12 @@ pub(crate) fn open_session(root: &Path) -> sqlite::Result<Arc<SqliteSession>> {
         // shared SQLite mutex rather than opening another competing writer.
         return Ok(session);
     }
-    let session = Arc::new(SqliteSession::open(&path)?);
+    let session = Arc::new(
+        block_on_future(SqliteSession::open(&path)).map_err(|e| sqlite::Error {
+            code: None,
+            message: Some(e.to_string()),
+        })?,
+    );
     let identity = session_file_identity(&path)
         .ok()
         .filter(|after| before.is_none_or(|before| before == *after));
@@ -211,10 +224,12 @@ impl AuthenticationSession {
         }
         // The peer comes from a verified authorization/get_me response, not a
         // browser-supplied owner ID. Persist it before making workspace reads available.
-        self.session.cache_peer(peer);
+        let _ = block_on_future(self.session.cache_peer(peer.clone()));
         if let Some(updates) = updates {
-            self.session
-                .set_update_state(grammers_session::types::UpdateState::All(updates));
+            let _ = block_on_future(
+                self.session
+                    .set_update_state(grammers_session::types::UpdateState::All(updates)),
+            );
         }
         self.validate_in(sessions, lifecycle)?;
         lifecycle.signing_out.store(false, Ordering::SeqCst);
@@ -311,8 +326,9 @@ pub fn current_owner(root: &Path) -> Result<i64, String> {
                 );
             }
             let peer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                session.peer(PeerId::self_user())
+                block_on_future(session.peer(PeerId::self_user()))
             }))
+            .map_err(|_| "ACCOUNT_UNAVAILABLE: The saved account is temporarily unavailable")?
             .map_err(|_| "ACCOUNT_UNAVAILABLE: The saved account is temporarily unavailable")?;
             if !same_file() {
                 return Err("ACCOUNT_CHANGED: The saved session has been replaced".into());
@@ -337,9 +353,11 @@ pub fn current_owner(root: &Path) -> Result<i64, String> {
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let session = SqliteSession::open(path)
+        let session = block_on_future(SqliteSession::open(path))
             .map_err(|_| "ACCOUNT_UNAVAILABLE: The saved account is temporarily unavailable")?;
-        match session.peer(PeerId::self_user()) {
+        let peer = block_on_future(session.peer(PeerId::self_user()))
+            .map_err(|_| "ACCOUNT_UNAVAILABLE: The saved account is temporarily unavailable")?;
+        match peer {
             Some(PeerInfo::User {
                 id,
                 is_self: Some(true),
@@ -430,7 +448,7 @@ impl AccountGuard {
     pub async fn validate_client(&self, client: &grammers_client::Client) -> Result<(), String> {
         self.validate()?;
         let user = client.get_me().await.map_err(|e| e.to_string())?;
-        self.validate_client_owner(user.bare_id())
+        self.validate_client_owner(user.id().bare_id().unwrap_or(0))
     }
 
     fn validate_client_owner(&self, owner: i64) -> Result<(), String> {
@@ -453,13 +471,13 @@ mod tests {
     fn remote_read_rejects_a_stale_client_and_a_changed_saved_session() {
         let root = std::env::temp_dir().join(format!("workspace-client-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-        session.cache_peer(&PeerInfo::User {
+        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: 101,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        })).unwrap();
         let account = AccountGuard::open(&root, Some("101")).unwrap();
         assert!(account
             .validate_client_owner(202)
@@ -474,13 +492,13 @@ mod tests {
         ] {
             let _ = std::fs::remove_file(root.join(name));
         }
-        let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-        session.cache_peer(&PeerInfo::User {
+        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: 202,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        })).unwrap();
         assert!(account.validate_client_owner(101).is_err());
         drop(session);
         std::fs::remove_dir_all(root).unwrap();

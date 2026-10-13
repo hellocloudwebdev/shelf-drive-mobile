@@ -106,9 +106,20 @@ export function MobileMediaPlayer({ file, activeFolderId, onClose, preferences }
           await android.openStreamPlayer({
             streamUrl,
             title: file.name,
-            mimeType: file.mime_type && file.mime_type !== 'application/octet-stream'
-              ? file.mime_type
-              : isVideo ? 'video/*' : 'audio/*',
+            mimeType: (() => {
+              if (file.mime_type && file.mime_type !== 'application/octet-stream' && !file.mime_type.endsWith('/*')) {
+                return file.mime_type;
+              }
+              const ext = file.name.split('.').pop()?.toLowerCase();
+              if (ext === 'mp4') return 'video/mp4';
+              if (ext === 'mkv') return 'video/x-matroska';
+              if (ext === 'webm') return 'video/webm';
+              if (ext === 'mp3') return 'audio/mpeg';
+              if (ext === 'flac') return 'audio/flac';
+              if (ext === 'wav') return 'audio/wav';
+              if (ext === 'm4a' || ext === 'aac') return 'audio/mp4';
+              return '';
+            })(),
             mediaId: `${activeFolderId ?? 'home'}:${file.id}`,
             preferencesJson: JSON.stringify(preferences ?? {
               privateMetadata: true,

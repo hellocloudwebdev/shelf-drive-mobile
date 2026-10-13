@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use grammers_client::Client;
-use grammers_mtsender::SenderPool;
+use grammers_mtsender::{SenderPool, UpdatesConfiguration};
 use grammers_session::storages::SqliteSession;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use grammers_session::types::UpdateState;
@@ -20,7 +20,7 @@ use crate::commands::utils::map_error;
 use crate::commands::PhoneLoginState;
 use crate::models::{AuthCodeDelivery, AuthCodeRequestResult, AuthCodeRequestStatus, AuthResult};
 use crate::TelegramState;
-use grammers_client::types::PasswordToken;
+use grammers_client::client::PasswordToken;
 use grammers_mtsender::InvocationError;
 
 fn open_client_session(root: &std::path::Path) -> sqlite::Result<Arc<SqliteSession>> {
@@ -30,7 +30,14 @@ fn open_client_session(root: &std::path::Path) -> sqlite::Result<Arc<SqliteSessi
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        SqliteSession::open(root.join("telegram.session")).map(Arc::new)
+        let handle = tokio::runtime::Handle::current();
+        handle
+            .block_on(SqliteSession::open(root.join("telegram.session")))
+            .map(Arc::new)
+            .map_err(|e| sqlite::Error {
+                code: None,
+                message: Some(e.to_string()),
+            })
     }
 }
 
@@ -199,7 +206,7 @@ pub async fn ensure_client_initialized(
     if preferred_dc.starts_with("dc") && preferred_dc.len() > 2 {
         if let Ok(dc_id) = preferred_dc[2..].parse::<i32>() {
             log::info!("Setting preferred home DC ID: {}", dc_id);
-            session.set_home_dc_id(dc_id);
+            let _ = session.set_home_dc_id(dc_id).await;
         }
     }
 
@@ -218,14 +225,18 @@ pub async fn ensure_client_initialized(
 
     *state.session.lock().await = Some(session.clone());
     let pool = SenderPool::with_configuration(session, api_id, connection_params);
-    let client = Client::new(&pool);
+    let client = Client::new(pool.handle.clone());
 
     // Create shutdown channel for this runner
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     *state.runner_shutdown.lock().unwrap() = Some(shutdown_tx);
 
     // Spawn the network runner with shutdown support
-    let SenderPool { runner, .. } = pool;
+    let SenderPool {
+        runner,
+        updates,
+        handle: pool_handle,
+    } = pool;
     tauri::async_runtime::spawn(async move {
         tokio::select! {
             // Normal runner operation
@@ -237,6 +248,32 @@ pub async fn ensure_client_initialized(
                 log::info!("Runner #{} shutdown requested, exiting", runner_num);
             }
         }
+    });
+
+    // Drain Telegram updates so the bounded channel does not drop them and the
+    // session's update state (pts/qts/seq) advances with the server. The app
+    // currently has no interactive update handling; refresh flows re-fetch.
+    let updates_client = client.clone();
+    tauri::async_runtime::spawn(async move {
+        match updates_client
+            .stream_updates(updates, UpdatesConfiguration::default())
+            .await
+        {
+            Ok(mut stream) => {
+                loop {
+                    match stream.next().await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            log::debug!("Telegram update stream error: {e}");
+                            break;
+                        }
+                    }
+                }
+                log::info!("Update stream ended");
+            }
+            Err(e) => log::warn!("Could not start update stream: {e}"),
+        }
+        drop(pool_handle);
     });
 
     *client_guard = Some(client.clone());
@@ -609,7 +646,7 @@ async fn authentication_client(
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn authenticated_peer(user: &grammers_client::types::User) -> PeerInfo {
+fn authenticated_peer(user: &grammers_client::peer::User) -> PeerInfo {
     let mut peer = PeerInfo::from(user);
     if let PeerInfo::User { is_self, .. } = &mut peer {
         *is_self = Some(true);
@@ -646,7 +683,7 @@ async fn invoke_send_code(
                     .as_ref()
                     .cloned()
                     .ok_or_else(|| "Telegram session is not initialized.".to_string())?;
-                session.set_home_dc_id(dc_id);
+                let _ = session.set_home_dc_id(dc_id).await;
                 migrated = true;
                 log::info!("Telegram login moved to data center {}", dc_id);
             }
@@ -701,7 +738,7 @@ async fn complete_raw_login(
         },
     };
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    session.cache_peer(&peer);
+    let _ = session.cache_peer(peer).await;
 
     let updates = if let Ok(Ok(tl::enums::updates::State::State(update))) = timeout(
         Duration::from_secs(15),
@@ -723,7 +760,7 @@ async fn complete_raw_login(
     captured.complete_verified(&peer, updates)?;
     #[cfg(any(target_os = "android", target_os = "ios"))]
     if let Some(updates) = updates {
-        session.set_update_state(UpdateState::All(updates));
+        let _ = session.set_update_state(UpdateState::All(updates)).await;
     }
 
     Ok(())

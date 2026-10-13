@@ -39,7 +39,9 @@ export function useTelegramConnection(onLogoutParent: () => void) {
                 return id;
             } catch (error) {
                 if (generation !== accountGeneration.current) return null;
-                setAccountId(null);
+                if (/ACCOUNT_(?:REQUIRED|CHANGED)/.test(String(error))) {
+                    setAccountId(null);
+                }
                 // A busy session database must not disable every file query
                 // until a window visibility change. Never infer an owner or
                 // retry an explicit signed-out/account-change response.
