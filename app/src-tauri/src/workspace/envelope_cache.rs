@@ -182,7 +182,8 @@ pub(crate) mod test_support {
     };
 
     pub fn sign_in(root: &Path, owner: i64) {
-        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        let session =
+            crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
         // The fixture client keeps SQLite open, so replace the self peer in
         // place instead of relying on unlinking an open database on Windows.
         sqlite::open(root.join("telegram.session"))
@@ -194,7 +195,8 @@ pub(crate) mod test_support {
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(crate::workspace::current_owner(root).unwrap(), owner);
     }
     pub struct Fixture {
@@ -208,7 +210,9 @@ pub(crate) mod test_support {
                 std::env::temp_dir().join(format!("envelope-routing-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
             sign_in(&root, owner);
-            let session = Arc::new(crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap());
+            let session = Arc::new(
+                crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap(),
+            );
             let grammers_mtsender::SenderPool {
                 runner: _,
                 updates: _,
@@ -276,8 +280,8 @@ pub(crate) mod test_support {
 
     pub fn media(name: &str, document: i64, size: u64) -> grammers_client::media::Media {
         use grammers_tl_types::{enums, types};
-        grammers_client::media::Media::Document(
-            grammers_client::media::Document::from_raw_media(types::MessageMediaDocument {
+        grammers_client::media::Media::Document(grammers_client::media::Document::from_raw_media(
+            types::MessageMediaDocument {
                 nopremium: false,
                 spoiler: false,
                 video: false,
@@ -303,8 +307,8 @@ pub(crate) mod test_support {
                 video_cover: None,
                 video_timestamp: None,
                 ttl_seconds: None,
-            }),
-        )
+            },
+        ))
     }
 }
 impl HeaderProbe {

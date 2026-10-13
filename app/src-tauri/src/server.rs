@@ -819,13 +819,15 @@ mod streaming_runtime_tests {
             ] {
                 let _ = std::fs::remove_file(root.join(name));
             }
-            let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+            let session =
+                crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
             crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: owner,
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            })).unwrap();
+            }))
+            .unwrap();
         };
         sign_in(101);
         let account = crate::workspace::AccountGuard::open(&root, Some("101")).unwrap();
@@ -853,13 +855,18 @@ mod streaming_runtime_tests {
         let root =
             std::env::temp_dir().join(format!("share-stream-stopped-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let session = SqliteSession::open(root.join("telegram.session")).await.unwrap();
-        session.cache_peer(PeerInfo::User {
-            id: 101,
-            auth: None,
-            bot: Some(false),
-            is_self: Some(true),
-        }).await.unwrap();
+        let session = SqliteSession::open(root.join("telegram.session"))
+            .await
+            .unwrap();
+        session
+            .cache_peer(PeerInfo::User {
+                id: 101,
+                auth: None,
+                bot: Some(false),
+                is_self: Some(true),
+            })
+            .await
+            .unwrap();
         drop(session);
         let account = crate::workspace::AccountGuard::open(&root, Some("101")).unwrap();
         let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));

@@ -133,7 +133,10 @@ async fn download_moov_chunk(
 ) -> Result<Vec<u8>, String> {
     let peer = resolve_peer(client, folder_id, &state.peer_cache).await?;
     let messages = client
-        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
+        .get_messages_by_id(
+            crate::commands::utils::peer_to_ref(&peer).await?,
+            &[message_id],
+        )
         .await
         .map_err(|e| e.to_string())?;
     let msg = messages

@@ -1328,7 +1328,10 @@ pub async fn cmd_prepare_transcoded_stream(
         )
         .await?;
         let message = client
-            .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
+            .get_messages_by_id(
+                crate::commands::utils::peer_to_ref(&peer).await?,
+                &[message_id],
+            )
             .await
             .map_err(|e| e.to_string())?
             .into_iter()
@@ -1399,7 +1402,10 @@ async fn get_duration_from_media(
     .await?;
 
     let messages = client
-        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
+        .get_messages_by_id(
+            crate::commands::utils::peer_to_ref(&peer).await?,
+            &[message_id],
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -2286,13 +2292,15 @@ mod cache_tests {
         ] {
             let _ = std::fs::remove_file(root.join(file));
         }
-        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        let session =
+            crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
         crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: owner,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        })).unwrap();
+        }))
+        .unwrap();
     }
 
     impl TestCache {

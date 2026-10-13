@@ -506,7 +506,9 @@ mod tests {
             fixture
         }
         fn set_owner(&self, owner: i64) {
-            let session = crate::test_block_on(SqliteSession::open(self.root.join("telegram.session"))).unwrap();
+            let session =
+                crate::test_block_on(SqliteSession::open(self.root.join("telegram.session")))
+                    .unwrap();
             sqlite::open(self.root.join("telegram.session"))
                 .unwrap()
                 .execute("DELETE FROM peer_info")
@@ -516,7 +518,8 @@ mod tests {
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            })).unwrap();
+            }))
+            .unwrap();
             assert_eq!(crate::workspace::current_owner(&self.root).unwrap(), owner);
         }
         fn guard(&self) -> crate::workspace::AccountGuard {

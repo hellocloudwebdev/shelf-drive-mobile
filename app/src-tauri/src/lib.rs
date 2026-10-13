@@ -1650,9 +1650,9 @@ pub fn run() {
 }
 
 #[cfg(test)]
-pub(crate) fn test_block_on<F: std::future::Future>(f: F) -> F::Output
+pub(crate) fn test_block_on<F>(f: F) -> F::Output
 where
-    F: Send,
+    F: std::future::Future + Send,
     F::Output: Send,
 {
     std::thread::scope(|s| {

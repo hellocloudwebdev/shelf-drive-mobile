@@ -9,11 +9,7 @@ use crate::commands::{
     utils::{media_size, resolve_peer},
     TelegramState,
 };
-use grammers_client::{
-    media::Media,
-    message::Message,
-    Client,
-};
+use grammers_client::{media::Media, message::Message, Client};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;

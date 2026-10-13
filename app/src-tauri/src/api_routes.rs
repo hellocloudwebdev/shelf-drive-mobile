@@ -85,7 +85,10 @@ async fn api_registered_encrypted(
     account.validate()?;
     let peer = resolve_peer(client, folder_id, &state.peer_cache).await?;
     let message = client
-        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
+        .get_messages_by_id(
+            crate::commands::utils::peer_to_ref(&peer).await?,
+            &[message_id],
+        )
         .await
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -457,7 +460,9 @@ async fn api_list_files(
 
     let mut all_files: Vec<ApiFile> = Vec::new();
     for (fid, peer) in &peers_to_scan {
-        let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else { continue; };
+        let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else {
+            continue;
+        };
         let mut msgs = client.iter_messages(peer);
         if let Some(offset_id) = query.offset_id {
             msgs = msgs.offset_id(offset_id);
@@ -1258,7 +1263,9 @@ async fn api_search_files(
 
     let mut matching_files = Vec::new();
     for (fid, peer) in &peers_to_scan {
-        let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else { continue; };
+        let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else {
+            continue;
+        };
         let mut msgs = client.iter_messages(peer).limit(200);
         while let Some(msg) = msgs.next().await.ok().flatten() {
             if let Some(doc) = msg.media() {
@@ -2096,7 +2103,9 @@ async fn api_storage_stats(
     let mut mime_map: HashMap<String, (usize, u64)> = HashMap::new();
 
     for (fid, folder_name, peer) in peers_to_scan {
-        let Ok(peer) = crate::commands::utils::peer_to_ref(&peer).await else { continue; };
+        let Ok(peer) = crate::commands::utils::peer_to_ref(&peer).await else {
+            continue;
+        };
         let mut file_count = 0;
         let mut size_bytes = 0;
         let mut msgs = client.iter_messages(peer).limit(200);
@@ -2188,15 +2197,18 @@ async fn api_storage_duplicates(
     let mut file_groups: HashMap<(String, u64), Vec<ApiFile>> = HashMap::new();
 
     for (fid, peer) in peers_to_scan {
-        let Ok(peer) = crate::commands::utils::peer_to_ref(&peer).await else { continue; };
+        let Ok(peer) = crate::commands::utils::peer_to_ref(&peer).await else {
+            continue;
+        };
         let mut msgs = client.iter_messages(peer).limit(200);
         while let Some(msg) = msgs.next().await.ok().flatten() {
             if let Some(doc) = msg.media() {
                 let size = media_size(&doc);
                 let (name, mime) = match doc {
-                    Media::Document(d) => {
-                        (d.name().unwrap_or("unknown").to_string(), d.mime_type().map(|s| s.to_string()))
-                    }
+                    Media::Document(d) => (
+                        d.name().unwrap_or("unknown").to_string(),
+                        d.mime_type().map(|s| s.to_string()),
+                    ),
                     Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".into())),
                     _ => continue,
                 };
@@ -2262,7 +2274,9 @@ async fn api_empty_folders(
     let mut empty_folders = Vec::new();
 
     for (fid, display_name, peer) in folders_to_check {
-        let Ok(peer) = crate::commands::utils::peer_to_ref(&peer).await else { continue; };
+        let Ok(peer) = crate::commands::utils::peer_to_ref(&peer).await else {
+            continue;
+        };
         let mut msgs = client.iter_messages(peer).limit(1);
         let mut is_empty = true;
         if let Some(msg) = msgs.next().await.ok().flatten() {

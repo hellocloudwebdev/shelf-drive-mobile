@@ -524,13 +524,18 @@ mod tests {
         use grammers_session::{storages::SqliteSession, types::PeerInfo, Session};
         let root = std::env::temp_dir().join(format!("fmp4-account-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let session = SqliteSession::open(root.join("telegram.session")).await.unwrap();
-        session.cache_peer(PeerInfo::User {
-            id: 22,
-            auth: None,
-            bot: Some(false),
-            is_self: Some(true),
-        }).await.unwrap();
+        let session = SqliteSession::open(root.join("telegram.session"))
+            .await
+            .unwrap();
+        session
+            .cache_peer(PeerInfo::User {
+                id: 22,
+                auth: None,
+                bot: Some(false),
+                is_self: Some(true),
+            })
+            .await
+            .unwrap();
         drop(session);
         let manager = Arc::new(TranscodeManager::new(root.join("streaming")));
         for key in ["11_0_42", "22_0_42", "0_42"] {

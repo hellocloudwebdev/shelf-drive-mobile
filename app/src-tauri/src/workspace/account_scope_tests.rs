@@ -12,7 +12,8 @@ impl Fixture {
         fixture
     }
     fn set_owner(&self, owner: i64) {
-        let session = crate::test_block_on(SqliteSession::open(self.0.join("telegram.session"))).unwrap();
+        let session =
+            crate::test_block_on(SqliteSession::open(self.0.join("telegram.session"))).unwrap();
         // A new login replaces the session. Merely adding another self peer would
         // leave the first account as SQLite's self lookup and would not switch it.
         sqlite::open(self.0.join("telegram.session"))
@@ -24,7 +25,8 @@ impl Fixture {
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(crate::workspace::current_owner(&self.0).unwrap(), owner);
     }
     fn guard(&self) -> AccountGuard {
@@ -108,7 +110,9 @@ mod desktop_session_reads {
         lifecycle: &WorkspaceLifecycle,
     ) -> (Arc<SqliteSession>, HashMap<PathBuf, RegisteredSession>) {
         std::fs::remove_file(fixture.0.join("telegram.session")).unwrap();
-        let session = Arc::new(crate::test_block_on(SqliteSession::open(fixture.0.join("telegram.session"))).unwrap());
+        let session = Arc::new(
+            crate::test_block_on(SqliteSession::open(fixture.0.join("telegram.session"))).unwrap(),
+        );
         let sessions = HashMap::from([(
             fixture.0.clone(),
             RegisteredSession {
@@ -173,7 +177,9 @@ mod desktop_session_reads {
             .unwrap_err()
             .starts_with("ACCOUNT_CHANGED:"));
         assert!(lifecycle.signing_out.load(Ordering::SeqCst));
-        assert!(crate::test_block_on(old_session.peer(PeerId::self_user())).unwrap().is_none());
+        assert!(crate::test_block_on(old_session.peer(PeerId::self_user()))
+            .unwrap()
+            .is_none());
 
         let replacement = Fixture::new(303);
         let (new_session, new_sessions) = isolated_login(&replacement, &lifecycle);
@@ -214,7 +220,8 @@ mod desktop_session_reads {
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(current_owner(&fixture.0).unwrap(), 101);
         assert_eq!(
             Arc::strong_count(&session),
@@ -240,7 +247,8 @@ mod desktop_session_reads {
                     auth: None,
                     bot: Some(false),
                     is_self: Some(false),
-                })).unwrap();
+                }))
+                .unwrap();
             }
         });
         barrier.wait();
@@ -391,14 +399,19 @@ mod desktop_session_reads {
     fn supported_session_self_identity_matches_the_pinned_library_for_users_and_bots() {
         for bot in [false, true] {
             let fixture = Fixture::new(101);
-            let session = crate::test_block_on(SqliteSession::open(fixture.0.join("telegram.session"))).unwrap();
+            let session =
+                crate::test_block_on(SqliteSession::open(fixture.0.join("telegram.session")))
+                    .unwrap();
             crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: 101,
                 auth: None,
                 bot: Some(bot),
                 is_self: Some(true),
-            })).unwrap();
-            let Some(PeerInfo::User { id, .. }) = crate::test_block_on(session.peer(PeerId::self_user())).unwrap() else {
+            }))
+            .unwrap();
+            let Some(PeerInfo::User { id, .. }) =
+                crate::test_block_on(session.peer(PeerId::self_user())).unwrap()
+            else {
                 panic!("Missing synthetic self peer");
             };
             assert_eq!(current_owner(&fixture.0).unwrap(), id);

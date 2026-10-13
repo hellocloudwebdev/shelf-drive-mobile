@@ -547,9 +547,10 @@ async fn scan_remote_once(
             continue;
         };
         let (document_name, media_id) = match &media {
-            grammers_client::media::Media::Document(document) => {
-                (document.name().unwrap_or("unknown").to_string(), document.id())
-            }
+            grammers_client::media::Media::Document(document) => (
+                document.name().unwrap_or("unknown").to_string(),
+                document.id(),
+            ),
             grammers_client::media::Media::Photo(photo) => ("Photo.jpg".to_string(), photo.id()),
             _ => continue,
         };

@@ -186,13 +186,15 @@ mod tests {
             ] {
                 let _ = std::fs::remove_file(root.join(name));
             }
-            let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+            let session =
+                crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
             crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: owner,
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            })).unwrap();
+            }))
+            .unwrap();
         };
         sign_in(101);
         let account = super::AccountGuard::open(&root, Some("101")).unwrap();

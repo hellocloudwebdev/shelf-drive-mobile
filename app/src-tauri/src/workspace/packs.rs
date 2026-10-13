@@ -1003,7 +1003,8 @@ mod tests {
     use super::*;
     fn sign_in(root: &Path, owner: i64) {
         use grammers_session::{storages::SqliteSession, types::PeerInfo, Session};
-        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        let session =
+            crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
         sqlite::open(root.join("telegram.session"))
             .unwrap()
             .execute("DELETE FROM peer_info")
@@ -1013,7 +1014,8 @@ mod tests {
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(crate::workspace::current_owner(root).unwrap(), owner);
     }
     fn setup() -> (PathBuf, Store) {

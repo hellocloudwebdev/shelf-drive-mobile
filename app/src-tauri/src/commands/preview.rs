@@ -1036,7 +1036,10 @@ pub async fn cmd_get_preview(
     verify_client_account(&account, &client).await?;
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     let message = client
-        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
+        .get_messages_by_id(
+            crate::commands::utils::peer_to_ref(&peer).await?,
+            &[message_id],
+        )
         .await
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -1225,7 +1228,10 @@ pub async fn cmd_get_thumbnail(
     verify_client_account(&account, &client).await?;
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     let message = client
-        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
+        .get_messages_by_id(
+            crate::commands::utils::peer_to_ref(&peer).await?,
+            &[message_id],
+        )
         .await
         .map_err(|error| error.to_string())?
         .into_iter()

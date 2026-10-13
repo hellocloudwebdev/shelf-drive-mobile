@@ -32,7 +32,8 @@ fn sign_in(root: &Path, owner: i64) {
         auth: None,
         bot: Some(false),
         is_self: Some(true),
-    })).unwrap();
+    }))
+    .unwrap();
 }
 
 #[test]

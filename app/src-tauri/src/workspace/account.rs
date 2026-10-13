@@ -4,9 +4,9 @@ use grammers_session::{
     Session,
 };
 
-fn block_on_future<F: std::future::Future>(future: F) -> F::Output
+fn block_on_future<F>(future: F) -> F::Output
 where
-    F: Send,
+    F: std::future::Future + Send,
     F::Output: Send,
 {
     std::thread::scope(|s| {
@@ -80,12 +80,13 @@ pub(crate) fn open_session(root: &Path) -> sqlite::Result<Arc<SqliteSession>> {
         // shared SQLite mutex rather than opening another competing writer.
         return Ok(session);
     }
-    let session = Arc::new(
-        block_on_future(SqliteSession::open(&path)).map_err(|e| sqlite::Error {
-            code: None,
-            message: Some(e.to_string()),
-        })?,
-    );
+    let session =
+        Arc::new(
+            block_on_future(SqliteSession::open(&path)).map_err(|e| sqlite::Error {
+                code: None,
+                message: Some(e.to_string()),
+            })?,
+        );
     let identity = session_file_identity(&path)
         .ok()
         .filter(|after| before.is_none_or(|before| before == *after));
@@ -481,13 +482,15 @@ mod tests {
     fn remote_read_rejects_a_stale_client_and_a_changed_saved_session() {
         let root = std::env::temp_dir().join(format!("workspace-client-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        let session =
+            crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
         crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: 101,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        })).unwrap();
+        }))
+        .unwrap();
         let account = AccountGuard::open(&root, Some("101")).unwrap();
         assert!(account
             .validate_client_owner(202)
@@ -502,13 +505,15 @@ mod tests {
         ] {
             let _ = std::fs::remove_file(root.join(name));
         }
-        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        let session =
+            crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
         crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: 202,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        })).unwrap();
+        }))
+        .unwrap();
         assert!(account.validate_client_owner(101).is_err());
         drop(session);
         std::fs::remove_dir_all(root).unwrap();

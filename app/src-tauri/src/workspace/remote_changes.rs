@@ -133,13 +133,16 @@ mod tests {
             ] {
                 let _ = std::fs::remove_file(self.root.join(name));
             }
-            let session = crate::test_block_on(SqliteSession::open(self.root.join("telegram.session"))).unwrap();
+            let session =
+                crate::test_block_on(SqliteSession::open(self.root.join("telegram.session")))
+                    .unwrap();
             crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: owner,
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            })).unwrap();
+            }))
+            .unwrap();
         }
         fn account(&self) -> AccountGuard {
             AccountGuard::open(&self.root, Some("101")).unwrap()
