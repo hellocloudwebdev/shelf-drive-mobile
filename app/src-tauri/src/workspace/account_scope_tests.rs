@@ -275,13 +275,15 @@ mod desktop_session_reads {
         )
         .unwrap();
         // Create the replacement through the library; do not register it yet.
-        let replacement = SqliteSession::open(fixture.0.join("telegram.session")).unwrap();
-        replacement.cache_peer(&PeerInfo::User {
+        let replacement =
+            crate::test_block_on(SqliteSession::open(fixture.0.join("telegram.session"))).unwrap();
+        crate::test_block_on(replacement.cache_peer(PeerInfo::User {
             id: 202,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        }))
+        .unwrap();
         drop(replacement);
         assert!(register_session(&fixture.0, &session)
             .unwrap_err()
@@ -307,13 +309,15 @@ mod desktop_session_reads {
             fixture.0.join("retired.session"),
         )
         .unwrap();
-        let replacement = SqliteSession::open(fixture.0.join("telegram.session")).unwrap();
-        replacement.cache_peer(&PeerInfo::User {
+        let replacement =
+            crate::test_block_on(SqliteSession::open(fixture.0.join("telegram.session"))).unwrap();
+        crate::test_block_on(replacement.cache_peer(PeerInfo::User {
             id: 202,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        }))
+        .unwrap();
         drop(replacement);
         assert!(account
             .validate()
