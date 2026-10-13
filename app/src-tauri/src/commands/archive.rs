@@ -1,7 +1,7 @@
 use crate::commands::utils::resolve_peer;
 use crate::commands::TelegramState;
 use crate::vpn_optimizer::NetworkConfig;
-use grammers_client::types::Media;
+use grammers_client::media::Media;
 use serde::Serialize;
 use std::io::{Cursor, Read};
 use std::sync::Arc;
@@ -122,7 +122,7 @@ async fn prepare_archive_operation(
         .map_err(|e| format!("Failed to resolve peer: {}", e))?;
 
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|e| format!("Failed to fetch message: {}", e))?;
 
@@ -135,12 +135,12 @@ async fn prepare_archive_operation(
     let media = msg.media().ok_or("Message has no media")?;
 
     let filename = match &media {
-        Media::Document(d) => d.name().to_string(),
+        Media::Document(d) => d.name().unwrap_or("unknown").to_string(),
         _ => "unknown".to_string(),
     };
 
     let file_size = match &media {
-        Media::Document(d) => d.size() as u64,
+        Media::Document(d) => d.size().map_or(0, |size| size as u64),
         _ => 0,
     };
 

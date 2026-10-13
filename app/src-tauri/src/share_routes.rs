@@ -9,7 +9,7 @@ use actix_web::{
     cookie::Cookie, get, middleware::DefaultHeaders, post, web, HttpRequest, HttpResponse,
     Responder,
 };
-use grammers_client::types::Media;
+use grammers_client::media::Media;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
@@ -584,7 +584,7 @@ async fn get_shared_file(
     };
 
     if account.validate().is_err()
-        || !matches!(client.get_me().await, Ok(user) if user.bare_id() == account.owner)
+        || !matches!(client.get_me().await, Ok(user) if user.id().bare_id().unwrap_or(0) == account.owner)
     {
         return HttpResponse::NotFound().body("Shared link is unavailable for the current account");
     }
@@ -592,6 +592,13 @@ async fn get_shared_file(
         Ok(p) => p,
         Err(e) => {
             log::error!("Failed to resolve peer for share: {}", e);
+            return HttpResponse::InternalServerError().body("Failed to locate folder");
+        }
+    };
+    let peer = match crate::commands::utils::peer_to_ref(&peer).await {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("Failed to resolve peer ref for share: {}", e);
             return HttpResponse::InternalServerError().body("Failed to locate folder");
         }
     };

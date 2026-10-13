@@ -45,7 +45,7 @@ describe('MobileMediaPlayer', () => {
     expect(invokeMock).toHaveBeenCalledWith('cmd_open_android_stream_player', {
       streamUrl: 'http://localhost:1421/stream/home/42?token=secret',
       title: 'android-video.mp4',
-      mimeType: 'video/*',
+      mimeType: 'video/mp4',
       mediaId: 'home:42',
       preferencesJson: JSON.stringify({
         privateMetadata: true,

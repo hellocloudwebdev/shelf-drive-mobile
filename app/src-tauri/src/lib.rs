@@ -921,6 +921,7 @@ fn cmd_get_system_diagnostics(app: tauri::AppHandle) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     env_logger::init();
 
     let stream_token_manager = Arc::new(crate::stream_token::StreamTokenManager::new());
@@ -1646,4 +1647,17 @@ pub fn run() {
             }
         }
     });
+}
+
+#[cfg(test)]
+pub(crate) fn test_block_on<F: std::future::Future>(f: F) -> F::Output {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(f))
+    } else {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(f)
+    }
 }

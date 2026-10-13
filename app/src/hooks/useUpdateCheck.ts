@@ -84,7 +84,7 @@ export function useUpdateCheck() {
                 }));
             }
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Failed to check for updates';
+            const message = typeof err === 'string' ? err : err instanceof Error ? err.message : 'Failed to check for updates';
             setState(s => ({
                 ...s,
                 checking: false,

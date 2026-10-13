@@ -27,13 +27,13 @@ impl Fixture {
         ] {
             let _ = std::fs::remove_file(self.root.0.join(name));
         }
-        let session = SqliteSession::open(self.root.0.join("telegram.session")).unwrap();
-        session.cache_peer(&PeerInfo::User {
+        let session = crate::test_block_on(SqliteSession::open(self.root.0.join("telegram.session"))).unwrap();
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: owner,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        })).unwrap();
     }
 }
 impl Drop for Fixture {

@@ -42,6 +42,7 @@ const MAX_APK_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[cfg(target_os = "android")]
 fn update_client() -> Result<reqwest::Client, String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .https_only(true)
         .redirect(reqwest::redirect::Policy::limited(5))
@@ -123,13 +124,30 @@ fn validate_manifest(manifest: &AndroidUpdateManifest) -> Result<(), String> {
 
 #[cfg(target_os = "android")]
 async fn fetch_verified_manifest() -> Result<AndroidUpdateManifest, String> {
+    use base64::Engine;
+
     let client = update_client()?;
     let (manifest_bytes, signature_bytes) = tokio::try_join!(
         fetch_limited(&client, UPDATE_MANIFEST_URL, MAX_MANIFEST_BYTES),
         fetch_limited(&client, UPDATE_SIGNATURE_URL, MAX_MANIFEST_BYTES),
     )?;
-    let signature_text = std::str::from_utf8(&signature_bytes)
-        .map_err(|_| "The update signature is not valid UTF-8".to_string())?;
+    let raw_signature_text = std::str::from_utf8(&signature_bytes)
+        .map_err(|_| "The update signature is not valid UTF-8".to_string())?
+        .trim();
+    let decoded_bytes = base64::engine::general_purpose::STANDARD
+        .decode(raw_signature_text)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(raw_signature_text));
+    let decoded_string;
+    let signature_text = match decoded_bytes {
+        Ok(ref bytes) => match std::str::from_utf8(bytes) {
+            Ok(text) if text.starts_with("untrusted comment:") => {
+                decoded_string = text.to_string();
+                &decoded_string
+            }
+            _ => raw_signature_text,
+        },
+        Err(_) => raw_signature_text,
+    };
     let key = minisign_verify::PublicKey::decode(UPDATE_PUBLIC_KEY)
         .map_err(|_| "The embedded update public key is invalid".to_string())?;
     let signature = minisign_verify::Signature::decode(signature_text)

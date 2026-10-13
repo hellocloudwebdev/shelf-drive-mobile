@@ -182,26 +182,25 @@ pub(crate) mod test_support {
     };
 
     pub fn sign_in(root: &Path, owner: i64) {
-        let session = SqliteSession::open(root.join("telegram.session")).unwrap();
+        let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
         // The fixture client keeps SQLite open, so replace the self peer in
         // place instead of relying on unlinking an open database on Windows.
         sqlite::open(root.join("telegram.session"))
             .unwrap()
             .execute("DELETE FROM peer_info")
             .unwrap();
-        session.cache_peer(&PeerInfo::User {
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
             id: owner,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        })).unwrap();
         assert_eq!(crate::workspace::current_owner(root).unwrap(), owner);
     }
     pub struct Fixture {
         pub root: PathBuf,
         pub account: super::super::AccountGuard,
         pub client: grammers_client::Client,
-        _pool: grammers_mtsender::SenderPool,
     }
     impl Fixture {
         pub fn new(owner: i64) -> Self {
@@ -209,16 +208,19 @@ pub(crate) mod test_support {
                 std::env::temp_dir().join(format!("envelope-routing-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
             sign_in(&root, owner);
-            let session = Arc::new(SqliteSession::open(root.join("telegram.session")).unwrap());
-            let pool = grammers_mtsender::SenderPool::new(session, 1);
-            let client = grammers_client::Client::new(&pool);
+            let session = Arc::new(crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap());
+            let grammers_mtsender::SenderPool {
+                runner: _,
+                updates: _,
+                handle,
+            } = grammers_mtsender::SenderPool::new(session, 1);
+            let client = grammers_client::Client::new(handle);
             let account =
                 super::super::AccountGuard::open(&root, Some(&owner.to_string())).unwrap();
             Self {
                 root,
                 account,
                 client,
-                _pool: pool,
             }
         }
     }
@@ -272,10 +274,10 @@ pub(crate) mod test_support {
         (header, size, master)
     }
 
-    pub fn media(name: &str, document: i64, size: u64) -> grammers_client::types::Media {
+    pub fn media(name: &str, document: i64, size: u64) -> grammers_client::media::Media {
         use grammers_tl_types::{enums, types};
-        grammers_client::types::Media::Document(
-            grammers_client::types::media::Document::from_raw_media(types::MessageMediaDocument {
+        grammers_client::media::Media::Document(
+            grammers_client::media::Document::from_raw_media(types::MessageMediaDocument {
                 nopremium: false,
                 spoiler: false,
                 video: false,

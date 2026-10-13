@@ -1,7 +1,7 @@
 use crate::commands::utils::resolve_peer;
 use crate::mp4_utils;
 use crate::TelegramState;
-use grammers_client::types::Media;
+use grammers_client::media::Media;
 use tauri::State;
 
 #[derive(serde::Serialize)]
@@ -93,11 +93,12 @@ struct ParsedMetadata {
 /// Download the first 2 MB of a file and parse metadata + scan tkhd.
 async fn download_and_process(
     client: &grammers_client::Client,
-    peer: &grammers_client::types::Peer,
+    peer: &grammers_client::peer::Peer,
     req: &BatchMetadataRequest,
 ) -> Result<BatchMetadataEntry, String> {
+    let peer_ref = crate::commands::utils::peer_to_ref(peer).await?;
     let messages = client
-        .get_messages_by_id(peer, &[req.message_id])
+        .get_messages_by_id(peer_ref, &[req.message_id])
         .await
         .map_err(|e| e.to_string())?;
     let msg = messages
@@ -108,7 +109,7 @@ async fn download_and_process(
     let media = msg.media().ok_or_else(|| "No media".to_string())?;
 
     let size = match &media {
-        Media::Document(d) => d.size() as u64,
+        Media::Document(d) => d.size().map_or(0, |s| s as u64),
         _ => return Err("Not a document".to_string()),
     };
 
@@ -132,7 +133,7 @@ async fn download_moov_chunk(
 ) -> Result<Vec<u8>, String> {
     let peer = resolve_peer(client, folder_id, &state.peer_cache).await?;
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|e| e.to_string())?;
     let msg = messages
@@ -142,7 +143,7 @@ async fn download_moov_chunk(
         .ok_or_else(|| format!("Message {message_id} not found"))?;
     let media = msg.media().ok_or_else(|| "No media".to_string())?;
     let size = match &media {
-        Media::Document(d) => d.size() as u64,
+        Media::Document(d) => d.size().map_or(0, |s| s as u64),
         _ => return Err("Not a document".to_string()),
     };
     download_bytes(client, &media, size).await

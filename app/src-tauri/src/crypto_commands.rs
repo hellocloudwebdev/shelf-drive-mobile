@@ -448,7 +448,7 @@ pub async fn cmd_get_file_encryption_info(
     let peer = crate::commands::utils::resolve_peer(&client, folder_id, &state.peer_cache).await?;
     account.validate()?;
     let messages = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|e| e.to_string())?;
     account.validate()?;

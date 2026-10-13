@@ -1,4 +1,5 @@
-use grammers_client::types::{PasswordToken, Peer};
+use grammers_client::peer::Peer;
+use grammers_client::client::PasswordToken;
 use grammers_client::Client;
 use grammers_session::storages::SqliteSession;
 use std::collections::{HashMap, HashSet};

@@ -1,6 +1,8 @@
 use crate::bandwidth::BandwidthManager;
-use grammers_client::types::{Media, Peer};
+use grammers_client::media::Media;
+use grammers_client::peer::Peer;
 use grammers_client::Client;
+use grammers_session::types::PeerRef;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
@@ -63,6 +65,29 @@ pub async fn clear_peer_cache(peer_cache: &Arc<RwLock<HashMap<i64, Peer>>>) {
     peer_cache.write().await.clear();
 }
 
+/// Resolve a folder_id to a session-usable peer reference for API calls.
+///
+/// Like [`resolve_peer`], but converts the peer into the `PeerRef` that
+/// grammers 0.10+ request methods accept.
+pub async fn resolve_peer_ref(
+    client: &Client,
+    folder_id: Option<i64>,
+    peer_cache: &Arc<RwLock<HashMap<i64, Peer>>>,
+) -> Result<PeerRef, String> {
+    let peer = resolve_peer(client, folder_id, peer_cache).await?;
+    peer_to_ref(&peer).await
+}
+
+/// Convert an already-resolved peer into the `PeerRef` request methods accept.
+pub async fn peer_to_ref(peer: &Peer) -> Result<PeerRef, String> {
+    peer.to_ref()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "Peer is not usable in this session yet; reopen the folder and try again".to_string()
+        })
+}
+
 #[tauri::command]
 pub fn cmd_log(message: String) {
     log::info!("[FRONTEND] {}", message);
@@ -99,15 +124,15 @@ pub fn map_error(e: impl std::fmt::Display) -> String {
 /// from the largest available photo representation, which is the same media
 /// variant downloaded when the original photo is requested.
 pub fn media_size(media: &Media) -> u64 {
-    let size = match media {
+    match media {
         Media::Document(document) => document.size(),
         Media::Photo(photo) => photo.size(),
-        _ => 0,
-    };
-
-    nonnegative_size(size)
+        _ => None,
+    }
+    .map_or(0, |size| u64::try_from(size).unwrap_or(0))
 }
 
+#[cfg(test)]
 fn nonnegative_size(size: i64) -> u64 {
     u64::try_from(size).unwrap_or(0)
 }
@@ -115,7 +140,7 @@ fn nonnegative_size(size: i64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{media_size, nonnegative_size};
-    use grammers_client::types::{Media, Photo};
+    use grammers_client::media::{Media, Photo};
     use grammers_tl_types as tl;
 
     #[test]

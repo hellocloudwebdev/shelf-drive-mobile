@@ -82,12 +82,15 @@ pub async fn cmd_create_share(
         .get_me()
         .await
         .map_err(|error| error.to_string())?
+        .id()
         .bare_id()
+        .unwrap_or(0)
         != owner
     {
         return Err("ACCOUNT_CHANGED: Reopen sharing from the current account".into());
     }
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
+    let peer = crate::commands::utils::peer_to_ref(&peer).await?;
     account.validate()?;
     let messages = client
         .get_messages_by_id(peer, &[message_id])
@@ -183,13 +186,13 @@ mod tests {
             ] {
                 let _ = std::fs::remove_file(root.join(name));
             }
-            let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-            session.cache_peer(&PeerInfo::User {
+            let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+            crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: owner,
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            });
+            })).unwrap();
         };
         sign_in(101);
         let account = super::AccountGuard::open(&root, Some("101")).unwrap();

@@ -3,7 +3,7 @@ use crate::commands::TelegramState;
 use crate::transcode::TranscodeManager;
 use actix_cors::Cors;
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
-use grammers_client::types::Media;
+use grammers_client::media::Media;
 
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -534,10 +534,16 @@ async fn stream_media(
             return HttpResponse::BadRequest().body(format!("Peer resolution failed: {error}"))
         }
     };
+    let peer = match crate::commands::utils::peer_to_ref(&peer).await {
+        Ok(peer) => peer,
+        Err(error) => {
+            return HttpResponse::BadRequest().body(format!("Peer resolution failed: {error}"))
+        }
+    };
     if account.validate().is_err() {
         return HttpResponse::NotFound().finish();
     }
-    let messages = match client.get_messages_by_id(&peer, &[message_id]).await {
+    let messages = match client.get_messages_by_id(peer, &[message_id]).await {
         Ok(messages) => messages,
         Err(error) => {
             return HttpResponse::BadGateway().body(format!("Failed to fetch message: {error}"))
@@ -813,13 +819,13 @@ mod streaming_runtime_tests {
             ] {
                 let _ = std::fs::remove_file(root.join(name));
             }
-            let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-            session.cache_peer(&PeerInfo::User {
+            let session = crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+            crate::test_block_on(session.cache_peer(PeerInfo::User {
                 id: owner,
                 auth: None,
                 bot: Some(false),
                 is_self: Some(true),
-            });
+            })).unwrap();
         };
         sign_in(101);
         let account = crate::workspace::AccountGuard::open(&root, Some("101")).unwrap();
@@ -847,13 +853,13 @@ mod streaming_runtime_tests {
         let root =
             std::env::temp_dir().join(format!("share-stream-stopped-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let session = SqliteSession::open(root.join("telegram.session")).unwrap();
-        session.cache_peer(&PeerInfo::User {
+        let session = SqliteSession::open(root.join("telegram.session")).await.unwrap();
+        session.cache_peer(PeerInfo::User {
             id: 101,
             auth: None,
             bot: Some(false),
             is_self: Some(true),
-        });
+        }).await.unwrap();
         drop(session);
         let account = crate::workspace::AccountGuard::open(&root, Some("101")).unwrap();
         let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));

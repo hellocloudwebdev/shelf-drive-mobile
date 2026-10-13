@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use grammers_client::types::{Media, Peer};
+use grammers_client::media::Media;
+use grammers_client::peer::Peer;
 use serde::Serialize;
 use tauri::{Manager, State};
 
@@ -62,6 +63,10 @@ async fn scan_drive_files(
     let mut files = Vec::new();
     for (folder_id, peer) in peers {
         account.validate()?;
+        let peer = match crate::commands::utils::peer_to_ref(&peer).await {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
         let mut messages = client.iter_messages(peer).limit(FILES_PER_FOLDER_LIMIT);
         while let Some(message) = messages.next().await.map_err(|error| error.to_string())? {
             account.validate()?;
@@ -71,7 +76,7 @@ async fn scan_drive_files(
             let size = media_size(&media);
             let (document_name, mut mime_type) = match &media {
                 Media::Document(document) => (
-                    document.name().to_string(),
+                    document.name().unwrap_or("unknown").to_string(),
                     document.mime_type().map(str::to_string),
                 ),
                 Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".to_string())),
@@ -142,7 +147,7 @@ async fn scan_drive_files(
                     is_favorite: false,
                     is_pinned: false,
                 },
-                created_at_unix: message.date().timestamp(),
+                created_at_unix: message.date().as_second(),
             });
         }
     }

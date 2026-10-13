@@ -4,7 +4,7 @@ use crate::db::DbConnection;
 use crate::vpn_optimizer::NetworkConfig;
 use crate::workspace::AccountGuard;
 use crate::TelegramState;
-use grammers_client::types::{Media, Peer};
+use grammers_client::media::Media;
 use image::codecs::jpeg::JpegEncoder;
 use rand::Rng;
 use serde::Serialize;
@@ -91,7 +91,7 @@ async fn verify_client_account(
         .get_me()
         .await
         .map_err(|_| "NETWORK_UNAVAILABLE: Could not verify the preview account")?;
-    if actual.bare_id() != account.owner {
+    if actual.id().bare_id().unwrap_or(0) != account.owner {
         return Err("ACCOUNT_CHANGED".into());
     }
     account.validate()
@@ -134,7 +134,7 @@ async fn current_media_is_protected(
         Ok(record) => Ok(record.is_some()),
         Err(error) => {
             account.validate()?;
-            if matches!(media,Media::Document(document) if crate::workspace::envelope_cache::suspected_envelope(document.name(),caption))
+            if matches!(media, Media::Document(document) if crate::workspace::envelope_cache::suspected_envelope(document.name().unwrap_or(""), caption))
             {
                 Ok(true)
             } else {
@@ -212,7 +212,7 @@ async fn mark_cache_file_used(path: PathBuf) {
 fn media_extension(media: &Media) -> String {
     let extension = match media {
         Media::Document(document) => {
-            let from_name = Path::new(document.name())
+            let from_name = Path::new(document.name().unwrap_or(""))
                 .extension()
                 .map(|value| value.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
@@ -697,7 +697,7 @@ async fn create_resized_thumbnail(
 /// error when the download produces zero bytes (e.g. stale file references or
 /// Telegram CDN stream drops).
 #[allow(clippy::too_many_arguments)] // The transfer policy inputs are independent and explicit.
-async fn download_to_file<D: grammers_client::types::Downloadable>(
+async fn download_to_file<D: grammers_client::media::Downloadable>(
     client: &grammers_client::Client,
     media: &D,
     part_path: &std::path::Path,
@@ -758,7 +758,10 @@ async fn download_to_file<D: grammers_client::types::Downloadable>(
 
     loop {
         let next = tokio::select! {
-            next = download_iter.next() => next,
+            next = tokio::time::timeout(Duration::from_secs(25), download_iter.next()) => match next {
+                Ok(res) => res,
+                Err(_) => return Err("DOWNLOAD_TIMEOUT: Network request timed out".into()),
+            },
             _ = async {loop {if account.validate().is_err() {break;} tokio::time::sleep(Duration::from_millis(200)).await;}} => return Err("ACCOUNT_CHANGED".into()),
         };
         match next {
@@ -838,7 +841,7 @@ fn aligned_resume_offset(existing_size: u64, chunk_size: u64, expected_size: u64
 
 struct DownloadOptions<'a> {
     client: &'a grammers_client::Client,
-    peer: &'a Peer,
+    peer: grammers_session::types::PeerRef,
     media: &'a Media,
     message_id: i32,
     folder_id: Option<i64>,
@@ -1012,7 +1015,9 @@ pub async fn cmd_get_preview(
     }
 
     let lock = download_lock(format!("preview:{}", stem));
-    let _guard = lock.lock().await;
+    let _guard = tokio::time::timeout(Duration::from_secs(30), lock.lock())
+        .await
+        .map_err(|_| "DOWNLOAD_BUSY: File download already in progress".to_string())?;
     if let Some(path) = find_cached_file(&cache_dir, &stem)
         .await
         .filter(|_| allow_cached)
@@ -1031,7 +1036,7 @@ pub async fn cmd_get_preview(
     verify_client_account(&account, &client).await?;
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     let message = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -1059,7 +1064,7 @@ pub async fn cmd_get_preview(
 
     download_media_with_retry(DownloadOptions {
         client: &client,
-        peer: &peer,
+        peer: crate::commands::utils::peer_to_ref(&peer).await?,
         media: &media,
         message_id,
         folder_id,
@@ -1220,7 +1225,7 @@ pub async fn cmd_get_thumbnail(
     verify_client_account(&account, &client).await?;
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
     let message = client
-        .get_messages_by_id(&peer, &[message_id])
+        .get_messages_by_id(crate::commands::utils::peer_to_ref(&peer).await?, &[message_id])
         .await
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -1325,7 +1330,7 @@ pub async fn cmd_get_thumbnail(
         let path = preview_dir.join(format!("{}.{}", stem, extension));
         download_media_with_retry(DownloadOptions {
             client: &client,
-            peer: &peer,
+            peer: crate::commands::utils::peer_to_ref(&peer).await?,
             media: &media,
             message_id,
             folder_id,

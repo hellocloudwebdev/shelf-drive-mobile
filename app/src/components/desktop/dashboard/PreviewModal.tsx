@@ -217,7 +217,15 @@ export function PreviewModal({
             });
         }
 
+        const previewTimeout = window.setTimeout(() => {
+            if (requestId === latestRequestRef.current) {
+                setError(t('common.preview_timeout', 'Preview loading timed out. Tap to retry.'));
+                setLoading(false);
+            }
+        }, 30000);
+
         loadPreview(file.id, activeFolderId).then((src) => {
+            window.clearTimeout(previewTimeout);
             if (requestId !== latestRequestRef.current) return;
             if (!src) {
                 setError('Preview not available');
@@ -227,10 +235,15 @@ export function PreviewModal({
             setFullSrc(src);
             if (!imagePreview) setLoading(false);
         }).catch((loadError) => {
+            window.clearTimeout(previewTimeout);
             if (requestId !== latestRequestRef.current) return;
             setError(userFacingError(loadError, t));
             setLoading(false);
         });
+
+        return () => {
+            window.clearTimeout(previewTimeout);
+        };
     }, [file.id, file.name, activeFolderId, imagePreview, fitImage, localPath]);
 
     // Prefetch only the likely next image, after the current one is fully decoded and
