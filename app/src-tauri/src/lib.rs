@@ -1650,14 +1650,20 @@ pub fn run() {
 }
 
 #[cfg(test)]
-pub(crate) fn test_block_on<F: std::future::Future>(f: F) -> F::Output {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| handle.block_on(f))
-    } else {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(f)
-    }
+pub(crate) fn test_block_on<F: std::future::Future>(f: F) -> F::Output
+where
+    F: Send,
+    F::Output: Send,
+{
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(f)
+        })
+        .join()
+        .unwrap()
+    })
 }

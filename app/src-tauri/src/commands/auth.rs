@@ -30,14 +30,21 @@ fn open_client_session(root: &std::path::Path) -> sqlite::Result<Arc<SqliteSessi
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let handle = tokio::runtime::Handle::current();
-        handle
-            .block_on(SqliteSession::open(root.join("telegram.session")))
-            .map(Arc::new)
-            .map_err(|e| sqlite::Error {
-                code: None,
-                message: Some(e.to_string()),
-            })
+        let path = root.join("telegram.session");
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(SqliteSession::open(path))
+        })
+        .join()
+        .unwrap()
+        .map(Arc::new)
+        .map_err(|e| sqlite::Error {
+            code: None,
+            message: Some(e.to_string()),
+        })
     }
 }
 

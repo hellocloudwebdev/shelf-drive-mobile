@@ -4,12 +4,22 @@ use grammers_session::{
     Session,
 };
 
-fn block_on_future<F: std::future::Future>(future: F) -> F::Output {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| handle.block_on(future))
-    } else {
-        tokio::runtime::Runtime::new().unwrap().block_on(future)
-    }
+fn block_on_future<F: std::future::Future>(future: F) -> F::Output
+where
+    F: Send,
+    F::Output: Send,
+{
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(future)
+        })
+        .join()
+        .unwrap()
+    })
 }
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::{
