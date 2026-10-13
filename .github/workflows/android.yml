@@ -133,6 +133,11 @@ jobs:
         working-directory: app
         env:
           ORG_GRADLE_PROJECT_shelfDrive_requireReleaseSigning: ${{ env.PRODUCTION_ANDROID_BUILD }}
+          RUSTFLAGS: "-C link-arg=-Wl,--allow-multiple-definition"
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS: "-C link-arg=-Wl,--allow-multiple-definition"
+          CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUSTFLAGS: "-C link-arg=-Wl,--allow-multiple-definition"
+          CARGO_TARGET_I686_LINUX_ANDROID_RUSTFLAGS: "-C link-arg=-Wl,--allow-multiple-definition"
+          CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS: "-C link-arg=-Wl,--allow-multiple-definition"
         run: npm run tauri android build -- --target aarch64 armv7 i686 x86_64 --apk true --aab true --ci
 
       - name: Compile Android JVM and instrumentation tests
