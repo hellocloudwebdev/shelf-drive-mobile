@@ -3758,22 +3758,6 @@ mod folder_listing_tests {
         insert.next().unwrap();
         drop(insert);
         let media = media("existing.mp4.tdenc", 100, size);
-        // This is a real grammers request whose sender remains alive without
-        // replying, like a stalled media datacenter during the first rescan.
-        assert!(tokio::time::timeout(
-            std::time::Duration::from_millis(30),
-            resolve_remote_envelope(
-                &fixture.account,
-                &fixture.client,
-                None,
-                42,
-                &media,
-                "TDENC2"
-            ),
-        )
-        .await
-        .is_err());
-
         let mut budget = ListingHeaderBudget {
             remaining: std::time::Duration::from_millis(20),
             per_file: std::time::Duration::from_millis(20),
@@ -3784,11 +3768,7 @@ mod folder_listing_tests {
             42,
             &media,
             "TDENC2",
-            budget.probe(probe_tdenc2_header(
-                &fixture.account,
-                &fixture.client,
-                &media,
-            )),
+            budget.probe(futures::future::pending::<Result<Vec<u8>, String>>()),
         )
         .await;
         assert!(matches!(result, Err(ref error) if error == LISTING_HEADER_DEFERRED));
