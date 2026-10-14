@@ -40,8 +40,8 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     const [step, setStep] = useState<AuthStep>("setup");
     const [loading, setLoading] = useState(false);
 
-    const [apiId, setApiId] = useState("");
-    const [apiHash, setApiHash] = useState("");
+    const [apiId, setApiId] = useState("38993939");
+    const [apiHash, setApiHash] = useState("542947ba1080ee654dc3d7f8305b0e2e");
 
     const [phone, setPhone] = useState("");
     const [code, setCode] = useState("");

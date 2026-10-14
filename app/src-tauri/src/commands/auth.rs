@@ -23,28 +23,19 @@ use crate::TelegramState;
 use grammers_client::client::PasswordToken;
 use grammers_mtsender::InvocationError;
 
-fn open_client_session(root: &std::path::Path) -> sqlite::Result<Arc<SqliteSession>> {
+async fn open_client_session(root: &std::path::Path) -> Result<Arc<SqliteSession>, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        crate::workspace::open_session(root)
+        crate::workspace::open_session(root).map_err(|e| e.to_string())
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let path = root.join("telegram.session");
-        std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(SqliteSession::open(path))
-        })
-        .join()
-        .unwrap()
-        .map(Arc::new)
-        .map_err(|e| sqlite::Error {
-            code: None,
-            message: Some(e.to_string()),
-        })
+        tokio::time::timeout(Duration::from_secs(5), SqliteSession::open(path))
+            .await
+            .map_err(|_| "Timeout opening session database".to_string())?
+            .map(Arc::new)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -167,7 +158,7 @@ pub async fn ensure_client_initialized(
     let session_path = app_data_dir.join("telegram.session");
     log::info!("Opening the local Telegram session database");
 
-    let mut session_open_result = open_client_session(&app_data_dir);
+    let mut session_open_result = open_client_session(&app_data_dir).await;
 
     // Retry opening the session database up to 5 times (every 100ms)
     // in case the database is temporarily locked by the old shutting down runner.
@@ -175,14 +166,14 @@ pub async fn ensure_client_initialized(
         for attempt in 1..=5 {
             log::warn!("Failed to open session on attempt {} (database may be locked). Retrying in 100ms...", attempt);
             tokio::time::sleep(Duration::from_millis(100)).await;
-            session_open_result = open_client_session(&app_data_dir);
+            session_open_result = open_client_session(&app_data_dir).await;
             if session_open_result.is_ok() {
                 break;
             }
         }
     }
 
-    let session = match session_open_result.map_err(|e| e.to_string()) {
+    let session = match session_open_result {
         Ok(s) => s,
         Err(e) => {
             let quarantine_id = quarantine_session_files(&session_path).map_err(|error| {
@@ -194,6 +185,7 @@ pub async fn ensure_client_initialized(
             );
 
             open_client_session(&app_data_dir)
+                .await
                 .map_err(|err| format!("Failed to open session after recreation: {}", err))?
         }
     };
@@ -312,8 +304,8 @@ pub async fn cmd_check_connection(
     };
 
     if let Some(client) = client_msg_opt {
-        // Ping (e.g., get_me)
-        if client.get_me().await.is_ok() {
+        // Ping (e.g., get_me) with a 6-second timeout
+        if let Ok(Ok(_)) = timeout(Duration::from_secs(6), client.get_me()).await {
             return Ok(true);
         }
         log::warn!("Connection check failed (get_me). Attempting reconnect...");
@@ -329,8 +321,8 @@ pub async fn cmd_check_connection(
 
         match ensure_client_initialized(&app_handle, &state, api_id).await {
             Ok(c) => {
-                // Double check
-                if c.get_me().await.is_ok() {
+                // Double check with a 6-second timeout
+                if let Ok(Ok(_)) = timeout(Duration::from_secs(6), c.get_me()).await {
                     log::info!("Auto-reconnect successful.");
                     return Ok(true);
                 } else {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { load } from "@tauri-apps/plugin-store";
+import { type as osType } from "@tauri-apps/plugin-os";
 import { auth, system } from "./api/index";
 import { AppProviders } from "./components/shared/AppProviders";
 import { ErrorBoundary } from "./components/shared/ErrorBoundary";
@@ -154,12 +155,32 @@ function AppContent() {
         }
 
         // Initialize the client with the saved API ID
-        setStartupProgress({ label: "Starting Telegram", detail: "Initializing the secure desktop client…", percent: 58 });
-        await auth.connect(apiId);
+        const isMobileEnv = (() => {
+          try {
+            const os = osType();
+            return os === 'android' || os === 'ios';
+          } catch {
+            return /android|iphone|ipad/i.test(navigator.userAgent.toLowerCase());
+          }
+        })();
+        setStartupProgress({
+          label: "Starting Telegram",
+          detail: isMobileEnv ? "Connecting to secure client…" : "Initializing the secure desktop client…",
+          percent: 58,
+        });
+
+        // Add a strict 8-second watchdog timeout so connection stalls cannot freeze the splash screen
+        const connectTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Connection initialization timed out")), 8000)
+        );
+        await Promise.race([auth.connect(apiId), connectTimeout]);
 
         // Verify the session is still valid with Telegram servers
         setStartupProgress({ label: "Checking your account", detail: "Confirming the session with Telegram…", percent: 82 });
-        const ok = await auth.checkConnection();
+        const checkTimeout = new Promise<boolean>((_, reject) =>
+          setTimeout(() => reject(new Error("Connection check timed out")), 8000)
+        );
+        const ok = await Promise.race([auth.checkConnection(), checkTimeout]);
         if (ok) {
           setStartupProgress({ label: "Preparing your workspace", detail: "Finishing local access checks…", percent: 96 });
           setAuthStatus("authenticated");
