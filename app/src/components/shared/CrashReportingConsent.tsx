@@ -6,15 +6,27 @@ import { useModalFocus } from '../../hooks/useModalFocus';
 export function CrashReportingConsent() {
     const { settings, updateSettings } = useSettings();
     const panelRef = useRef<HTMLDivElement>(null);
+    const hasSeenConsent = settings.crashReportingConsentSeen || (() => {
+        try {
+            return localStorage.getItem('shelf_drive_crash_consent_seen') === 'true';
+        } catch {
+            return false;
+        }
+    })();
+
     const decide = useCallback((allow: boolean) => {
+        try {
+            localStorage.setItem('shelf_drive_crash_consent_seen', 'true');
+        } catch {}
         updateSettings({
             crashReportingEnabled: allow,
             crashReportingConsentSeen: true,
         });
     }, [updateSettings]);
-    useModalFocus(panelRef, () => decide(false), !settings.crashReportingConsentSeen);
 
-    if (settings.crashReportingConsentSeen) return null;
+    useModalFocus(panelRef, () => decide(false), !hasSeenConsent);
+
+    if (hasSeenConsent) return null;
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-app-overlay p-4 backdrop-blur-sm" role="presentation">
             <div

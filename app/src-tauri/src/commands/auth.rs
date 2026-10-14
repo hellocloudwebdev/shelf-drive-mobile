@@ -659,16 +659,24 @@ async fn invoke_send_code(
     request: &tl::functions::auth::SendCode,
 ) -> Result<tl::enums::auth::SentCode, String> {
     let mut transient_attempts = 0u8;
-    let mut migrated = false;
+    let mut target_dc: Option<i32> = None;
 
     loop {
-        let response = timeout(Duration::from_secs(30), client.invoke(request))
+        let invoke_future = async {
+            if let Some(dc) = target_dc {
+                client.invoke_in_dc(dc, request).await
+            } else {
+                client.invoke(request).await
+            }
+        };
+
+        let response = timeout(Duration::from_secs(30), invoke_future)
             .await
             .map_err(|_| "Telegram did not respond while requesting a code. Check your connection or proxy settings.".to_string())?;
 
         match response {
             Ok(sent_code) => return Ok(sent_code),
-            Err(InvocationError::Rpc(error)) if error.code == 303 && !migrated => {
+            Err(InvocationError::Rpc(error)) if error.code == 303 && target_dc.is_none() => {
                 let dc_id = error
                     .value
                     .and_then(|value| i32::try_from(value).ok())
@@ -683,7 +691,7 @@ async fn invoke_send_code(
                     .cloned()
                     .ok_or_else(|| "Telegram session is not initialized.".to_string())?;
                 let _ = session.set_home_dc_id(dc_id).await;
-                migrated = true;
+                target_dc = Some(dc_id);
                 log::info!("Telegram login moved to data center {}", dc_id);
             }
             Err(error)
@@ -850,17 +858,36 @@ pub async fn cmd_auth_request_code(
     ensure_client_initialized(&app_handle, &state, api_id).await?;
     let (client_handle, captured) = authentication_client(&state).await?;
 
-    log::info!("Requesting login code for {}", redact_phone_number(&phone));
+    // Clean phone number: keep digits and leading +
+    let clean_phone: String = phone
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '+')
+        .collect();
+    let clean_phone = if !clean_phone.starts_with('+') {
+        format!("+{}", clean_phone)
+    } else {
+        clean_phone
+    };
+    if clean_phone.len() < 5 {
+        return Err(
+            "Please enter a valid phone number with country code (e.g. +1234567890)".to_string(),
+        );
+    }
+
+    log::info!(
+        "Requesting login code for {}",
+        redact_phone_number(&clean_phone)
+    );
 
     let request = tl::functions::auth::SendCode {
-        phone_number: phone.clone(),
+        phone_number: clean_phone.clone(),
         api_id,
         api_hash,
         settings: tl::types::CodeSettings {
             allow_flashcall: false,
             current_number: false,
             allow_app_hash: false,
-            allow_missed_call: true,
+            allow_missed_call: false,
             allow_firebase: false,
             unknown_number: false,
             logout_tokens: None,
@@ -875,7 +902,7 @@ pub async fn cmd_auth_request_code(
         &client_handle,
         &state,
         attempt_id,
-        phone,
+        clean_phone,
         sent_code,
         &captured,
     )

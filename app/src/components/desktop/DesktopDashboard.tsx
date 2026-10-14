@@ -89,6 +89,31 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const { settings, updateSetting, updateSettings, isLoaded: settingsLoaded } = useSettings();
     const captureMutationScope = useActionScope(accountId);
 
+    const [hasSeenTourLocal, setHasSeenTourLocal] = useState(() => {
+        try {
+            return localStorage.getItem('shelf_drive_tour_seen') === 'true';
+        } catch {
+            return false;
+        }
+    });
+
+    const handleFinishTour = useCallback(() => {
+        setHasSeenTourLocal(true);
+        try {
+            localStorage.setItem('shelf_drive_tour_seen', 'true');
+        } catch {}
+        updateSetting('driveTourSeen', true);
+    }, [updateSetting]);
+
+    useEffect(() => {
+        if (settingsLoaded && settings.driveTourSeen && !hasSeenTourLocal) {
+            setHasSeenTourLocal(true);
+            try {
+                localStorage.setItem('shelf_drive_tour_seen', 'true');
+            } catch {}
+        }
+    }, [settingsLoaded, settings.driveTourSeen, hasSeenTourLocal]);
+
     useEffect(() => {
         if (sessionStorage.getItem('shelf-drive-recovered-session') !== 'true') return;
         sessionStorage.removeItem('shelf-drive-recovered-session');
@@ -968,10 +993,10 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
 
             {showShortcuts && <KeyboardShortcutsDialog onClose={() => setShowShortcuts(false)} />}
 
-            {settingsLoaded && !settings.driveTourSeen && (
+            {settingsLoaded && !settings.driveTourSeen && !hasSeenTourLocal && (
                 <DriveConceptTour
-                    onFinish={() => updateSetting('driveTourSeen', true)}
-                    onOpenHelp={() => { updateSetting('driveTourSeen', true); setShowHelp(true); }}
+                    onFinish={handleFinishTour}
+                    onOpenHelp={() => { handleFinishTour(); setShowHelp(true); }}
                 />
             )}
 

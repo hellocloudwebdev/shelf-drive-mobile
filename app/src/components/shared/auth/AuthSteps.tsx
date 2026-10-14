@@ -218,36 +218,33 @@ export function AuthCodeStep({
           {t('auth.open_fragment')} <ExternalLink className="h-4 w-4" />
         </button>
       )}
-      {codeDelivery?.status === 'code_required' && (
-        <div className="space-y-2">
-          <label htmlFor="telegram-auth-code" className="auth-label">{t('auth.telegram_code')}</label>
-          <div className="relative">
-            <Key className="auth-input-icon" />
-            <input
-              id="telegram-auth-code"
-              type="text"
-              inputMode={codeDelivery.numericCode ? 'numeric' : 'text'}
-              autoComplete="one-time-code"
-              value={code}
-              onChange={event => {
-                const value = codeDelivery.numericCode ? event.target.value.replace(/\D/g, '') : event.target.value;
-                onCodeChange(codeDelivery.codeLength ? value.slice(0, codeDelivery.codeLength) : value);
-              }}
-              maxLength={codeDelivery.codeLength}
-              placeholder={codeDelivery.numericCode ? '1 2 3 4 5' : t('auth.code_word_placeholder')}
-              autoFocus
-              className={`auth-input pe-3 ps-10 text-center font-mono text-base ${codeDelivery.numericCode ? 'tracking-[0.4em]' : 'tracking-wide'}`}
-            />
-          </div>
+      <div className="space-y-2">
+        <label htmlFor="telegram-auth-code" className="auth-label">{t('auth.telegram_code')}</label>
+        <div className="relative">
+          <Key className="auth-input-icon" />
+          <input
+            id="telegram-auth-code"
+            type="text"
+            inputMode={codeDelivery?.numericCode ?? true ? 'numeric' : 'text'}
+            autoComplete="one-time-code"
+            value={code}
+            onChange={event => {
+              const numeric = codeDelivery?.numericCode ?? true;
+              const value = numeric ? event.target.value.replace(/\D/g, '') : event.target.value;
+              onCodeChange(codeDelivery?.codeLength ? value.slice(0, codeDelivery.codeLength) : value);
+            }}
+            maxLength={codeDelivery?.codeLength}
+            placeholder={(codeDelivery?.numericCode ?? true) ? '1 2 3 4 5' : t('auth.code_word_placeholder')}
+            autoFocus
+            className={`auth-input pe-3 ps-10 text-center font-mono text-base ${(codeDelivery?.numericCode ?? true) ? 'tracking-[0.4em]' : 'tracking-wide'}`}
+          />
         </div>
-      )}
+      </div>
       <div className="flex flex-col gap-3">
-        {codeDelivery?.status === 'code_required' && (
-          <button type="submit" disabled={loading || !code} className="quiet-control auth-primary-action disabled:opacity-45">
-            {loading ? t('auth.verifying') : t('auth.sign_in')}
-          </button>
-        )}
-        {codeDelivery?.nextDelivery && codeDelivery.resendAfterSeconds !== undefined && (
+        <button type="submit" disabled={loading || !code} className="quiet-control auth-primary-action disabled:opacity-45">
+          {loading ? t('auth.verifying') : t('auth.sign_in')}
+        </button>
+        {codeDelivery?.resendAfterSeconds !== undefined && (
           <button type="button" onClick={onResend} disabled={loading || resendWait > 0} className="quiet-control auth-secondary-action w-full disabled:opacity-45">
             {loading ? t('auth.resending') : resendWait > 0 ? t('auth.resend_in', { seconds: resendWait }) : t('auth.resend_code')}
           </button>

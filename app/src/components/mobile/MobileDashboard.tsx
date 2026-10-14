@@ -168,6 +168,30 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { isAndroid, isTelevision } = usePlatform();
   const { settings, updateSetting, isLoaded: settingsLoaded } = useSettings();
   const [showHelp, setShowHelp] = useState(false);
+  const [hasSeenTourLocal, setHasSeenTourLocal] = useState(() => {
+    try {
+      return localStorage.getItem('shelf_drive_tour_seen') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleFinishTour = useCallback(() => {
+    setHasSeenTourLocal(true);
+    try {
+      localStorage.setItem('shelf_drive_tour_seen', 'true');
+    } catch {}
+    updateSetting('driveTourSeen', true);
+  }, [updateSetting]);
+
+  useEffect(() => {
+    if (settingsLoaded && settings.driveTourSeen && !hasSeenTourLocal) {
+      setHasSeenTourLocal(true);
+      try {
+        localStorage.setItem('shelf_drive_tour_seen', 'true');
+      } catch {}
+    }
+  }, [settingsLoaded, settings.driveTourSeen, hasSeenTourLocal]);
 
   // ── Android deep-link listener (https://t.me/ links) ──────────────────
   useEffect(() => {
@@ -1760,6 +1784,12 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                 onClick={() => void openUrl('https://github.com/hellocloudwebdev/shelf-drive-mobile/blob/main/PRIVACY.md')}
                 chevron
               />
+              <SettingsToggleRow
+                title="Send anonymous crash reports"
+                description="Help improve stability with technical crash stack traces. No personal files or data are included."
+                checked={settings.crashReportingEnabled}
+                onChange={() => updateSetting('crashReportingEnabled', !settings.crashReportingEnabled)}
+              />
             </SettingsSection>
 
             {isAndroid && (
@@ -2315,10 +2345,10 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
         />
       )}
 
-      {settingsLoaded && !settings.driveTourSeen && (
+      {settingsLoaded && !settings.driveTourSeen && !hasSeenTourLocal && (
         <DriveConceptTour
-          onFinish={() => updateSetting('driveTourSeen', true)}
-          onOpenHelp={() => { updateSetting('driveTourSeen', true); setShowHelp(true); }}
+          onFinish={handleFinishTour}
+          onOpenHelp={() => { handleFinishTour(); setShowHelp(true); }}
         />
       )}
 

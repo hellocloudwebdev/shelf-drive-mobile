@@ -40,8 +40,8 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     const [step, setStep] = useState<AuthStep>("setup");
     const [loading, setLoading] = useState(false);
 
-    const [apiId, setApiId] = useState("38993939");
-    const [apiHash, setApiHash] = useState("542947ba1080ee654dc3d7f8305b0e2e");
+    const [apiId, setApiId] = useState("");
+    const [apiHash, setApiHash] = useState("");
 
     const [phone, setPhone] = useState("");
     const [code, setCode] = useState("");
@@ -252,7 +252,21 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             const idInt = parseInt(apiId, 10);
             if (isNaN(idInt)) throw new Error("API ID must be a number");
 
-            const codeRequest = await auth.requestCode(phone, idInt, apiHash);
+            const cleanPhone = phone.replace(/[\s\-\(\)]/g, '').trim();
+            if (!cleanPhone) {
+                setError("Please enter your phone number");
+                setLoading(false);
+                return;
+            }
+
+            const timeoutPromise = new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Request timed out while contacting Telegram. Please check your network connection and try again.")), 35000)
+            );
+
+            const codeRequest = await Promise.race([
+                auth.requestCode(cleanPhone, idInt, apiHash),
+                timeoutPromise,
+            ]);
             applyCodeRequestResult(codeRequest);
         } catch (err: unknown) {
             handleAuthError(err);
