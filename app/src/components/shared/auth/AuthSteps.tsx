@@ -203,7 +203,7 @@ export function AuthMethodStep({
                   inputMode="numeric"
                   value={localNumber}
                   onChange={handleLocalNumberChange}
-                  placeholder="88399 53623"
+                  placeholder="12345 67890"
                   className="auth-input ps-10 tracking-wide font-mono"
                   autoFocus
                 />
