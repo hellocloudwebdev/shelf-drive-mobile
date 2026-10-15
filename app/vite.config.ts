@@ -61,8 +61,8 @@ export default defineConfig(async ({ command }) => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, `.mimosa`, and `.git`
+      ignored: ["**/src-tauri/**", "**/.mimosa/**", "**/.git/**"],
     },
   },
 }));
