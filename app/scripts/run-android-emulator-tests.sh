@@ -71,10 +71,14 @@ fi
 AVD_CONFIG="$ANDROID_AVD_HOME/$AVD_NAME.avd/config.ini"
 AVD_CONFIG_TMP="$AVD_CONFIG.telegram-drive.tmp"
 awk -v ram="$RAM_MB" '
-  BEGIN { updated = 0 }
-  /^hw\.ramSize=/ { print "hw.ramSize=" ram; updated = 1; next }
+  BEGIN { ram_updated = 0; disk_updated = 0 }
+  /^hw\.ramSize=/ { print "hw.ramSize=" ram; ram_updated = 1; next }
+  /^disk\.dataPartition\.size=/ { print "disk.dataPartition.size=4096M"; disk_updated = 1; next }
   { print }
-  END { if (!updated) print "hw.ramSize=" ram }
+  END {
+    if (!ram_updated) print "hw.ramSize=" ram
+    if (!disk_updated) print "disk.dataPartition.size=4096M"
+  }
 ' "$AVD_CONFIG" >"$AVD_CONFIG_TMP"
 mv "$AVD_CONFIG_TMP" "$AVD_CONFIG"
 
@@ -97,6 +101,7 @@ trap cleanup EXIT INT TERM
   -no-audio \
   -no-boot-anim \
   -no-snapshot \
+  -partition-size 4096 \
   -gpu swiftshader_indirect >"$EMULATOR_LOG" 2>&1 &
 EMULATOR_PID=$!
 
@@ -147,6 +152,8 @@ done
 # The Tauri CLI has already produced and verified the universal JNI libraries.
 # Direct Gradle invocations cannot reconnect to the short-lived Tauri build
 # WebSocket, so instrumentation reuses those libraries instead of rebuilding.
+adb_retry uninstall com.hellocloudweb.shelfdrive.test || true
+adb_retry uninstall com.hellocloudweb.shelfdrive || true
 adb_retry logcat -c
 set +e
 (
