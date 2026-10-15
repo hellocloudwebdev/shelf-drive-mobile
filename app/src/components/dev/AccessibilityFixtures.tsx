@@ -44,12 +44,27 @@ export default function AccessibilityFixtures() {
   }, [fixture]);
 
   if (fixture === 'auth') {
-    // AuthWizard intentionally shows a browser-only notice outside Tauri. This
-    // development fixture marks the page as native so axe exercises the real
-    // sign-in form. Its startup probes fail closed here, so native state is not
-    // changed by the browser fixture.
     if (!('__TAURI_INTERNALS__' in window)) {
-      Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
+      Object.defineProperty(window, '__TAURI_INTERNALS__', {
+        configurable: true,
+        value: {
+          invoke: async (cmd: string) => {
+            if (cmd === 'cmd_auth_qr_login') return 'tg://login?token=preview_token';
+            if (cmd === 'cmd_auth_qr_poll') return { success: false };
+            if (cmd === 'cmd_auth_request_code') {
+              return {
+                status: 'code_required',
+                delivery: 'telegram_app',
+                codeLength: 5,
+                numericCode: true,
+                resendAfterSeconds: 60,
+              };
+            }
+            if (cmd === 'cmd_auth_sign_in') return { success: true };
+            return null;
+          },
+        },
+      });
     }
     return <main className="min-h-screen bg-app-canvas"><AuthWizard onLogin={() => undefined} /></main>;
   }
