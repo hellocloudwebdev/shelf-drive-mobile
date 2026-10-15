@@ -259,14 +259,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                 return;
             }
 
-            const timeoutPromise = new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("Request timed out while contacting Telegram. Please check your network connection and try again.")), 35000)
-            );
-
-            const codeRequest = await Promise.race([
-                auth.requestCode(cleanPhone, idInt, apiHash),
-                timeoutPromise,
-            ]);
+            const codeRequest = await auth.requestCode(cleanPhone, idInt, apiHash);
             applyCodeRequestResult(codeRequest);
         } catch (err: unknown) {
             handleAuthError(err);

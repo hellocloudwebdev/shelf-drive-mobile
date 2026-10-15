@@ -1,3 +1,14 @@
+## [4.4.2] - 2026-10-15
+
+### Reliability, authentication, and privacy
+
+- Fixed phone authentication timeout by routing connection attempts directly to regional Telegram datacenters (e.g. DC 5 for +91 and Asia) and removing artificial client-side race timeouts.
+- Removed background update polling conflicts in client initialization, aligning MTProto connection lifecycle with desktop.
+- Enabled QR code login option alongside phone sign-in on mobile devices.
+- Scrubbed all pre-filled personal API credentials from authentication wizards.
+- Made anonymous crash diagnostic consent enabled by default with in-app toggle under Settings.
+- Ensured onboarding concept tour is persisted durably and shown strictly once upon fresh installation.
+
 ## [4.4.1] - 2026-10-13
 
 ### Reliability, media, and transfers

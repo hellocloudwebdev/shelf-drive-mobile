@@ -120,16 +120,14 @@ export function AuthMethodStep({
 }: AuthMethodStepProps) {
   return (
     <motion.div key="phone" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} className="space-y-5">
-      {!isMobile && (
-        <div className="quiet-control flex overflow-hidden border border-app-border bg-app-surface-sunken/40 p-0.5">
-          <button type="button" onClick={onSelectPhone} className={`quiet-control order-2 flex h-8 flex-1 items-center justify-center gap-2 text-metadata font-medium ${loginMethod === 'phone' ? 'bg-app-surface-raised text-app-text shadow-sm' : 'text-app-text-secondary hover:text-app-text'}`}>
-            <Phone className="w-4 h-4" /> {i18n.t("auth.phone_number")}
-          </button>
-          <button type="button" onClick={onSelectQr} className={`quiet-control order-1 flex h-8 flex-1 items-center justify-center gap-2 text-metadata font-medium ${loginMethod === 'qr' ? 'bg-app-surface-raised text-app-text shadow-sm' : 'text-app-text-secondary hover:text-app-text'}`}>
-            <QrCode className="w-4 h-4" /> {i18n.t("auth.qr_code")}
-          </button>
-        </div>
-      )}
+      <div className="quiet-control flex overflow-hidden border border-app-border bg-app-surface-sunken/40 p-0.5">
+        <button type="button" onClick={onSelectPhone} className={`quiet-control order-2 flex h-8 flex-1 items-center justify-center gap-2 text-metadata font-medium ${loginMethod === 'phone' ? 'bg-app-surface-raised text-app-text shadow-sm' : 'text-app-text-secondary hover:text-app-text'}`}>
+          <Phone className="w-4 h-4" /> {i18n.t("auth.phone_number")}
+        </button>
+        <button type="button" onClick={onSelectQr} className={`quiet-control order-1 flex h-8 flex-1 items-center justify-center gap-2 text-metadata font-medium ${loginMethod === 'qr' ? 'bg-app-surface-raised text-app-text shadow-sm' : 'text-app-text-secondary hover:text-app-text'}`}>
+          <QrCode className="w-4 h-4" /> {i18n.t("auth.qr_code")}
+        </button>
+      </div>
 
       {loginMethod === 'phone' ? (
         <form onSubmit={onPhoneSubmit} className="space-y-5">

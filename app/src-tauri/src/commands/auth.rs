@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use grammers_client::Client;
-use grammers_mtsender::{SenderPool, UpdatesConfiguration};
+use grammers_mtsender::SenderPool;
 use grammers_session::storages::SqliteSession;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use grammers_session::types::UpdateState;
@@ -231,11 +231,7 @@ pub async fn ensure_client_initialized(
     *state.runner_shutdown.lock().unwrap() = Some(shutdown_tx);
 
     // Spawn the network runner with shutdown support
-    let SenderPool {
-        runner,
-        updates,
-        handle: pool_handle,
-    } = pool;
+    let SenderPool { runner, .. } = pool;
     tauri::async_runtime::spawn(async move {
         tokio::select! {
             // Normal runner operation
@@ -247,32 +243,6 @@ pub async fn ensure_client_initialized(
                 log::info!("Runner #{} shutdown requested, exiting", runner_num);
             }
         }
-    });
-
-    // Drain Telegram updates so the bounded channel does not drop them and the
-    // session's update state (pts/qts/seq) advances with the server. The app
-    // currently has no interactive update handling; refresh flows re-fetch.
-    let updates_client = client.clone();
-    tauri::async_runtime::spawn(async move {
-        match updates_client
-            .stream_updates(updates, UpdatesConfiguration::default())
-            .await
-        {
-            Ok(mut stream) => {
-                loop {
-                    match stream.next().await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            log::debug!("Telegram update stream error: {e}");
-                            break;
-                        }
-                    }
-                }
-                log::info!("Update stream ended");
-            }
-            Err(e) => log::warn!("Could not start update stream: {e}"),
-        }
-        drop(pool_handle);
     });
 
     *client_guard = Some(client.clone());
@@ -657,9 +627,11 @@ async fn invoke_send_code(
     client: &Client,
     state: &TelegramState,
     request: &tl::functions::auth::SendCode,
+    initial_dc: Option<i32>,
 ) -> Result<tl::enums::auth::SentCode, String> {
     let mut transient_attempts = 0u8;
-    let mut target_dc: Option<i32> = None;
+    let mut target_dc = initial_dc;
+    let mut migrations = 0u8;
 
     loop {
         let invoke_future = async {
@@ -670,13 +642,14 @@ async fn invoke_send_code(
             }
         };
 
-        let response = timeout(Duration::from_secs(30), invoke_future)
+        let response = timeout(Duration::from_secs(60), invoke_future)
             .await
             .map_err(|_| "Telegram did not respond while requesting a code. Check your connection or proxy settings.".to_string())?;
 
         match response {
             Ok(sent_code) => return Ok(sent_code),
-            Err(InvocationError::Rpc(error)) if error.code == 303 && target_dc.is_none() => {
+            Err(InvocationError::Rpc(error)) if error.code == 303 && migrations < 3 => {
+                migrations += 1;
                 let dc_id = error
                     .value
                     .and_then(|value| i32::try_from(value).ok())
@@ -897,7 +870,28 @@ pub async fn cmd_auth_request_code(
         .into(),
     };
 
-    let sent_code = invoke_send_code(&client_handle, &state, &request).await?;
+    // Hint initial DC from country code to avoid unnecessary 303 migration roundtrips
+    let initial_dc = if clean_phone.starts_with("+91")
+        || clean_phone.starts_with("+62")
+        || clean_phone.starts_with("+60")
+        || clean_phone.starts_with("+65")
+        || clean_phone.starts_with("+63")
+        || clean_phone.starts_with("+84")
+        || clean_phone.starts_with("+66")
+    {
+        Some(5)
+    } else if clean_phone.starts_with("+1") {
+        Some(1)
+    } else if clean_phone.starts_with("+44")
+        || clean_phone.starts_with("+49")
+        || clean_phone.starts_with("+33")
+    {
+        Some(4)
+    } else {
+        None
+    };
+
+    let sent_code = invoke_send_code(&client_handle, &state, &request, initial_dc).await?;
     store_sent_code(
         &client_handle,
         &state,
@@ -944,7 +938,7 @@ pub async fn cmd_auth_resend_code(
         reason: None,
     };
 
-    let sent_code = match timeout(Duration::from_secs(30), client.invoke(&request)).await {
+    let sent_code = match timeout(Duration::from_secs(45), client.invoke(&request)).await {
         Ok(Ok(sent_code)) => sent_code,
         Ok(Err(error)) => {
             if let Some(active) = state.phone_login.lock().await.as_mut() {
