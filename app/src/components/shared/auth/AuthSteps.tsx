@@ -90,7 +90,7 @@ export function AuthSetupStep({
 }
 
 interface AuthMethodStepProps {
-  isMobile: boolean;
+  isMobile?: boolean;
   loginMethod: 'phone' | 'qr';
   loading: boolean;
   phone: string;
@@ -105,7 +105,6 @@ interface AuthMethodStepProps {
 }
 
 export function AuthMethodStep({
-  isMobile,
   loginMethod,
   loading,
   phone,
