@@ -1,9 +1,10 @@
-import type { FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, ExternalLink, HelpCircle, Key, Lock, Phone, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../../i18n';
+import { COUNTRIES } from './countries';
 
 export type AuthStep = 'setup' | 'phone' | 'code' | 'password';
 export type CodeDelivery =
@@ -117,6 +118,53 @@ export function AuthMethodStep({
   onQrLogin,
   onBack,
 }: AuthMethodStepProps) {
+  const defaultDialCode = '+91';
+  const [selectedDialCode, setSelectedDialCode] = useState(() => {
+    if (phone.startsWith('+')) {
+      const match = COUNTRIES.find(c => phone.startsWith(c.dialCode));
+      if (match) return match.dialCode;
+    }
+    return defaultDialCode;
+  });
+
+  const [localNumber, setLocalNumber] = useState(() => {
+    if (phone.startsWith('+')) {
+      const match = COUNTRIES.find(c => phone.startsWith(c.dialCode));
+      if (match) return phone.slice(match.dialCode.length).trim();
+      return phone.replace(/^\+\d{1,4}/, '').trim();
+    }
+    return phone;
+  });
+
+  const updateFullPhone = (dial: string, local: string) => {
+    const cleanLocal = local.replace(/\D/g, '');
+    const full = cleanLocal ? `${dial}${cleanLocal}` : '';
+    onPhoneChange(full);
+  };
+
+  const handleDialCodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newDial = e.target.value;
+    setSelectedDialCode(newDial);
+    updateFullPhone(newDial, localNumber);
+  };
+
+  const handleLocalNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (raw.startsWith('+')) {
+      const match = COUNTRIES.find(c => raw.startsWith(c.dialCode));
+      if (match) {
+        const remaining = raw.slice(match.dialCode.length).replace(/\D/g, '');
+        setSelectedDialCode(match.dialCode);
+        setLocalNumber(remaining);
+        updateFullPhone(match.dialCode, remaining);
+        return;
+      }
+    }
+    const clean = raw.replace(/\D/g, '');
+    setLocalNumber(clean);
+    updateFullPhone(selectedDialCode, clean);
+  };
+
   return (
     <motion.div key="phone" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} className="space-y-5">
       <div className="quiet-control flex overflow-hidden border border-app-border bg-app-surface-sunken/40 p-0.5">
@@ -132,10 +180,40 @@ export function AuthMethodStep({
         <form onSubmit={onPhoneSubmit} className="space-y-5">
           <div className="space-y-2">
             <label htmlFor="telegram-phone-number" className="auth-label">{i18n.t("auth.phone_number")}</label>
-            <div className="relative">
-              <Phone className="auth-input-icon" />
-              <input id="telegram-phone-number" type="tel" value={phone} onChange={event => onPhoneChange(event.target.value)} placeholder="+1 234 567 8900" className="auth-input tracking-wide" />
+            <div className="flex gap-2">
+              <div className="relative">
+                <select
+                  value={selectedDialCode}
+                  onChange={handleDialCodeChange}
+                  className="quiet-control flex h-11 w-32 shrink-0 items-center justify-between rounded-control border border-app-border bg-app-surface-sunken/40 px-2 text-xs font-medium text-app-text focus:border-app-accent focus:outline-none cursor-pointer"
+                  aria-label="Country Code"
+                >
+                  {COUNTRIES.map(c => (
+                    <option key={c.code} value={c.dialCode} className="bg-app-surface text-app-text">
+                      {c.flag} {c.dialCode} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="relative flex-1">
+                <Phone className="auth-input-icon" />
+                <input
+                  id="telegram-phone-number"
+                  type="tel"
+                  inputMode="numeric"
+                  value={localNumber}
+                  onChange={handleLocalNumberChange}
+                  placeholder="88399 53623"
+                  className="auth-input ps-10 tracking-wide font-mono"
+                  autoFocus
+                />
+              </div>
             </div>
+            {localNumber && (
+              <p className="text-[11px] text-app-text-tertiary">
+                Full number: <span className="font-mono text-app-accent">{selectedDialCode}{localNumber}</span>
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-3">
             <button type="submit" disabled={loading} className="quiet-control auth-primary-action disabled:opacity-45">

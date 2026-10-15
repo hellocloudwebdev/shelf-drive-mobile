@@ -32,6 +32,8 @@ export default function AccessibilityFixtures() {
   const [dialogOpen, setDialogOpen] = useState(true);
   const [mobileTab, setMobileTab] = useState<MobileTab>('home');
 
+  const [loggedIn, setLoggedIn] = useState(false);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       document.documentElement.dataset.a11yFixtureReady = fixture;
@@ -66,7 +68,30 @@ export default function AccessibilityFixtures() {
         },
       });
     }
-    return <main className="min-h-screen bg-app-canvas"><AuthWizard onLogin={() => undefined} /></main>;
+
+    if (loggedIn) {
+      return (
+        <main className="min-h-screen bg-app-canvas flex items-center justify-center p-6 text-center">
+          <div className="quiet-raised max-w-md w-full p-8 rounded-overlay space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-app-success/15 text-app-success text-2xl">
+              ✓
+            </div>
+            <h2 className="text-xl font-bold text-app-text">Login Successful!</h2>
+            <p className="text-sm text-app-text-secondary leading-relaxed">
+              Authentication completed successfully with phone number country selector and OTP verification.
+            </p>
+            <button
+              onClick={() => setLoggedIn(false)}
+              className="quiet-control auth-primary-action w-full mt-4"
+            >
+              Test Login Flow Again
+            </button>
+          </div>
+        </main>
+      );
+    }
+
+    return <main className="min-h-screen bg-app-canvas"><AuthWizard onLogin={() => setLoggedIn(true)} /></main>;
   }
 
   if (fixture === 'settings') {
