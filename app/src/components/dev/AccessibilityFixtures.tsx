@@ -32,8 +32,6 @@ export default function AccessibilityFixtures() {
   const [dialogOpen, setDialogOpen] = useState(true);
   const [mobileTab, setMobileTab] = useState<MobileTab>('home');
 
-  const [loggedIn, setLoggedIn] = useState(false);
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
       document.documentElement.dataset.a11yFixtureReady = fixture;
@@ -46,52 +44,14 @@ export default function AccessibilityFixtures() {
   }, [fixture]);
 
   if (fixture === 'auth') {
+    // AuthWizard intentionally shows a browser-only notice outside Tauri. This
+    // development fixture marks the page as native so axe exercises the real
+    // sign-in form. Its startup probes fail closed here, so native state is not
+    // changed by the browser fixture.
     if (!('__TAURI_INTERNALS__' in window)) {
-      Object.defineProperty(window, '__TAURI_INTERNALS__', {
-        configurable: true,
-        value: {
-          invoke: async (cmd: string) => {
-            if (cmd === 'cmd_auth_qr_login') return 'tg://login?token=preview_token';
-            if (cmd === 'cmd_auth_qr_poll') return { success: false };
-            if (cmd === 'cmd_auth_request_code') {
-              return {
-                status: 'code_required',
-                delivery: 'telegram_app',
-                codeLength: 5,
-                numericCode: true,
-                resendAfterSeconds: 60,
-              };
-            }
-            if (cmd === 'cmd_auth_sign_in') return { success: true };
-            return null;
-          },
-        },
-      });
+      Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
     }
-
-    if (loggedIn) {
-      return (
-        <main className="min-h-screen bg-app-canvas flex items-center justify-center p-6 text-center">
-          <div className="quiet-raised max-w-md w-full p-8 rounded-overlay space-y-4">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-app-success/15 text-app-success text-2xl">
-              ✓
-            </div>
-            <h2 className="text-xl font-bold text-app-text">Login Successful!</h2>
-            <p className="text-sm text-app-text-secondary leading-relaxed">
-              Authentication completed successfully with phone number country selector and OTP verification.
-            </p>
-            <button
-              onClick={() => setLoggedIn(false)}
-              className="quiet-control auth-primary-action w-full mt-4"
-            >
-              Test Login Flow Again
-            </button>
-          </div>
-        </main>
-      );
-    }
-
-    return <main className="min-h-screen bg-app-canvas"><AuthWizard onLogin={() => setLoggedIn(true)} /></main>;
+    return <main className="min-h-screen bg-app-canvas"><AuthWizard onLogin={() => undefined} /></main>;
   }
 
   if (fixture === 'settings') {

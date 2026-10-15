@@ -28,11 +28,7 @@ export function tauriListen<T>(
   event: string,
   handler: (payload: T) => void,
 ): Promise<() => void> {
-  try {
-    return listen<T>(event, (e) => handler(e.payload));
-  } catch {
-    return Promise.resolve(() => {});
-  }
+  return listen<T>(event, (e) => handler(e.payload));
 }
 
 /** Serve a local file path as a URL consumable by webview media elements. */

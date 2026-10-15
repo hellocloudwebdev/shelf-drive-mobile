@@ -1,3 +1,10 @@
+## [4.4.3] - 2026-10-16
+
+### Authentication and country selection
+
+- Added a country code selector to phone sign-in: pick the country once, then type only the local mobile number.
+- Removed browser-preview-only test shims and fixture mocks from the shipped application bundle.
+
 ## [4.4.2] - 2026-10-15
 
 ### Reliability, authentication, and privacy
