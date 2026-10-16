@@ -189,11 +189,21 @@ pub struct TransferEnqueueRequest {
     pub initial_status: Option<TransferStatus>,
 }
 
+pub(crate) fn validate_transfer_id(id: &str) -> Result<(), String> {
+    if id.trim().is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Err("Transfer ID is missing or invalid".to_string());
+    }
+    Ok(())
+}
+
 impl TransferEnqueueRequest {
     fn validate(&self) -> Result<(), String> {
-        if self.id.trim().is_empty() || self.id.len() > 128 {
-            return Err("Transfer ID is missing or invalid".to_string());
-        }
+        validate_transfer_id(&self.id)?;
         if self.filename.trim().is_empty() {
             return Err("Transfer filename is required".to_string());
         }
@@ -1888,6 +1898,23 @@ mod tests {
         let mut mismatch = request("mismatch");
         mismatch.direction = TransferDirection::Download;
         assert!(mismatch.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_path_syntax_in_transfer_ids() {
+        for id in [
+            "../outside",
+            "nested/file",
+            r"nested\file",
+            ".",
+            "C:outside",
+        ] {
+            assert!(
+                validate_transfer_id(id).is_err(),
+                "accepted unsafe ID: {id}"
+            );
+        }
+        assert!(validate_transfer_id("upload-7c63_a1").is_ok());
     }
 
     #[tokio::test]

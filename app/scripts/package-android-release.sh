@@ -49,6 +49,7 @@ for abi in arm64-v8a armeabi-v7a x86 x86_64; do
 done
 
 jarsigner -verify "$aab" >/dev/null
+node scripts/verify-aab-signer.cjs "$aab" "$ANDROID_SIGNING_CERT_SHA256"
 
 version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 version_code="$(sed -n 's/^tauri.android.versionCode=//p' src-tauri/gen/android/app/tauri.properties | head -n 1)"

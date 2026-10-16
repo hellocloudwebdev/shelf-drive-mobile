@@ -54,4 +54,9 @@ describe('SettingsProvider initialization edits', () => {
     expect(await screen.findByText('2:true')).toBeTruthy();
     await waitFor(() => expect(setMock).toHaveBeenCalledWith('settings', expect.objectContaining({ maxConcurrentUploads: 2, zipFolders: false })));
   });
+
+  it('keeps crash reporting enabled by default with no first-launch consent gate', () => {
+    expect(DEFAULT_SETTINGS.crashReportingEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.crashReportingConsentSeen).toBe(true);
+  });
 });

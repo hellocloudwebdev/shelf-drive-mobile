@@ -16,7 +16,7 @@ The Telegram API hash is stored in the desktop operating-system credential manag
 
 ## Crash reporting
 
-Crash reporting is disabled by default and requires explicit consent. A report contains only the application version, operating-system platform, error type, timestamp, and sanitized function names. It excludes error messages, file names, paths, file contents, Telegram messages or identifiers, credentials, phone numbers, and user-entered values. Reporting can be disabled at any time in Settings; disabling it also clears queued reports.
+Crash reporting is enabled by default and can be disabled at any time in Settings; disabling it also clears queued reports. A report contains only the application version, operating-system platform, error type, timestamp, and sanitized function names. It excludes error messages, file names, paths, file contents, Telegram messages or identifiers, credentials, phone numbers, and user-entered values.
 
 ## Local sharing servers
 
@@ -28,7 +28,7 @@ Ad-free access on up to three supported Windows, macOS, Linux, or Android device
 
 The device private key, recovery code, and short-lived checkout secret are protected by the platform's secure credential storage, including the desktop operating system credential manager or Android Keystore. A signed entitlement token and non-secret checkout metadata are stored in the application's local data directory. Normal application updates reuse these stable credentials and do not require reactivation.
 
-PayPal processes the payment under PayPal's own terms and privacy policy. Cloudflare processes network requests needed to operate the verification service under Cloudflare's privacy and security terms. Telegram Drive does not add IP addresses or raw PayPal webhook payloads to its D1 entitlement records. Verified PayPal refund and reversal notifications revoke the associated ad-free entitlement. See the [Supporter Terms](SUPPORTER_TERMS.md) for activation, recovery, device-limit, refund, reversal, dispute, availability, and liability conditions.
+PayPal processes the payment under PayPal's own terms and privacy policy. Cloudflare processes network requests needed to operate the verification service under Cloudflare's privacy and security terms. Telegram Drive does not add IP addresses or raw PayPal webhook payloads to its D1 entitlement records. Verified PayPal refund and reversal notifications revoke the associated ad-free entitlement. The supporter terms referenced by this policy are not included in this repository; confirm the current terms with the maintainer before paying.
 
 ## User control
 

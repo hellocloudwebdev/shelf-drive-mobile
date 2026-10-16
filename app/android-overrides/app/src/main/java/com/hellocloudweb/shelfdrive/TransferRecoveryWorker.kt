@@ -52,6 +52,7 @@ class TransferRecoveryWorker(
     private const val PREFS = "telegram_drive_transfer_recovery_v1"
     private const val PENDING = "pending"
     private const val WIFI_ONLY = "wifi_only"
+    private const val ALLOW_ROAMING = "allow_roaming"
     private const val REQUIRE_CHARGING = "require_charging"
     private const val PAUSE_LOW_BATTERY = "pause_low_battery"
     private const val WORK_NAME = "telegram-drive-transfer-recovery"
@@ -73,11 +74,13 @@ class TransferRecoveryWorker(
     fun configure(
       context: Context,
       wifiOnly: Boolean,
+      allowRoaming: Boolean,
       requireCharging: Boolean,
       pauseOnLowBattery: Boolean,
     ) {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         .putBoolean(WIFI_ONLY, wifiOnly)
+        .putBoolean(ALLOW_ROAMING, allowRoaming)
         .putBoolean(REQUIRE_CHARGING, requireCharging)
         .putBoolean(PAUSE_LOW_BATTERY, pauseOnLowBattery)
         .apply()
@@ -87,7 +90,12 @@ class TransferRecoveryWorker(
       if (!hasPendingTransfers(context)) return
       val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       val constraints = Constraints.Builder()
-        .setRequiredNetworkType(if (preferences.getBoolean(WIFI_ONLY, false)) NetworkType.UNMETERED else NetworkType.CONNECTED)
+        .setRequiredNetworkType(
+          TransferNetworkPolicy.workManagerNetworkType(
+            preferences.getBoolean(WIFI_ONLY, false),
+            preferences.getBoolean(ALLOW_ROAMING, false),
+          ),
+        )
         .setRequiresCharging(preferences.getBoolean(REQUIRE_CHARGING, false))
         .setRequiresBatteryNotLow(preferences.getBoolean(PAUSE_LOW_BATTERY, true))
         .setRequiresStorageNotLow(true)

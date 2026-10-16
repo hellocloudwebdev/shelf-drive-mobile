@@ -60,6 +60,8 @@ describe('release safety gates', () => {
     expect(android).toContain('Require protected signing for production');
     expect(android).toContain('ANDROID_SIGNING_CERT_SHA256');
     expect(android).toContain('bash scripts/package-android-release.sh');
+    expect(repositoryFile('app', 'scripts', 'package-android-release.sh'))
+      .toContain('node scripts/verify-aab-signer.cjs "$aab" "$ANDROID_SIGNING_CERT_SHA256"');
     expect(android).toContain("'system-images;android-24;google_apis;x86_64'");
     expect(android).toContain("ANDROID_EMULATOR_API: '24'");
     expect(android).toContain(':app:assembleArm64Release');
@@ -77,14 +79,16 @@ describe('release safety gates', () => {
     expect(release).toContain('android-update.json.sig');
   });
 
-  it('validates Android version monotonicity against the previous release manifest', () => {
+  it('validates Android version monotonicity fail-closed against the previous release manifest', () => {
     const release = workflow('release.yml');
+    const resolver = repositoryFile('scripts', 'resolve-previous-android-manifest.sh');
     expect(release).toContain('--previous-manifest "$previous_manifest"');
-    expect(release).toContain("gh release download --dir \"$RUNNER_TEMP/previous-release\" --pattern 'android-update.json'");
-    // The previous asset's presence is decided by listing the release's
-    // assets: a listed manifest that fails to download must fail the step
-    // instead of silently skipping the monotonicity gate.
-    expect(release).toContain("gh release view --json assets --jq '.assets[].name' | grep -qx 'android-update.json'");
+    expect(release).toContain('bash ../scripts/resolve-previous-android-manifest.sh "$RUNNER_TEMP/previous-release"');
+    expect(resolver).toContain('set -euo pipefail');
+    expect(resolver).toContain('gh release list --repo "$repository" --json tagName,isDraft');
+    expect(resolver).toContain('gh release view "$previous_tag" --repo "$repository" --json assets');
+    expect(resolver).toContain('gh release download "$previous_tag" --repo "$repository"');
+    expect(release).toContain('npm run i18n:scan');
   });
 
   it('audits the dependency graph of every shipped Android ABI', () => {

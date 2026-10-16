@@ -963,7 +963,8 @@ impl DavFileSystem for TelegramDavFs {
             }
             let name = validate_portable_name(segments[0])?;
             let client = self.client().await?;
-            create_folder_inner(&name, &client, &self.state.peer_cache)
+            let account = self.account()?;
+            create_folder_inner(&name, &client, &self.state.peer_cache, Some(&account))
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
             self.invalidate("/").await;
@@ -996,7 +997,8 @@ impl DavFileSystem for TelegramDavFs {
                 return Err(FsError::Exists);
             }
             let client = self.client().await?;
-            delete_folder_inner(folder_id, &client, &self.state.peer_cache)
+            let account = self.account()?;
+            delete_folder_inner(folder_id, &client, &self.state.peer_cache, Some(&account))
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
             self.invalidate("/").await;
@@ -1041,9 +1043,16 @@ impl DavFileSystem for TelegramDavFs {
             }
             let new_name = validate_portable_name(segments[0])?;
             let client = self.client().await?;
-            rename_folder_inner(folder_id, &new_name, &client, &self.state.peer_cache)
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
+            let account = self.account()?;
+            rename_folder_inner(
+                folder_id,
+                &new_name,
+                &client,
+                &self.state.peer_cache,
+                Some(&account),
+            )
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
             self.invalidate("/").await;
             Ok(())
         }))

@@ -235,6 +235,7 @@ export function AdaptiveMediaPlayer({
     const hlsQualityRef = useRef<StreamingQuality | null>(null);
     const streamTokenRef = useRef<string>('');
     const currentJobIdRef = useRef<string | null>(null);
+    const transcodeGenerationRef = useRef(0);
     const streamBaseRef = useRef<string>('');
     const containerRef = useRef<HTMLDivElement>(null);
     const getActiveVideo = useCallback(() => containerRef.current?.querySelector('video') ?? null, []);
@@ -473,13 +474,40 @@ export function AdaptiveMediaPlayer({
             });
     }, []);
 
-    // ── Poll transcode status ────────────────────────────────────────
-    const pollTranscodeStatus = useCallback((jobId: string, quality: StreamingQuality) => {
-        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    const invalidateTranscode = useCallback(() => {
+        const jobId = currentJobIdRef.current;
+        transcodeGenerationRef.current += 1;
+        currentJobIdRef.current = null;
+        if (pollTimerRef.current) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+        }
+        if (jobId) void mediaApi.cancelTranscode(jobId).catch(() => undefined);
+    }, []);
 
-        pollTimerRef.current = setInterval(async () => {
+    // ── Poll transcode status ────────────────────────────────────────
+    const pollTranscodeStatus = useCallback((jobId: string, quality: StreamingQuality, generation: number) => {
+        let requestInFlight = false;
+        let timer: ReturnType<typeof setInterval>;
+        const stopPolling = () => {
+            clearInterval(timer);
+            if (pollTimerRef.current === timer) pollTimerRef.current = null;
+        };
+        const isCurrentJob = () => generation === transcodeGenerationRef.current;
+
+        timer = setInterval(async () => {
+            if (!isCurrentJob()) {
+                stopPolling();
+                return;
+            }
+            if (requestInFlight) return;
+            requestInFlight = true;
             try {
                 const status = await mediaApi.getTranscodeStatus(jobId);
+                if (!isCurrentJob()) {
+                    stopPolling();
+                    return;
+                }
 
                 log('cmd_get_transcode_status result', { jobId, status: status.status, progress: status.progress });
 
@@ -494,7 +522,8 @@ export function AdaptiveMediaPlayer({
                         setHlsProgress(status.progress);
                         break;
                     case 'ready':
-                        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+                        stopPolling();
+                        currentJobIdRef.current = null;
                         setHlsPhase('ready');
                         setHlsProgress(1);
                         if (status.playlist_url) {
@@ -509,25 +538,33 @@ export function AdaptiveMediaPlayer({
                         setHlsVariantStates(prev => ({ ...prev, [q]: 'ready' }));
                         break;
                     case 'error':
-                        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+                        stopPolling();
+                        currentJobIdRef.current = null;
                         setHlsPhase('failed');
                         setHlsError(status.error || 'Transcode failed');
                         setHlsVariantStates(prev => ({ ...prev, [q]: 'failed' }));
                         break;
                     case 'cancelled':
-                        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+                        stopPolling();
+                        currentJobIdRef.current = null;
                         setHlsPhase('idle');
                         break;
                 }
             } catch {
                 // Status check failed, will retry
+            } finally {
+                requestInFlight = false;
             }
         }, 1000);
+        pollTimerRef.current = timer;
     }, [log, streamUrl]);
 
     // ── Start HLS transcode for a quality ───────────────────────────
     const startTranscode = useCallback(async (quality: StreamingQuality) => {
         if (quality === 'original' || !HLS_QUALITIES.includes(quality)) return;
+
+        invalidateTranscode();
+        const generation = transcodeGenerationRef.current;
 
         log('startTranscode', { quality, activeFolderId, messageId: file.id });
 
@@ -557,6 +594,12 @@ export function AdaptiveMediaPlayer({
         try {
             // Use activeFolderId instead of file.folder_id so we resolve the correct peer
             const transcodePreparation = await mediaApi.prepareTranscodedStream(file.id, activeFolderId, quality);
+            if (generation !== transcodeGenerationRef.current) {
+                if (transcodePreparation.status !== 'ready' && transcodePreparation.job_id) {
+                    void mediaApi.cancelTranscode(transcodePreparation.job_id).catch(() => undefined);
+                }
+                return;
+            }
 
             log('cmd_prepare_transcoded_stream result', transcodePreparation);
 
@@ -580,15 +623,16 @@ export function AdaptiveMediaPlayer({
             } else {
                 currentJobIdRef.current = transcodePreparation.job_id;
                 setHlsVariantStates(prev => ({ ...prev, [quality]: 'preparing' }));
-                pollTranscodeStatus(transcodePreparation.job_id, quality);
+                pollTranscodeStatus(transcodePreparation.job_id, quality, generation);
             }
         } catch (error: unknown) {
+            if (generation !== transcodeGenerationRef.current) return;
             log('startTranscode error', String(error));
             setHlsPhase('failed');
             setHlsError(String(error));
             setHlsVariantStates(prev => ({ ...prev, [quality]: 'failed' }));
         }
-    }, [file.id, activeFolderId, mseVideoRef, pollTranscodeStatus, abortMse, log, streamUrl]);
+    }, [file.id, activeFolderId, mseVideoRef, pollTranscodeStatus, abortMse, invalidateTranscode, log, streamUrl]);
 
     // ── Handle quality change ────────────────────────────────────────
     const handleQualityChange = useCallback((quality: StreamingQuality, isAdaptive = false) => {
@@ -600,17 +644,13 @@ export function AdaptiveMediaPlayer({
             startTranscode,
             useThrottle: q => log('FFmpeg unavailable, using throttle mode for', q),
             switchToOriginal: () => {
+                invalidateTranscode();
                 // Clean up HLS if switching back from transcode mode
                 if (hlsRef.current) {
                     hlsRef.current.destroy();
                     hlsRef.current = null;
                 }
-                if (pollTimerRef.current) {
-                    clearInterval(pollTimerRef.current);
-                    pollTimerRef.current = null;
-                }
                 hlsQualityRef.current = null;
-                currentJobIdRef.current = null;
                 playbackConfirmedRef.current = false;
                 setPlaybackConfirmed(false);
                 setOriginalPlaybackError(null);
@@ -626,7 +666,7 @@ export function AdaptiveMediaPlayer({
                 setRestartNonce(n => n + 1);
             },
         });
-    }, [setQuality, startTranscode, transcodeCapabilities, playbackMode, log]);
+    }, [setQuality, startTranscode, transcodeCapabilities, playbackMode, invalidateTranscode, log]);
 
     const lastAdaptiveTransitionRef = useRef<StreamingQuality | null>(null);
     useEffect(() => {
@@ -869,17 +909,9 @@ export function AdaptiveMediaPlayer({
     }, [playbackMode, hlsPlaylistUrl, hlsPhase, hlsVideoReady, log, updateAdaptiveBandwidth]);
 
     // ── Cancel ongoing transcode ─────────────────────────────────────
-    const cancelTranscode = useCallback(async () => {
+    const cancelTranscode = useCallback(() => {
         log('cancelTranscode');
-        const jobId = currentJobIdRef.current;
-        if (jobId) {
-            try { await mediaApi.cancelTranscode(jobId); } catch {}
-            currentJobIdRef.current = null;
-        }
-        if (pollTimerRef.current) {
-            clearInterval(pollTimerRef.current);
-            pollTimerRef.current = null;
-        }
+        invalidateTranscode();
         if (hlsRef.current) {
             hlsRef.current.destroy();
             hlsRef.current = null;
@@ -898,7 +930,7 @@ export function AdaptiveMediaPlayer({
         // Force re-init of the MSE pipeline
         log('cancelTranscode — restarting MSE pipeline');
         setRestartNonce(n => n + 1);
-    }, [setQuality, log]);
+    }, [setQuality, invalidateTranscode, log]);
 
     // ── Retry failed transcode ───────────────────────────────────────
     const retryTranscode = useCallback(() => {
@@ -908,6 +940,7 @@ export function AdaptiveMediaPlayer({
     // ── Cleanup ──────────────────────────────────────────────────────
     useEffect(() => {
         return () => {
+            invalidateTranscode();
             if (hlsRef.current) {
                 hlsRef.current.destroy();
                 hlsRef.current = null;
@@ -917,7 +950,7 @@ export function AdaptiveMediaPlayer({
                 pollTimerRef.current = null;
             }
         };
-    }, []);
+    }, [file.id, activeFolderId, invalidateTranscode]);
 
     // ── Keyboard shortcuts ───────────────────────────────────────────
     useEffect(() => {

@@ -4,7 +4,9 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.FeatureInfo
 import android.content.pm.PackageManager
+import android.app.job.JobInfo
 import androidx.work.WorkManager
+import androidx.work.NetworkType
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
@@ -68,6 +70,30 @@ class AndroidPlatformContractTest {
     assertEquals(11_000, configuration.maxJobSchedulerId)
     assertTrue(configuration.maxJobSchedulerId - configuration.minJobSchedulerId >= 1_000)
     WorkManager.getInstance(context)
+  }
+
+  @Test
+  fun backgroundTransferConstraintsHonorRoamingPreference() {
+    assertEquals(
+      NetworkType.NOT_ROAMING,
+      TransferNetworkPolicy.workManagerNetworkType(wifiOnly = false, allowRoaming = false)
+    )
+    assertEquals(
+      JobInfo.NETWORK_TYPE_NOT_ROAMING,
+      TransferNetworkPolicy.jobSchedulerNetworkType(wifiOnly = false, allowRoaming = false)
+    )
+    assertEquals(
+      NetworkType.CONNECTED,
+      TransferNetworkPolicy.workManagerNetworkType(wifiOnly = false, allowRoaming = true)
+    )
+    assertEquals(
+      NetworkType.UNMETERED,
+      TransferNetworkPolicy.workManagerNetworkType(wifiOnly = true, allowRoaming = false)
+    )
+    assertEquals(
+      JobInfo.NETWORK_TYPE_UNMETERED,
+      TransferNetworkPolicy.jobSchedulerNetworkType(wifiOnly = true, allowRoaming = false)
+    )
   }
 
   @Test

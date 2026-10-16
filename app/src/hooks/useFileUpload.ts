@@ -84,6 +84,7 @@ export function useFileUpload(
     // Listen for progress events from Rust
     useEffect(() => {
         if (!isAndroidPlatform) return;
+        let disposed = false;
         let unlistenProgress: UnlistenFn | undefined;
         let unlistenRemote: UnlistenFn | undefined;
 
@@ -97,7 +98,12 @@ export function useFileUpload(
                     speedBytesPerSec: event.payload.speed_bytes_per_sec,
                 } : i
             ));
-        }).then(fn => { unlistenProgress = fn; });
+        }).then(fn => {
+            if (disposed) { fn(); return; }
+            unlistenProgress = fn;
+        }).catch(error => {
+            if (!disposed) console.warn('[Upload] Could not attach to the progress listener:', error);
+        });
 
         listen<RemoteProgressPayload>('remote-upload-progress', (event) => {
             setUploadQueue(q => q.map(i =>
@@ -110,9 +116,15 @@ export function useFileUpload(
                     totalBytes: event.payload.total_bytes,
                 } : i
             ));
-        }).then(fn => { unlistenRemote = fn; });
+        }).then(fn => {
+            if (disposed) { fn(); return; }
+            unlistenRemote = fn;
+        }).catch(error => {
+            if (!disposed) console.warn('[Upload] Could not attach to the remote progress listener:', error);
+        });
 
         return () => {
+            disposed = true;
             unlistenProgress?.();
             unlistenRemote?.();
         };

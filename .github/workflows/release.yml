@@ -47,21 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Android version monotonicity needs the previously released update
-          # manifest. The first release has no predecessor and skips the check;
-          # a predecessor without the asset (pre-updater releases) skips too.
-          # A listed asset that fails to download fails the step instead of
-          # silently skipping the monotonicity gate.
-          previous_manifest=""
-          if gh release view --json tagName >/dev/null 2>&1; then
-            if gh release view --json assets --jq '.assets[].name' | grep -qx 'android-update.json'; then
-              mkdir -p "$RUNNER_TEMP/previous-release"
-              gh release download --dir "$RUNNER_TEMP/previous-release" --pattern 'android-update.json'
-              if [ -s "$RUNNER_TEMP/previous-release/android-update.json" ]; then
-                previous_manifest="$RUNNER_TEMP/previous-release/android-update.json"
-              fi
-            fi
-          fi
+          previous_manifest="$(bash ../scripts/resolve-previous-android-manifest.sh "$RUNNER_TEMP/previous-release")"
           args=(--tag "$GITHUB_REF_NAME" --changelog ../CHANGELOG.md)
           if [ -n "$previous_manifest" ]; then
             args+=(--previous-manifest "$previous_manifest")
@@ -77,6 +63,7 @@ jobs:
         run: |
           node scripts/i18n/generate-key-types.cjs --check
           npm run i18n:validate
+          npm run i18n:scan
 
       - name: Build production frontend
         working-directory: app

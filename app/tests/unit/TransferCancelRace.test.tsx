@@ -6,6 +6,7 @@ import { useFileUpload } from '../../src/hooks/useFileUpload';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  listen: vi.fn(),
   invalidate: vi.fn(),
   settings: {
     maxConcurrentUploads: 1,
@@ -18,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
-vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}), emit: vi.fn(async () => {}) }));
+vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen, emit: vi.fn(async () => {}) }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ revealItemInDir: vi.fn() }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
@@ -79,6 +80,7 @@ function makeStore() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.listen.mockReset().mockResolvedValue(() => {});
   mocks.invalidate.mockResolvedValue(undefined);
   mocks.invoke.mockImplementation((command: string) => {
     if (command === 'cmd_get_android_transfer_environment') return Promise.resolve(environment);
@@ -88,6 +90,27 @@ beforeEach(() => {
 });
 
 describe('late cancellation after successful backend completion', () => {
+  it('unlistens Android progress subscriptions that resolve after hook unmount', async () => {
+    const pending = new Map<string, (unlisten: () => void) => void>();
+    mocks.listen.mockImplementation((event: string) => new Promise(resolve => {
+      pending.set(event, resolve);
+    }));
+    const { unmount } = renderHook(() => useFileUpload(42, null, true, 'waiting', 'account-a'));
+    await waitFor(() => expect(pending.size).toBe(2));
+
+    unmount();
+    const progressUnlisten = vi.fn();
+    const remoteUnlisten = vi.fn();
+    await act(async () => {
+      pending.get('upload-progress')?.(progressUnlisten);
+      pending.get('remote-upload-progress')?.(remoteUnlisten);
+      await Promise.resolve();
+    });
+
+    expect(progressUnlisten).toHaveBeenCalledTimes(1);
+    expect(remoteUnlisten).toHaveBeenCalledTimes(1);
+  });
+
   it('marks an upload successful and invalidates file queries when cancel races with backend success', async () => {
     const backend = deferred<void>();
     mocks.invoke.mockImplementation((command: string) => {

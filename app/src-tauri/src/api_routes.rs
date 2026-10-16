@@ -1659,16 +1659,17 @@ async fn api_upload_file(
     api_state: web::Data<ApiState>,
     bw_manager: web::Data<Arc<BandwidthManager>>,
     net_config: web::Data<Arc<NetworkConfig>>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
 
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
 
     let temp_path = std::env::temp_dir().join(format!(
         "upload_{}_{}",
@@ -1812,6 +1813,10 @@ async fn api_upload_file(
             }
         };
 
+    if let Some(error) = api_scope_error(&account) {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return error;
+    }
     let peer = match resolve_peer(&client, folder_id, &tg_state.peer_cache).await {
         Ok(p) => p,
         Err(e) => {
@@ -1819,6 +1824,10 @@ async fn api_upload_file(
             return json_error("PEER_ERROR", &e, 400);
         }
     };
+    if let Some(error) = api_scope_error(&account) {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return error;
+    }
     let peer = match crate::commands::utils::peer_to_ref(&peer).await {
         Ok(p) => p,
         Err(e) => {
@@ -1826,6 +1835,10 @@ async fn api_upload_file(
             return json_error("PEER_ERROR", &e, 400);
         }
     };
+    if let Some(error) = api_scope_error(&account) {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return error;
+    }
 
     let mut open_file = match tokio::fs::File::open(&temp_path).await {
         Ok(f) => f,
@@ -1835,9 +1848,17 @@ async fn api_upload_file(
         }
     };
 
+    if let Some(error) = api_scope_error(&account) {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return error;
+    }
     let upload_res = client
         .upload_stream(&mut open_file, file_size as usize, filename.clone())
         .await;
+    if let Some(error) = api_scope_error(&account) {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return error;
+    }
     let uploaded_file = match upload_res {
         Ok(uf) => uf,
         Err(e) => {
@@ -1856,12 +1877,24 @@ async fn api_upload_file(
     let mut sent_msg = None;
 
     for attempt in 0..=max_retries {
+        if let Some(error) = api_scope_error(&account) {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return error;
+        }
         match client.send_message(peer, message.clone()).await {
             Ok(msg) => {
+                if let Some(error) = api_scope_error(&account) {
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    return error;
+                }
                 sent_msg = Some(msg);
                 break;
             }
             Err(e) => {
+                if let Some(error) = api_scope_error(&account) {
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    return error;
+                }
                 let err = map_error(e);
                 log::warn!(
                     "send_message attempt {}/{}: {}",
@@ -1890,6 +1923,9 @@ async fn api_upload_file(
     }
 
     let _ = tokio::fs::remove_file(&temp_path).await;
+    if let Some(error) = api_scope_error(&account) {
+        return error;
+    }
 
     let msg = match sent_msg {
         Some(m) => m,
@@ -1916,22 +1952,30 @@ async fn api_list_folders(
     req: HttpRequest,
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
 
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
 
     let mut folders = Vec::new();
     let mut dialogs = client.iter_dialogs();
     let mut discovered = HashMap::new();
 
-    while let Some(dialog) = dialogs.next().await.ok().flatten() {
+    loop {
+        let dialog = dialogs.next().await.ok().flatten();
+        if let Some(error) = api_scope_error(&account) {
+            return error;
+        }
+        let Some(dialog) = dialog else {
+            break;
+        };
         if let Peer::Channel(ref c) = dialog.peer {
             let id = c.raw.id;
             discovered.insert(id, dialog.peer.clone());
@@ -1959,12 +2003,18 @@ async fn api_list_folders(
         }
     }
 
+    if let Some(error) = api_scope_error(&account) {
+        return error;
+    }
     {
         let mut cache = tg_state.peer_cache.write().await;
+        if let Some(error) = api_scope_error(&account) {
+            return error;
+        }
         cache.extend(discovered);
     }
 
-    HttpResponse::Ok().json(folders)
+    account_response(&account, HttpResponse::Ok().json(folders))
 }
 
 #[derive(serde::Deserialize)]
@@ -1978,19 +2028,21 @@ async fn api_create_folder(
     body: web::Json<CreateFolderRequest>,
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
 
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
 
-    match create_folder_inner(&body.name, &client, &tg_state.peer_cache).await {
-        Ok(folder) => HttpResponse::Ok().json(folder),
+    match create_folder_inner(&body.name, &client, &tg_state.peer_cache, Some(&account)).await {
+        Ok(folder) => account_response(&account, HttpResponse::Ok().json(folder)),
+        Err(e) if e.starts_with("ACCOUNT_CHANGED:") => json_error("ACCOUNT_CHANGED", &e, 409),
         Err(e) => json_error("CREATE_FOLDER_FAILED", &e, 500),
     }
 }
@@ -2007,20 +2059,33 @@ async fn api_rename_folder(
     body: web::Json<RenameFolderRequest>,
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
     let folder_id = path.into_inner();
 
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
 
-    match rename_folder_inner(folder_id, &body.name, &client, &tg_state.peer_cache).await {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({ "success": true })),
+    match rename_folder_inner(
+        folder_id,
+        &body.name,
+        &client,
+        &tg_state.peer_cache,
+        Some(&account),
+    )
+    .await
+    {
+        Ok(_) => account_response(
+            &account,
+            HttpResponse::Ok().json(serde_json::json!({ "success": true })),
+        ),
+        Err(e) if e.starts_with("ACCOUNT_CHANGED:") => json_error("ACCOUNT_CHANGED", &e, 409),
         Err(e) => json_error("RENAME_FOLDER_FAILED", &e, 500),
     }
 }
@@ -2031,20 +2096,25 @@ async fn api_delete_folder(
     path: web::Path<i64>,
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
     let folder_id = path.into_inner();
 
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
 
-    match delete_folder_inner(folder_id, &client, &tg_state.peer_cache).await {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({ "success": true })),
+    match delete_folder_inner(folder_id, &client, &tg_state.peer_cache, Some(&account)).await {
+        Ok(_) => account_response(
+            &account,
+            HttpResponse::Ok().json(serde_json::json!({ "success": true })),
+        ),
+        Err(e) if e.starts_with("ACCOUNT_CHANGED:") => json_error("ACCOUNT_CHANGED", &e, 409),
         Err(e) => json_error("DELETE_FOLDER_FAILED", &e, 500),
     }
 }

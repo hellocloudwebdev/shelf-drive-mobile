@@ -170,6 +170,16 @@ pub struct StreamingExtras {
     pub log_label: &'static str,
 }
 
+fn media_chunk_error<E: std::fmt::Display>(
+    label: &str,
+    error: E,
+) -> Result<web::Bytes, actix_web::Error> {
+    log::error!("{} stream error: {}", label, error);
+    Err(actix_web::error::ErrorBadGateway(
+        "Media stream could not be completed",
+    ))
+}
+
 /// Build a streaming HTTP response for a Telegram media file with optional byte-range support.
 /// This is the single shared implementation used by the streaming server, REST API, and share routes.
 pub fn build_media_response(
@@ -319,8 +329,8 @@ pub fn build_media_response_guarded(
                         }
                     }
                 }
-                Err(e) => {
-                    log::error!("{} stream error: {}", label, e);
+                Err(error) => {
+                    yield media_chunk_error(label, error);
                     break;
                 }
             }
@@ -829,6 +839,15 @@ mod streaming_runtime_tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU32, AtomicU64};
     use tokio::sync::{Mutex, RwLock};
+
+    #[test]
+    fn media_download_errors_become_terminal_gateway_errors() {
+        let error = media_chunk_error("test-media-stream", "network disconnected").unwrap_err();
+        assert_eq!(
+            error.as_response_error().status_code(),
+            actix_web::http::StatusCode::BAD_GATEWAY
+        );
+    }
 
     #[test]
     fn byte_ranges_accept_suffixes_and_safely_reject_empty_or_invalid_ranges() {

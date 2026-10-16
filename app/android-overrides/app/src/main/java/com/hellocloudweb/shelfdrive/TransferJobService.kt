@@ -55,11 +55,10 @@ class TransferJobService : JobService() {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
       return try {
         val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val networkType = if (preferences.getBoolean("wifi_only", false)) {
-          JobInfo.NETWORK_TYPE_UNMETERED
-        } else {
-          JobInfo.NETWORK_TYPE_ANY
-        }
+        val networkType = TransferNetworkPolicy.jobSchedulerNetworkType(
+          preferences.getBoolean("wifi_only", false),
+          preferences.getBoolean("allow_roaming", false),
+        )
         val job = JobInfo.Builder(JOB_ID, ComponentName(context, TransferJobService::class.java))
           .setRequiredNetworkType(networkType)
           .setRequiresCharging(preferences.getBoolean("require_charging", false))

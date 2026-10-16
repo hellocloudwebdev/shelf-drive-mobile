@@ -4,13 +4,16 @@ import { AdaptiveMediaPlayer } from '../../src/components/desktop/dashboard/Adap
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  invokeVoid: vi.fn(),
   progressiveCallback: null as (() => void) | null,
   streamUrls: [] as string[],
+  useFallback: true,
+  msePhase: 'error' as 'error' | 'ready',
 }));
 
 vi.mock('../../src/api/tauri', () => ({
   tauriInvoke: mocks.invoke,
-  tauriInvokeVoid: vi.fn().mockResolvedValue(undefined),
+  tauriInvokeVoid: mocks.invokeVoid,
   tauriListen: vi.fn().mockResolvedValue(() => {}),
   tauriConvertFileSrc: vi.fn().mockReturnValue('asset://localhost/test'),
 }));
@@ -28,7 +31,7 @@ vi.mock('../../src/hooks/useAdaptiveStreaming', () => ({
     mocks.progressiveCallback = onProgressiveDetected || null;
     return {
       videoRef: { current: null },
-      phase: 'error',
+      phase: mocks.msePhase,
       error: "Invalid data found while parsing box of type '=\u00ca\u0001\u00c0' at position 75037999.",
       tracks: [],
       loadProgress: 0,
@@ -38,7 +41,7 @@ vi.mock('../../src/hooks/useAdaptiveStreaming', () => ({
       setAdaptiveMode: vi.fn(),
       measuredKbps: 0,
       seek: vi.fn(),
-      useFallback: true,
+      useFallback: mocks.useFallback,
       fallbackUrl: streamUrl,
       abort: vi.fn(),
     };
@@ -48,9 +51,47 @@ vi.mock('../../src/hooks/useAdaptiveStreaming', () => ({
 describe('AdaptiveMediaPlayer native fallback', () => {
   beforeEach(() => {
     mocks.invoke.mockReset();
+    mocks.invokeVoid.mockReset().mockResolvedValue(undefined);
     mocks.progressiveCallback = null;
     mocks.streamUrls.length = 0;
+    mocks.useFallback = true;
+    mocks.msePhase = 'error';
     localStorage.removeItem('debug_overlay');
+  });
+
+  it('ignores and cancels a transcode preparation that resolves after a newer quality is selected', async () => {
+    mocks.useFallback = false;
+    mocks.msePhase = 'ready';
+    let resolveOldPreparation: ((value: { status: string; job_id: string }) => void) | undefined;
+    let prepareCount = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === 'cmd_get_transcode_capabilities') {
+        return Promise.resolve({ available: true, variants: [], mode: 'original' });
+      }
+      if (command === 'cmd_prepare_transcoded_stream') {
+        prepareCount += 1;
+        if (prepareCount === 1) return new Promise(resolve => { resolveOldPreparation = resolve; });
+        return Promise.resolve({ status: 'ready', playlist_url: '/480/index.m3u8' });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<AdaptiveMediaPlayer file={{ id: 42, name: 'video.mp4', size: 100, sizeStr: '100 B' }} activeFolderId={null} onClose={vi.fn()} streamUrl="http://127.0.0.1:14201/stream/home/42?token=token" />);
+    await waitFor(() => expect(screen.getAllByRole('button', { name: '720p' }).length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getAllByRole('button', { name: '720p' })[0]);
+    await waitFor(() => expect(prepareCount).toBe(1));
+    fireEvent.click(screen.getAllByRole('button', { name: '480p' })[0]);
+    await waitFor(() => expect(prepareCount).toBe(2));
+
+    await act(async () => {
+      resolveOldPreparation?.({ status: 'processing', job_id: 'job-720' });
+      await Promise.resolve();
+    });
+    await new Promise(resolve => setTimeout(resolve, 1100));
+
+    expect(mocks.invoke.mock.calls.some(([command]) => command === 'cmd_get_transcode_status')).toBe(false);
+    expect(mocks.invokeVoid.mock.calls.some(([command]) => command === 'cmd_cancel_transcode')).toBe(true);
   });
 
   it('keeps parser and background-remux state from covering playable native video', async () => {

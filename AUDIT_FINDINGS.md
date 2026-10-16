@@ -422,7 +422,9 @@ The following coverage notes describe the supplementary review results that cont
 
 ## Follow-up audit and repair pass — 2026-10-16
 
-This pass rechecked the repository on branch `fix/login-security-ux-2026-10-16` and implemented fixes for findings **1–29 and 31–46**, plus the JavaScript dependency-security item. The changes are present in the working tree; they were **not committed or pushed**.
+> **Historical snapshot:** This section records the state on `fix/login-security-ux-2026-10-16` before the changes were committed. The changes were subsequently committed to `main` and released as v4.4.4. Its branch status and verification table below describe that snapshot only, not the current repository.
+
+This pass rechecked the repository on branch `fix/login-security-ux-2026-10-16` and implemented fixes for findings **1–29 and 31–46**, plus the JavaScript dependency-security item. At the time of this note, the changes were still in the working tree and had not been committed or pushed.
 
 ### Resolution status and residual risks
 
@@ -448,3 +450,27 @@ This pass rechecked the repository on branch `fix/login-security-ux-2026-10-16` 
 | Whitespace/integrity | **Passed** (`git diff --check`) |
 
 The frontend run emitted expected test diagnostics from mocked offline/error cases; these did not fail tests. The audit is based on repository source and automated tests, not production-account reproduction.
+## Repository-wide follow-up audit — 2026-10-17 (v4.4.5)
+
+A fresh read-only review covered Rust command/API and streaming paths, React transfer/media lifecycles, Android background-transfer constraints, release automation, and project documentation. Confirmed findings fixed in this pass:
+
+- Validated transfer IDs before deriving upload staging paths; bound REST uploads and folder operations to the active account and rechecked account scope around asynchronous/remote side effects.
+- Changed interrupted media downloads into terminal HTTP gateway errors rather than silently ending a successful-looking response.
+- Made transcode polling single-flight and generation-safe, cancelling stale jobs and preventing late preparation/status responses from replacing a newer playback choice; disposed Android upload listeners that resolve after unmount.
+- Applied the saved `allow_roaming` setting to both WorkManager recovery and JobScheduler user-initiated transfer constraints, with an Android instrumentation contract test.
+- Made release predecessor-manifest lookup fail closed on GitHub/API/download errors, added the locale-literal scan to release verification, and pinned the Android App Bundle certificate to the protected production fingerprint.
+- Aligned README and privacy copy with the owner-selected crash-reporting policy: enabled by default, with an in-app Settings opt-out. Removed the unsupported MIT assertion and disclosed the missing supporter-terms document instead of linking to a nonexistent file.
+
+### Residual risks and owner follow-up
+
+- The existing “Make Private” copy correctly warns that removing a public username does not revoke previously exported private Telegram invites; there is still no in-app bulk invite-revocation action. Users must revoke those invites in Telegram.
+- This repository has no `LICENSE` file and no GitHub license declaration; no license terms are inferred here. The supporter terms document is also absent. The maintainer must supply authoritative license/terms documents or remove the related program claims.
+- No live Telegram, proxy, or WebDAV operations were performed. Signed Android packaging and emulator instrumentation require the Android SDK, Gradle wrapper/tooling, and JDK signer utilities available in GitHub Actions; those are not installed on this computer.
+
+### Verification for this pass
+
+- Frontend coverage suite: **passed**; production build and bundle budgets: **passed** (`MediaPlayer` feature chunk 249,993 / 250,000 bytes; initial JavaScript 549,744 / 550,000 bytes).
+- Generated localization key check, locale validation, and i18n literal scan: **passed**. Locale validation reports 17 non-blocking existing plural/copied-English warnings; literal debt remains within its configured no-regression budget.
+- Locked Rust library tests: **349 passed, 0 failed**; `cargo fmt --all -- --check` and locked all-target Clippy with `-D warnings`: **passed**.
+- Release-assurance script contracts: **passed**, including signer-fingerprint matching/mismatch and fail-closed previous-manifest resolution. The Android version gate passed for v4.4.5 against the published v4.4.4 manifest (versionCode 4004004 → 4004005).
+- `git diff --check`: **passed**.

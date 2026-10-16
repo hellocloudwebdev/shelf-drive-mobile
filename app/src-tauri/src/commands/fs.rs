@@ -1149,11 +1149,20 @@ pub async fn cmd_delete_android_staged_upload(
     }
 }
 
+fn validate_folder_account(account: Option<&crate::workspace::AccountGuard>) -> Result<(), String> {
+    if let Some(account) = account {
+        account.validate()?;
+    }
+    Ok(())
+}
+
 pub async fn create_folder_inner(
     name: &str,
     client: &grammers_client::Client,
     peer_cache: &Arc<tokio::sync::RwLock<HashMap<i64, Peer>>>,
+    account: Option<&crate::workspace::AccountGuard>,
 ) -> Result<FolderMetadata, String> {
+    validate_folder_account(account)?;
     log::info!("Creating Telegram Channel: {}", name);
 
     let result = client
@@ -1170,6 +1179,7 @@ pub async fn create_folder_inner(
         })
         .await
         .map_err(map_error)?;
+    validate_folder_account(account)?;
 
     let (chat_id, access_hash) = match &result {
         tl::enums::Updates::Updates(u) => {
@@ -1181,6 +1191,7 @@ pub async fn create_folder_inner(
                         tl::enums::Chat::Channel(c.clone()),
                     );
                     peer_cache.write().await.insert(c.id, peer);
+                    validate_folder_account(account)?;
                     (c.id, c.access_hash.unwrap_or(0))
                 }
                 _ => return Err("Created chat is not a channel".to_string()),
@@ -1189,6 +1200,7 @@ pub async fn create_folder_inner(
         _ => return Err("Unexpected response (not Updates::Updates)".to_string()),
     };
 
+    validate_folder_account(account)?;
     let _ = client
         .invoke(&tl::functions::messages::SetHistoryTtl {
             peer: tl::enums::InputPeer::Channel(tl::types::InputPeerChannel {
@@ -1198,6 +1210,7 @@ pub async fn create_folder_inner(
             period: 0,
         })
         .await;
+    validate_folder_account(account)?;
     Ok(FolderMetadata {
         id: chat_id,
         name: name.to_string(),
@@ -1234,7 +1247,7 @@ pub async fn cmd_create_folder(
         }
     } else {
         let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
-        create_folder_inner(&name, &client, &state.peer_cache).await?
+        create_folder_inner(&name, &client, &state.peer_cache, None).await?
     };
 
     // Save to SQLite
@@ -1267,10 +1280,13 @@ pub async fn delete_folder_inner(
     folder_id: i64,
     client: &grammers_client::Client,
     peer_cache: &Arc<tokio::sync::RwLock<HashMap<i64, Peer>>>,
+    account: Option<&crate::workspace::AccountGuard>,
 ) -> Result<bool, String> {
+    validate_folder_account(account)?;
     log::info!("Deleting folder/channel: {}", folder_id);
 
     let peer = resolve_peer(client, Some(folder_id), peer_cache).await?;
+    validate_folder_account(account)?;
 
     let input_channel = match peer {
         Peer::Channel(c) => {
@@ -1283,12 +1299,14 @@ pub async fn delete_folder_inner(
         _ => return Err("Only channels (folders) can be deleted.".to_string()),
     };
 
+    validate_folder_account(account)?;
     client
         .invoke(&tl::functions::channels::DeleteChannel {
             channel: input_channel,
         })
         .await
         .map_err(|e| format!("Failed to delete channel: {}", e))?;
+    validate_folder_account(account)?;
 
     Ok(true)
 }
@@ -1305,7 +1323,7 @@ pub async fn cmd_delete_folder(
         log::info!("[MOCK] Deleted folder ID {}", folder_id);
     } else {
         let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
-        delete_folder_inner(folder_id, &client, &state.peer_cache).await?;
+        delete_folder_inner(folder_id, &client, &state.peer_cache, None).await?;
     }
 
     // Delete from SQLite
@@ -1328,10 +1346,13 @@ pub async fn rename_folder_inner(
     new_name: &str,
     client: &grammers_client::Client,
     peer_cache: &Arc<tokio::sync::RwLock<HashMap<i64, Peer>>>,
+    account: Option<&crate::workspace::AccountGuard>,
 ) -> Result<bool, String> {
+    validate_folder_account(account)?;
     log::info!("Renaming folder/channel: {} to {}", folder_id, new_name);
 
     let peer = resolve_peer(client, Some(folder_id), peer_cache).await?;
+    validate_folder_account(account)?;
 
     let input_channel = match peer {
         Peer::Channel(c) => {
@@ -1344,6 +1365,7 @@ pub async fn rename_folder_inner(
         _ => return Err("Only channels (folders) can be renamed.".to_string()),
     };
 
+    validate_folder_account(account)?;
     client
         .invoke(&tl::functions::channels::EditTitle {
             channel: input_channel,
@@ -1351,6 +1373,7 @@ pub async fn rename_folder_inner(
         })
         .await
         .map_err(|e| format!("Failed to rename channel: {}", e))?;
+    validate_folder_account(account)?;
 
     Ok(true)
 }
@@ -1368,7 +1391,7 @@ pub async fn cmd_rename_folder(
         log::info!("[MOCK] Renamed folder ID {} to {}", folder_id, new_name);
     } else {
         let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
-        rename_folder_inner(folder_id, &new_name, &client, &state.peer_cache).await?;
+        rename_folder_inner(folder_id, &new_name, &client, &state.peer_cache, None).await?;
     }
 
     // Update SQLite
@@ -5925,6 +5948,7 @@ pub async fn cmd_upload_from_url(
     db_pool: State<'_, DbConnection>,
     owner_id: Option<String>,
 ) -> Result<String, String> {
+    crate::transfer_engine::validate_transfer_id(&transfer_id)?;
     let account = capture_transfer_account(&app_handle, &transfer_id, owner_id.as_deref()).await?;
     crate::workspace::with_operation_account(
         &account,

@@ -115,15 +115,14 @@ Dependency-policy baselines (`dependency-policy/`, `deny.toml`) expire 2026-12-2
 
 **Requires explicit architectural review**: Rust backend changes, storage model changes, encryption changes, auth changes, permission/capability changes, new network listeners, stream-token changes, updater trust changes, direct IPC changes, security-relevant dependency changes.
 
-## Deferred (known, tracked — do not invent new blockers)
+## Deferred documentation follow-ups (not mobile build blockers)
 
 Android support is implemented in `app/android-overrides/` and its generated project is built by the reusable `.github/workflows/android.yml` workflow, which is called for tagged releases and also supports manual dispatch. `gen/android` is generated build output, not a prerequisite checked into a clean checkout; production signing remains gated by protected secrets.
 
-1. Updater endpoint points at the private `hellocloudwebdev/shelf-drive` repo (anonymous fetch fails) — `tauri.conf.json:9`.
-2. Updater minisign pubkey is still upstream's (`507B700E3497963C`) — rotate to a Shelf Drive keypair.
-3. Arch CI fixture still pins the upstream `caamer20/Telegram-Drive` v3.7.0 deb — regenerate a Shelf Drive fixture (`arch-package.yml`, inline remediation note).
-4. Upstream license never obtained; no LICENSE file — `packaging/arch/UPSTREAM-LICENSE-NOTICE` defers AUR publication.
-5. README/PRIVACY/Docs still describe the removed supporter/licensing system (broken links) — docs-phase cleanup.
+The earlier source-freeze notes about the desktop Tauri updater endpoint/key and the upstream Arch-package fixture do not apply to this mobile repository. Current owner follow-ups are:
+
+1. **License declaration:** no `LICENSE` file is present and GitHub reports no declared license; README now avoids asserting MIT pending maintainer confirmation.
+2. **Supporter terms:** the privacy policy’s referenced terms are not present in this repository; publish the authoritative terms or remove/update the supporter-program copy before relying on it.
 
 ## Verification invariants
 

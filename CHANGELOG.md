@@ -1,3 +1,17 @@
+## [4.4.5] - 2026-10-17
+
+### Reliability, privacy, and Android transfers
+
+- Bound REST/WebDAV and folder mutations to the active account, validated transfer IDs, and surfaced interrupted media streams as errors instead of successful truncation.
+- Prevented stale transcode work from replacing newer playback choices and cleaned up Android upload listeners after asynchronous unmounts.
+- Applied the Android allow-roaming preference to WorkManager recovery and user-initiated transfer constraints.
+- Clarified that crash reporting is enabled by default and can be disabled in Settings; corrected repository license and supporter-terms documentation.
+
+### Release assurance
+
+- Made previous Android version-manifest lookup fail closed, added the i18n literal scan to release verification, and pinned the AAB to the production signing certificate.
+- Added regression coverage for account changes, stream errors, transfer lifecycle races, signer validation, and release-version gating.
+
 ## [4.4.4] - 2026-10-16
 
 ### Security and reliability

@@ -178,9 +178,7 @@ class MainActivity : TauriActivity() {
       pauseOnLowBattery: Boolean,
     ) {
       val ctx = appContext ?: return
-      TransferRecoveryWorker.configure(ctx, wifiOnly, requireCharging, pauseOnLowBattery)
-      ctx.getSharedPreferences("telegram_drive_transfer_recovery_v1", Context.MODE_PRIVATE)
-        .edit().putBoolean("allow_roaming", allowRoaming).apply()
+      TransferRecoveryWorker.configure(ctx, wifiOnly, allowRoaming, requireCharging, pauseOnLowBattery)
     }
 
     fun requestTransferNotificationPermission() {

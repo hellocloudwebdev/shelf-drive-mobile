@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/hellocloudwebdev/shelf-drive-mobile?style=for-the-badge&color=4FC3F7&label=Latest%20Release&logo=android&logoColor=white" alt="Latest Release"></a>
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-0e7490?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/actions"><img src="https://img.shields.io/github/actions/workflow/status/hellocloudwebdev/shelf-drive-mobile/quality-assurance.yml?style=for-the-badge&label=CI&color=34d399" alt="CI Status"></a>
 </p>
 
@@ -330,7 +329,7 @@ What does **not** exist yet: an Xcode project generation + CI pipeline, iOS capa
 
 Shelf Drive is **free and open-source**. Every feature works without payment.
 
-If you find it useful, consider a **$5 one-time lifetime supporter license** — it removes sponsor placements and helps fund continued development.
+Supporter-program pricing and terms are not published in this repository. Confirm current availability and terms with the maintainer before paying.
 
 <br>
 
@@ -370,9 +369,9 @@ cargo check --target aarch64-linux-android   # Android Rust target
 
 ---
 
-## License
+## Licensing status
 
-Distributed under the **MIT License**. See [LICENSE](./LICENSE) for more information.
+This repository currently has no `LICENSE` file, and GitHub reports no declared license. Confirm the applicable terms with the maintainer before reusing or redistributing this code.
 
 <br>
 
