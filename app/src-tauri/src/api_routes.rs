@@ -402,241 +402,245 @@ async fn api_list_files(
     query: web::Query<FilesQuery>,
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
 
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
+    let response = async {
+        let query_string = req.query_string();
+        let has_folder_id = query_string
+            .split('&')
+            .any(|p| p.starts_with("folder_id=") || p == "folder_id");
 
-    let query_string = req.query_string();
-    let has_folder_id = query_string
-        .split('&')
-        .any(|p| p.starts_with("folder_id=") || p == "folder_id");
-
-    let mut peers_to_scan = Vec::new();
-    if !has_folder_id {
-        // Return files from ALL folders: scan dialogs + root folder
-        if let Ok(me_peer) = resolve_peer(&client, None, &tg_state.peer_cache).await {
-            peers_to_scan.push((None, me_peer));
-        }
-        let mut dialogs = client.iter_dialogs();
-        while let Some(dialog) = dialogs.next().await.ok().flatten() {
-            if let Peer::Channel(ref c) = dialog.peer {
-                let name = c.raw.title.clone();
-                if name.to_lowercase().contains("[td]") {
-                    peers_to_scan.push((Some(c.raw.id), dialog.peer.clone()));
+        let mut peers_to_scan = Vec::new();
+        if !has_folder_id {
+            // Return files from ALL folders: scan dialogs + root folder
+            if let Ok(me_peer) = resolve_peer(&client, None, &tg_state.peer_cache).await {
+                peers_to_scan.push((None, me_peer));
+            }
+            let mut dialogs = client.iter_dialogs();
+            while let Some(dialog) = dialogs.next().await.ok().flatten() {
+                if let Peer::Channel(ref c) = dialog.peer {
+                    let name = c.raw.title.clone();
+                    if name.to_lowercase().contains("[td]") {
+                        peers_to_scan.push((Some(c.raw.id), dialog.peer.clone()));
+                    }
                 }
             }
-        }
-    } else {
-        // Parse folder_id value
-        let mut parsed_id: Option<i64> = None;
-        for pair in query_string.split('&') {
-            let mut parts = pair.split('=');
-            if let Some(key) = parts.next() {
-                if key == "folder_id" {
-                    if let Some(val) = parts.next() {
-                        if !val.is_empty() && val != "null" && val != "none" && val != "None" {
-                            if let Ok(id) = val.parse::<i64>() {
-                                parsed_id = Some(id);
+        } else {
+            // Parse folder_id value
+            let mut parsed_id: Option<i64> = None;
+            for pair in query_string.split('&') {
+                let mut parts = pair.split('=');
+                if let Some(key) = parts.next() {
+                    if key == "folder_id" {
+                        if let Some(val) = parts.next() {
+                            if !val.is_empty() && val != "null" && val != "none" && val != "None" {
+                                if let Ok(id) = val.parse::<i64>() {
+                                    parsed_id = Some(id);
+                                }
                             }
                         }
                     }
                 }
             }
+
+            let resolved = match resolve_peer(&client, parsed_id, &tg_state.peer_cache).await {
+                Ok(p) => p,
+                Err(e) => return json_error("PEER_ERROR", &e, 400),
+            };
+            peers_to_scan.push((parsed_id, resolved));
         }
 
-        let resolved = match resolve_peer(&client, parsed_id, &tg_state.peer_cache).await {
-            Ok(p) => p,
-            Err(e) => return json_error("PEER_ERROR", &e, 400),
-        };
-        peers_to_scan.push((parsed_id, resolved));
-    }
-
-    let mut all_files: Vec<ApiFile> = Vec::new();
-    for (fid, peer) in &peers_to_scan {
-        let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else {
-            continue;
-        };
-        let mut msgs = client.iter_messages(peer);
-        if let Some(offset_id) = query.offset_id {
-            msgs = msgs.offset_id(offset_id);
-        }
-
-        // When listing all, limit scan per folder to prevent rate limit timeouts
-        if !has_folder_id {
-            msgs = msgs.limit(100);
-        } else if query.search.is_none() {
-            let page = query.page.unwrap_or(1).clamp(1, u32::MAX);
-            let limit = query.limit.unwrap_or(20).clamp(1, 100);
-            if query.offset_id.is_some() {
-                msgs = msgs.limit(limit as usize * 2);
-            } else {
-                msgs = msgs.limit(page as usize * limit as usize * 2);
-            }
-        } else {
-            msgs = msgs.limit(2000);
-        }
-
-        while let Some(msg) = msgs.next().await.ok().flatten() {
-            if let Some(doc) = msg.media() {
-                let size = media_size(&doc);
-                let (name, mime) = match doc {
-                    Media::Document(d) => {
-                        let doc_name = d.name().unwrap_or("unknown").to_string();
-                        // Prefer the message caption (set by rename via EditMessage)
-                        let caption = msg.text();
-                        let display_name = if caption.is_empty() {
-                            doc_name
-                        } else {
-                            caption.to_string()
-                        };
-                        (display_name, d.mime_type().map(|s| s.to_string()))
-                    }
-                    Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".into())),
-                    _ => ("Unknown".to_string(), None),
-                };
-
-                all_files.push(ApiFile {
-                    id: msg.id() as i64,
-                    folder_id: *fid,
-                    name,
-                    size,
-                    mime_type: mime,
-                    created_at: msg.date().to_string(),
-                });
-            }
-        }
-    }
-
-    // Apply filters
-    let mut filtered_files: Vec<ApiFile> = Vec::new();
-    for file in all_files {
-        if let Some(ref search) = query.search {
-            if !file.name.to_lowercase().contains(&search.to_lowercase()) {
+        let mut all_files: Vec<ApiFile> = Vec::new();
+        for (fid, peer) in &peers_to_scan {
+            let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else {
                 continue;
+            };
+            let mut msgs = client.iter_messages(peer);
+            if let Some(offset_id) = query.offset_id {
+                msgs = msgs.offset_id(offset_id);
             }
-        }
-        if let Some(ref mt) = query.mime_type {
-            if let Some(ref fmt) = file.mime_type {
-                if !fmt.to_lowercase().contains(&mt.to_lowercase()) {
-                    continue;
+
+            // When listing all, limit scan per folder to prevent rate limit timeouts
+            if !has_folder_id {
+                msgs = msgs.limit(100);
+            } else if query.search.is_none() {
+                let page = query.page.unwrap_or(1).clamp(1, u32::MAX);
+                let limit = query.limit.unwrap_or(20).clamp(1, 100);
+                if query.offset_id.is_some() {
+                    msgs = msgs.limit(limit as usize * 2);
+                } else {
+                    msgs = msgs.limit(page as usize * limit as usize * 2);
                 }
             } else {
-                continue;
+                msgs = msgs.limit(2000);
+            }
+
+            while let Some(msg) = msgs.next().await.ok().flatten() {
+                if let Some(doc) = msg.media() {
+                    let size = media_size(&doc);
+                    let (name, mime) = match doc {
+                        Media::Document(d) => {
+                            let doc_name = d.name().unwrap_or("unknown").to_string();
+                            // Prefer the message caption (set by rename via EditMessage)
+                            let caption = msg.text();
+                            let display_name = if caption.is_empty() {
+                                doc_name
+                            } else {
+                                caption.to_string()
+                            };
+                            (display_name, d.mime_type().map(|s| s.to_string()))
+                        }
+                        Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".into())),
+                        _ => ("Unknown".to_string(), None),
+                    };
+
+                    all_files.push(ApiFile {
+                        id: msg.id() as i64,
+                        folder_id: *fid,
+                        name,
+                        size,
+                        mime_type: mime,
+                        created_at: msg.date().to_string(),
+                    });
+                }
             }
         }
-        if let Some(min) = query.size_min {
-            if file.size < min {
-                continue;
+
+        // Apply filters
+        let mut filtered_files: Vec<ApiFile> = Vec::new();
+        for file in all_files {
+            if let Some(ref search) = query.search {
+                if !file.name.to_lowercase().contains(&search.to_lowercase()) {
+                    continue;
+                }
             }
-        }
-        if let Some(max) = query.size_max {
-            if file.size > max {
-                continue;
+            if let Some(ref mt) = query.mime_type {
+                if let Some(ref fmt) = file.mime_type {
+                    if !fmt.to_lowercase().contains(&mt.to_lowercase()) {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
             }
-        }
-        if let Some(ref after) = query.created_after {
-            if file.created_at < *after {
-                continue;
+            if let Some(min) = query.size_min {
+                if file.size < min {
+                    continue;
+                }
             }
-        }
-        if let Some(ref before) = query.created_before {
-            if file.created_at > *before {
-                continue;
+            if let Some(max) = query.size_max {
+                if file.size > max {
+                    continue;
+                }
             }
-        }
-        filtered_files.push(file);
-    }
-
-    // Sort
-    let sort_field = query.sort.as_deref().unwrap_or("created_at");
-    let sort_order = query.order.as_deref().unwrap_or("asc");
-    filtered_files.sort_by(|a, b| {
-        let cmp = match sort_field {
-            "name" => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            "size" => a.size.cmp(&b.size),
-            _ => a.created_at.cmp(&b.created_at),
-        };
-        if sort_order.to_lowercase() == "desc" {
-            cmp.reverse()
-        } else {
-            cmp
-        }
-    });
-
-    // Pagination
-    let page = query.page.unwrap_or(1).max(1);
-    let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    let total = filtered_files.len();
-    let total_pages = (total.div_ceil(limit as usize)) as u32;
-    let start = ((page - 1) * limit) as usize;
-
-    let paginated_files: Vec<ApiFile> = filtered_files
-        .into_iter()
-        .skip(start)
-        .take(limit as usize)
-        .collect();
-
-    let has_next = page < total_pages;
-    let has_prev = page > 1;
-
-    // Sparse fieldsets
-    let mut final_data = Vec::new();
-    let fields_list: Option<Vec<String>> = query
-        .fields
-        .as_ref()
-        .map(|f| f.split(',').map(|s| s.trim().to_string()).collect());
-
-    for file in paginated_files {
-        let mut map = serde_json::Map::new();
-        let include_all = fields_list.is_none();
-        let fields = fields_list.as_ref();
-
-        if include_all || fields.unwrap().contains(&"id".to_string()) {
-            map.insert("id".to_string(), serde_json::json!(file.id));
-        }
-        if include_all || fields.unwrap().contains(&"folder_id".to_string()) {
-            map.insert("folder_id".to_string(), serde_json::json!(file.folder_id));
-        }
-        if include_all || fields.unwrap().contains(&"name".to_string()) {
-            map.insert("name".to_string(), serde_json::json!(file.name));
-        }
-        if include_all || fields.unwrap().contains(&"size".to_string()) {
-            map.insert("size".to_string(), serde_json::json!(file.size));
-        }
-        if include_all || fields.unwrap().contains(&"mime_type".to_string()) {
-            map.insert("mime_type".to_string(), serde_json::json!(file.mime_type));
-        }
-        if include_all || fields.unwrap().contains(&"created_at".to_string()) {
-            map.insert("created_at".to_string(), serde_json::json!(file.created_at));
+            if let Some(ref after) = query.created_after {
+                if file.created_at < *after {
+                    continue;
+                }
+            }
+            if let Some(ref before) = query.created_before {
+                if file.created_at > *before {
+                    continue;
+                }
+            }
+            filtered_files.push(file);
         }
 
-        final_data.push(serde_json::Value::Object(map));
-    }
+        // Sort
+        let sort_field = query.sort.as_deref().unwrap_or("created_at");
+        let sort_order = query.order.as_deref().unwrap_or("asc");
+        filtered_files.sort_by(|a, b| {
+            let cmp = match sort_field {
+                "name" => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                "size" => a.size.cmp(&b.size),
+                _ => a.created_at.cmp(&b.created_at),
+            };
+            if sort_order.to_lowercase() == "desc" {
+                cmp.reverse()
+            } else {
+                cmp
+            }
+        });
 
-    let res_body = FilesResponse {
-        data: final_data.clone(),
-        files: final_data,
-        page,
-        limit,
-        total,
-        pagination: PaginationInfo {
+        // Pagination
+        let page = query.page.unwrap_or(1).max(1);
+        let limit = query.limit.unwrap_or(20).clamp(1, 100);
+        let total = filtered_files.len();
+        let total_pages = (total.div_ceil(limit as usize)) as u32;
+        let start = ((page - 1) * limit) as usize;
+
+        let paginated_files: Vec<ApiFile> = filtered_files
+            .into_iter()
+            .skip(start)
+            .take(limit as usize)
+            .collect();
+
+        let has_next = page < total_pages;
+        let has_prev = page > 1;
+
+        // Sparse fieldsets
+        let mut final_data = Vec::new();
+        let fields_list: Option<Vec<String>> = query
+            .fields
+            .as_ref()
+            .map(|f| f.split(',').map(|s| s.trim().to_string()).collect());
+
+        for file in paginated_files {
+            let mut map = serde_json::Map::new();
+            let include_all = fields_list.is_none();
+            let fields = fields_list.as_ref();
+
+            if include_all || fields.unwrap().contains(&"id".to_string()) {
+                map.insert("id".to_string(), serde_json::json!(file.id));
+            }
+            if include_all || fields.unwrap().contains(&"folder_id".to_string()) {
+                map.insert("folder_id".to_string(), serde_json::json!(file.folder_id));
+            }
+            if include_all || fields.unwrap().contains(&"name".to_string()) {
+                map.insert("name".to_string(), serde_json::json!(file.name));
+            }
+            if include_all || fields.unwrap().contains(&"size".to_string()) {
+                map.insert("size".to_string(), serde_json::json!(file.size));
+            }
+            if include_all || fields.unwrap().contains(&"mime_type".to_string()) {
+                map.insert("mime_type".to_string(), serde_json::json!(file.mime_type));
+            }
+            if include_all || fields.unwrap().contains(&"created_at".to_string()) {
+                map.insert("created_at".to_string(), serde_json::json!(file.created_at));
+            }
+
+            final_data.push(serde_json::Value::Object(map));
+        }
+
+        let res_body = FilesResponse {
+            data: final_data.clone(),
+            files: final_data,
             page,
             limit,
             total,
-            total_pages,
-            has_next,
-            has_prev,
-        },
-    };
+            pagination: PaginationInfo {
+                page,
+                limit,
+                total,
+                total_pages,
+                has_next,
+                has_prev,
+            },
+        };
 
-    HttpResponse::Ok().json(res_body)
+        HttpResponse::Ok().json(res_body)
+    }
+    .await;
+    account_response(&account, response)
 }
 
 #[derive(serde::Deserialize)]
@@ -651,60 +655,64 @@ async fn api_get_file(
     query: web::Query<FolderQuery>,
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
 
-    let message_id = path.into_inner() as i32;
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
+    let response = async {
+        let message_id = path.into_inner() as i32;
+        let peer = match resolve_peer(&client, query.folder_id, &tg_state.peer_cache).await {
+            Ok(p) => p,
+            Err(e) => return json_error("PEER_ERROR", &e, 400),
+        };
+        let peer = match crate::commands::utils::peer_to_ref(&peer).await {
+            Ok(p) => p,
+            Err(e) => return json_error("PEER_ERROR", &e, 400),
+        };
 
-    let peer = match resolve_peer(&client, query.folder_id, &tg_state.peer_cache).await {
-        Ok(p) => p,
-        Err(e) => return json_error("PEER_ERROR", &e, 400),
-    };
-    let peer = match crate::commands::utils::peer_to_ref(&peer).await {
-        Ok(p) => p,
-        Err(e) => return json_error("PEER_ERROR", &e, 400),
-    };
-
-    match client.get_messages_by_id(peer, &[message_id]).await {
-        Ok(messages) => {
-            if let Some(Some(msg)) = messages.first() {
-                if let Some(doc) = msg.media() {
-                    let size = media_size(&doc);
-                    let (name, mime) = match doc {
-                        Media::Document(d) => {
-                            let doc_name = d.name().unwrap_or("unknown").to_string();
-                            let caption = msg.text();
-                            let display_name = if caption.is_empty() {
-                                doc_name
-                            } else {
-                                caption.to_string()
-                            };
-                            (display_name, d.mime_type().map(|s| s.to_string()))
-                        }
-                        Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".into())),
-                        _ => ("Unknown".to_string(), None),
-                    };
-                    return HttpResponse::Ok().json(ApiFile {
-                        id: msg.id() as i64,
-                        folder_id: query.folder_id,
-                        name,
-                        size,
-                        mime_type: mime,
-                        created_at: msg.date().to_string(),
-                    });
+        match client.get_messages_by_id(peer, &[message_id]).await {
+            Ok(messages) => {
+                if let Some(Some(msg)) = messages.first() {
+                    if let Some(doc) = msg.media() {
+                        let size = media_size(&doc);
+                        let (name, mime) = match doc {
+                            Media::Document(d) => {
+                                let doc_name = d.name().unwrap_or("unknown").to_string();
+                                let caption = msg.text();
+                                let display_name = if caption.is_empty() {
+                                    doc_name
+                                } else {
+                                    caption.to_string()
+                                };
+                                (display_name, d.mime_type().map(|s| s.to_string()))
+                            }
+                            Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".into())),
+                            _ => ("Unknown".to_string(), None),
+                        };
+                        return HttpResponse::Ok().json(ApiFile {
+                            id: msg.id() as i64,
+                            folder_id: query.folder_id,
+                            name,
+                            size,
+                            mime_type: mime,
+                            created_at: msg.date().to_string(),
+                        });
+                    }
                 }
+                json_error("NOT_FOUND", "File not found", 404)
             }
-            json_error("NOT_FOUND", "File not found", 404)
+            Err(e) => json_error("FETCH_ERROR", &format!("Failed to fetch file: {}", e), 500),
         }
-        Err(e) => json_error("FETCH_ERROR", &format!("Failed to fetch file: {}", e), 500),
     }
+    .await;
+    account_response(&account, response)
 }
 
 #[get("/api/v1/files/{message_id}/download")]
@@ -1196,110 +1204,114 @@ async fn api_search_files(
     query: web::Query<SearchQuery>,
     tg_state: web::Data<Arc<TelegramState>>,
     api_state: web::Data<ApiState>,
+    cache_dirs: web::Data<CacheDirs>,
 ) -> impl Responder {
     if let Err(e) = check_auth(&req, &api_state) {
         return e;
     }
 
-    let client_opt = { tg_state.client.lock().await.clone() };
-    let client = match client_opt {
-        Some(c) => c,
-        None => return json_error("NOT_CONNECTED", "Telegram client is not connected", 503),
-    };
+    let (account, client) =
+        match api_account_client(&cache_dirs.account_root, tg_state.get_ref()).await {
+            Ok(value) => value,
+            Err(error) => return json_error("ACCOUNT_UNAVAILABLE", &error, 503),
+        };
+    let response = async {
+        let search_q = match query.q.as_deref() {
+            Some(q) if !q.trim().is_empty() => q,
+            _ => {
+                return json_error(
+                    "INVALID_QUERY",
+                    "Search query parameter 'q' is required and cannot be empty",
+                    400,
+                )
+            }
+        };
 
-    let search_q = match query.q.as_deref() {
-        Some(q) if !q.trim().is_empty() => q,
-        _ => {
-            return json_error(
-                "INVALID_QUERY",
-                "Search query parameter 'q' is required and cannot be empty",
-                400,
-            )
-        }
-    };
+        let query_string = req.query_string();
+        let has_folder_id = query_string
+            .split('&')
+            .any(|p| p.starts_with("folder_id=") || p == "folder_id");
 
-    let query_string = req.query_string();
-    let has_folder_id = query_string
-        .split('&')
-        .any(|p| p.starts_with("folder_id=") || p == "folder_id");
-
-    let mut peers_to_scan = Vec::new();
-    if !has_folder_id {
-        if let Ok(me_peer) = resolve_peer(&client, None, &tg_state.peer_cache).await {
-            peers_to_scan.push((None, me_peer));
-        }
-        let mut dialogs = client.iter_dialogs();
-        while let Some(dialog) = dialogs.next().await.ok().flatten() {
-            if let Peer::Channel(ref c) = dialog.peer {
-                let name = c.raw.title.clone();
-                if name.to_lowercase().contains("[td]") {
-                    peers_to_scan.push((Some(c.raw.id), dialog.peer.clone()));
+        let mut peers_to_scan = Vec::new();
+        if !has_folder_id {
+            if let Ok(me_peer) = resolve_peer(&client, None, &tg_state.peer_cache).await {
+                peers_to_scan.push((None, me_peer));
+            }
+            let mut dialogs = client.iter_dialogs();
+            while let Some(dialog) = dialogs.next().await.ok().flatten() {
+                if let Peer::Channel(ref c) = dialog.peer {
+                    let name = c.raw.title.clone();
+                    if name.to_lowercase().contains("[td]") {
+                        peers_to_scan.push((Some(c.raw.id), dialog.peer.clone()));
+                    }
                 }
             }
-        }
-    } else {
-        let mut parsed_id: Option<i64> = None;
-        for pair in query_string.split('&') {
-            let mut parts = pair.split('=');
-            if let Some(key) = parts.next() {
-                if key == "folder_id" {
-                    if let Some(val) = parts.next() {
-                        if !val.is_empty() && val != "null" && val != "none" && val != "None" {
-                            if let Ok(id) = val.parse::<i64>() {
-                                parsed_id = Some(id);
+        } else {
+            let mut parsed_id: Option<i64> = None;
+            for pair in query_string.split('&') {
+                let mut parts = pair.split('=');
+                if let Some(key) = parts.next() {
+                    if key == "folder_id" {
+                        if let Some(val) = parts.next() {
+                            if !val.is_empty() && val != "null" && val != "none" && val != "None" {
+                                if let Ok(id) = val.parse::<i64>() {
+                                    parsed_id = Some(id);
+                                }
                             }
                         }
                     }
                 }
             }
+
+            let resolved = match resolve_peer(&client, parsed_id, &tg_state.peer_cache).await {
+                Ok(p) => p,
+                Err(e) => return json_error("PEER_ERROR", &e, 400),
+            };
+            peers_to_scan.push((parsed_id, resolved));
         }
 
-        let resolved = match resolve_peer(&client, parsed_id, &tg_state.peer_cache).await {
-            Ok(p) => p,
-            Err(e) => return json_error("PEER_ERROR", &e, 400),
-        };
-        peers_to_scan.push((parsed_id, resolved));
-    }
+        let mut matching_files = Vec::new();
+        for (fid, peer) in &peers_to_scan {
+            let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else {
+                continue;
+            };
+            let mut msgs = client.iter_messages(peer).limit(200);
+            while let Some(msg) = msgs.next().await.ok().flatten() {
+                if let Some(doc) = msg.media() {
+                    let size = media_size(&doc);
+                    let (name, mime) = match doc {
+                        Media::Document(d) => {
+                            let doc_name = d.name().unwrap_or("unknown").to_string();
+                            let caption = msg.text();
+                            let display_name = if caption.is_empty() {
+                                doc_name
+                            } else {
+                                caption.to_string()
+                            };
+                            (display_name, d.mime_type().map(|s| s.to_string()))
+                        }
+                        Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".into())),
+                        _ => ("Unknown".to_string(), None),
+                    };
 
-    let mut matching_files = Vec::new();
-    for (fid, peer) in &peers_to_scan {
-        let Ok(peer) = crate::commands::utils::peer_to_ref(peer).await else {
-            continue;
-        };
-        let mut msgs = client.iter_messages(peer).limit(200);
-        while let Some(msg) = msgs.next().await.ok().flatten() {
-            if let Some(doc) = msg.media() {
-                let size = media_size(&doc);
-                let (name, mime) = match doc {
-                    Media::Document(d) => {
-                        let doc_name = d.name().unwrap_or("unknown").to_string();
-                        let caption = msg.text();
-                        let display_name = if caption.is_empty() {
-                            doc_name
-                        } else {
-                            caption.to_string()
-                        };
-                        (display_name, d.mime_type().map(|s| s.to_string()))
+                    if name.to_lowercase().contains(&search_q.to_lowercase()) {
+                        matching_files.push(ApiFile {
+                            id: msg.id() as i64,
+                            folder_id: *fid,
+                            name,
+                            size,
+                            mime_type: mime,
+                            created_at: msg.date().to_string(),
+                        });
                     }
-                    Media::Photo(_) => ("Photo.jpg".to_string(), Some("image/jpeg".into())),
-                    _ => ("Unknown".to_string(), None),
-                };
-
-                if name.to_lowercase().contains(&search_q.to_lowercase()) {
-                    matching_files.push(ApiFile {
-                        id: msg.id() as i64,
-                        folder_id: *fid,
-                        name,
-                        size,
-                        mime_type: mime,
-                        created_at: msg.date().to_string(),
-                    });
                 }
             }
         }
-    }
 
-    HttpResponse::Ok().json(matching_files)
+        HttpResponse::Ok().json(matching_files)
+    }
+    .await;
+    account_response(&account, response)
 }
 
 #[delete("/api/v1/files/{message_id}")]

@@ -124,6 +124,75 @@ pub fn media_id(owner: i64, file: &PlaybackFile) -> String {
     )
 }
 
+/// Rekey playback history and queued media after Telegram forwards a message.
+/// When the destination already has history, the most recently updated record
+/// supplies resume state (destination wins ties); bookmarks are unioned by
+/// position with destination labels winning duplicates, then capped/sorted.
+pub(super) fn reconcile_move(
+    store: &Store,
+    source: Option<i64>,
+    message: i32,
+    target: Option<i64>,
+    new_message: i32,
+) -> Result<(), String> {
+    let source_file = PlaybackFile {
+        folder_id: source,
+        message_id: i64::from(message),
+        name: String::new(),
+        size: 0,
+        mime_type: None,
+        encryption_state: plain(),
+    };
+    let target_file = PlaybackFile {
+        folder_id: target,
+        message_id: i64::from(new_message),
+        ..source_file.clone()
+    };
+    let source_id = media_id(store.owner, &source_file);
+    let target_id = media_id(store.owner, &target_file);
+
+    if source_id != target_id {
+        let old = store.record::<PlaybackRecord>("playback", &source_id)?;
+        let existing = store.record::<PlaybackRecord>("playback", &target_id)?;
+        if let Some(mut moved) = old {
+            if let Some(destination) = existing {
+                let mut bookmarks = std::collections::BTreeMap::new();
+                for bookmark in &moved.bookmarks {
+                    bookmarks.insert(bookmark.position_ms, bookmark.clone());
+                }
+                // Insert destination after source so its label deterministically
+                // wins when both records bookmark the same position.
+                for bookmark in &destination.bookmarks {
+                    bookmarks.insert(bookmark.position_ms, bookmark.clone());
+                }
+                moved = if moved.updated_at > destination.updated_at {
+                    moved
+                } else {
+                    destination.clone()
+                };
+                moved.bookmarks = bookmarks.into_values().take(MAX_BOOKMARKS).collect();
+            }
+            moved.media_id = target_id.clone();
+            moved.owner_id = store.owner.to_string();
+            moved.file.folder_id = target;
+            moved.file.message_id = i64::from(new_message);
+            store.put_record("playback", &target_id, &moved)?;
+        }
+        store.remove_record("playback", &source_id)?;
+    }
+
+    let mut queue: Vec<PlaybackFile> = store.record("playback_queue", "main")?.unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    queue.retain_mut(|item| {
+        if media_id(store.owner, item) == source_id {
+            item.folder_id = target;
+            item.message_id = i64::from(new_message);
+        }
+        seen.insert(media_id(store.owner, item))
+    });
+    store.put_record("playback_queue", "main", &queue)
+}
+
 fn validate_file(file: &PlaybackFile) -> Result<(), String> {
     if file.message_id <= 0
         || file.message_id > i32::MAX as i64
@@ -482,6 +551,69 @@ mod tests {
         assert_eq!(queue[1].folder_id, Some(9));
         mutate(&store, PlaybackMutation::RemoveQueue { file: file(None) }).unwrap();
         assert_eq!(snapshot(&store).unwrap().queue[0].folder_id, Some(9));
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn move_collision_prefers_destination_on_timestamp_tie_and_unions_bookmarks() {
+        let root = root();
+        let store = Store::open(&root, 1).unwrap();
+        let source = file(None);
+        let destination = PlaybackFile {
+            folder_id: Some(9),
+            message_id: 84,
+            ..source.clone()
+        };
+        mutate(&store, progress(source.clone(), 1_000)).unwrap();
+        mutate(&store, progress(destination.clone(), 8_000)).unwrap();
+        mutate(
+            &store,
+            PlaybackMutation::Bookmark {
+                file: source.clone(),
+                position_ms: 1_000,
+                label: "Source bookmark".into(),
+            },
+        )
+        .unwrap();
+        mutate(
+            &store,
+            PlaybackMutation::Bookmark {
+                file: destination.clone(),
+                position_ms: 8_000,
+                label: "Destination bookmark".into(),
+            },
+        )
+        .unwrap();
+        let source_id = media_id(store.owner, &source);
+        let destination_id = media_id(store.owner, &destination);
+        let mut source_record: PlaybackRecord =
+            store.record("playback", &source_id).unwrap().unwrap();
+        let mut destination_record: PlaybackRecord =
+            store.record("playback", &destination_id).unwrap().unwrap();
+        source_record.updated_at = 50;
+        destination_record.updated_at = 50;
+        store
+            .put_record("playback", &source_id, &source_record)
+            .unwrap();
+        store
+            .put_record("playback", &destination_id, &destination_record)
+            .unwrap();
+
+        reconcile_move(&store, None, 42, Some(9), 84).unwrap();
+
+        let migrated: PlaybackRecord = store.record("playback", &destination_id).unwrap().unwrap();
+        assert_eq!(
+            migrated.position_ms, 8_000,
+            "destination wins timestamp ties"
+        );
+        assert_eq!(migrated.bookmarks.len(), 2);
+        assert_eq!(migrated.bookmarks[0].label, "Source bookmark");
+        assert_eq!(migrated.bookmarks[1].label, "Destination bookmark");
+        assert!(store
+            .record::<PlaybackRecord>("playback", &source_id)
+            .unwrap()
+            .is_none());
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }

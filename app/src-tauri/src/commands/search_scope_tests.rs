@@ -70,27 +70,27 @@ fn only_the_captured_owners_saved_messages_map_to_the_explicit_null_source() {
             &tl::enums::Peer::User(tl::types::PeerUser { user_id: 101 }),
             101
         ),
-        None
+        Some(None)
     );
     assert_eq!(
         search_source_folder(
             &tl::enums::Peer::User(tl::types::PeerUser { user_id: 202 }),
             101
         ),
-        Some(202)
+        Some(Some(202))
     );
     assert_eq!(
         search_source_folder(
             &tl::enums::Peer::Channel(tl::types::PeerChannel { channel_id: 101 }),
             101
         ),
-        Some(101)
+        Some(Some(101))
     );
     assert_eq!(
         search_source_folder(
             &tl::enums::Peer::Chat(tl::types::PeerChat { chat_id: 101 }),
             101
         ),
-        Some(101)
+        None
     );
 }

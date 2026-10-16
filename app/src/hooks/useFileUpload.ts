@@ -409,13 +409,12 @@ export function useFileUpload(
             // so resume cannot create a duplicate Telegram message.
             pausedRef.current.delete(item.id);
             networkPausedRef.current.delete(item.id);
-            if (cancelledRef.current.has(item.id)) {
-                cancelledRef.current.delete(item.id);
-            } else {
-                setUploadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'success', progress: 100 } : i));
-                triggerHaptic('success');
-                void invalidateFolderFileQueries(queryClient, item.folderId, item.ownerId);
-            }
+            // Successful backend completion is authoritative over a late
+            // cancellation request; do not leave a completed upload retryable.
+            cancelledRef.current.delete(item.id);
+            setUploadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'success', progress: 100 } : i));
+            triggerHaptic('success');
+            void invalidateFolderFileQueries(queryClient, item.folderId, item.ownerId);
             if (!keepTemporaryFileForResume) await cleanupResumableSource(item);
         } catch (e) {
             if (networkPausedRef.current.has(item.id)) {

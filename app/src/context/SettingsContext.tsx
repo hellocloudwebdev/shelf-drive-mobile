@@ -27,6 +27,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const [isLoaded, setIsLoaded] = useState(false);
     const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>('loading');
     const latestSettingsRef = useRef<Settings>(DEFAULT_SETTINGS);
+    const preLoadEditsRef = useRef<Partial<Settings>>({});
     const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
     const persistenceRevisionRef = useRef(0);
 
@@ -49,10 +50,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
                     loadFailed = true;
                 }
             }
-            setSettings(loaded);
-            latestSettingsRef.current = loaded;
+            const editsMadeBeforeLoad = Object.keys(preLoadEditsRef.current).length > 0;
+            const reconciled = { ...loaded, ...preLoadEditsRef.current };
+            preLoadEditsRef.current = {};
+            setSettings(reconciled);
+            latestSettingsRef.current = reconciled;
             setIsLoaded(true);
-            setPersistenceStatus(loadFailed ? 'error' : 'saved');
+            if (editsMadeBeforeLoad) {
+                const revision = ++persistenceRevisionRef.current;
+                setPersistenceStatus('saving');
+                const operation = persistenceQueueRef.current.then(() => writePersistedSettings(reconciled));
+                persistenceQueueRef.current = operation.catch(() => undefined);
+                try {
+                    await operation;
+                    if (revision === persistenceRevisionRef.current) setPersistenceStatus(loadFailed ? 'error' : 'saved');
+                } catch {
+                    if (revision === persistenceRevisionRef.current) setPersistenceStatus('error');
+                }
+            } else {
+                setPersistenceStatus(loadFailed ? 'error' : 'saved');
+            }
         };
         void loadSettings();
     }, []);
@@ -75,29 +92,32 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const updateSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
+        if (!isLoaded) preLoadEditsRef.current[key] = value;
         setSettings(prev => {
             const next = { ...prev, [key]: value };
-            void persistSettings(next).catch(() => undefined);
+            if (isLoaded) void persistSettings(next).catch(() => undefined);
             return next;
         });
-    }, [persistSettings]);
+    }, [isLoaded, persistSettings]);
 
     const updateSettings = useCallback((updates: Partial<Settings>) => {
+        if (!isLoaded) Object.assign(preLoadEditsRef.current, updates);
         setSettings(prev => {
             const next = { ...prev, ...updates };
-            void persistSettings(next).catch(() => undefined);
+            if (isLoaded) void persistSettings(next).catch(() => undefined);
             return next;
         });
-    }, [persistSettings]);
+    }, [isLoaded, persistSettings]);
 
     const resetSettings = useCallback(() => {
+        if (!isLoaded) preLoadEditsRef.current = { ...DEFAULT_SETTINGS };
         setSettings(DEFAULT_SETTINGS);
         latestSettingsRef.current = DEFAULT_SETTINGS;
-        void persistSettings(DEFAULT_SETTINGS).catch(() => undefined);
+        if (isLoaded) void persistSettings(DEFAULT_SETTINGS).catch(() => undefined);
         void settingsApi.clearProxySecret().catch(() => {
             console.error('[Settings] Unable to remove the saved proxy credential.');
         });
-    }, [persistSettings]);
+    }, [isLoaded, persistSettings]);
 
     const retryPersistence = useCallback(
         () => persistSettings(latestSettingsRef.current),

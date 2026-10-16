@@ -25,8 +25,10 @@ import android.os.BatteryManager
 import android.os.PowerManager
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
@@ -533,6 +535,17 @@ class MainActivity : TauriActivity() {
       return finalFile.name
     }
 
+    internal fun createUniqueCacheFile(cacheDir: File, displayName: String): File {
+      val dotIndex = displayName.lastIndexOf('.').takeIf { it > 0 } ?: displayName.length
+      val baseName = displayName.substring(0, dotIndex).ifEmpty { "upload" }
+      val extension = displayName.substring(dotIndex)
+      repeat(16) {
+        val candidate = File(cacheDir, "${baseName}_${UUID.randomUUID()}$extension")
+        if (candidate.createNewFile()) return candidate
+      }
+      throw IOException("Unable to reserve a unique cache file for $displayName")
+    }
+
     private fun copyInputToFile(inputStream: InputStream, targetFile: File): Long {
       var copiedBytes = 0L
       FileOutputStream(targetFile).use { outputStream ->
@@ -568,6 +581,30 @@ class MainActivity : TauriActivity() {
       return copiedBytes
     }
 
+    internal fun copyAndVerifyToFile(
+      targetFile: File,
+      expectedBytes: Long,
+      copy: (OutputStream) -> Long,
+    ): Boolean {
+      var verified = false
+      try {
+        val copiedBytes = FileOutputStream(targetFile).use { outputStream ->
+          val copied = copy(outputStream)
+          outputStream.flush()
+          try {
+            outputStream.fd.sync()
+          } catch (error: Exception) {
+            Log.w("TauriDownload", "FileDescriptor sync failed: ${error.message}")
+          }
+          copied
+        }
+        verified = copiedBytes == expectedBytes && targetFile.length() == expectedBytes
+        return verified
+      } finally {
+        if (!verified) targetFile.delete()
+      }
+    }
+
     private fun sanitizePublicDownloadName(fileName: String): String {
       val leaf = fileName.substringAfterLast('/').substringAfterLast('\\')
       val cleaned = leaf.map { character ->
@@ -578,6 +615,19 @@ class MainActivity : TauriActivity() {
         }
       }.joinToString("").trim().trim('.')
       return cleaned.ifBlank { "download.bin" }
+    }
+
+    private fun createUniqueDownloadFile(directory: File, fileName: String): File {
+      val dotIndex = fileName.lastIndexOf('.')
+      val baseName = if (dotIndex > 0) fileName.substring(0, dotIndex) else fileName
+      val extension = if (dotIndex > 0) fileName.substring(dotIndex) else ""
+      var counter = 0
+      while (true) {
+        val candidateName = if (counter == 0) fileName else "${baseName}_$counter$extension"
+        val candidate = File(directory, candidateName)
+        if (candidate.createNewFile()) return candidate
+        counter++
+      }
     }
 
     private data class PublishedDownloadMetadata(
@@ -652,6 +702,7 @@ class MainActivity : TauriActivity() {
     fun saveFileToPublicDownloads(cachePath: String, fileName: String, mimeType: String): Boolean {
       val ctx = appContext ?: return false
       var insertedUri: Uri? = null
+      var legacyTargetFile: File? = null
       try {
         val cacheFile = File(cachePath)
         if (!cacheFile.exists()) {
@@ -673,31 +724,13 @@ class MainActivity : TauriActivity() {
           if (!publicDownloadsDir.exists()) {
             publicDownloadsDir.mkdirs()
           }
-          var targetFile = File(publicDownloadsDir, safeFileName)
-          if (targetFile.exists()) {
-            val dotIdx = safeFileName.lastIndexOf('.')
-            val baseName = if (dotIdx != -1) safeFileName.substring(0, dotIdx) else safeFileName
-            val ext = if (dotIdx != -1) safeFileName.substring(dotIdx) else ""
-            var counter = 1
-            while (targetFile.exists()) {
-              targetFile = File(publicDownloadsDir, "${baseName}_$counter$ext")
-              counter++
-            }
+          val targetFile = createUniqueDownloadFile(publicDownloadsDir, safeFileName)
+          legacyTargetFile = targetFile
+          val copied = copyAndVerifyToFile(targetFile, expectedBytes) { outStream ->
+            copyCacheFileToOutput(cacheFile, outStream)
           }
-
-          val copiedBytes = FileOutputStream(targetFile).use { outStream ->
-            val bytes = copyCacheFileToOutput(cacheFile, outStream)
-            try {
-              outStream.fd.sync()
-            } catch (e: Exception) {
-              Log.w("TauriDownload", "Pre-Q FileDescriptor sync failed: ${e.message}")
-            }
-            bytes
-          }
-
-          if (copiedBytes != expectedBytes || targetFile.length() != expectedBytes) {
-            Log.e("TauriDownload", "Pre-Q copy size mismatch. expected=$expectedBytes copied=$copiedBytes target=${targetFile.length()}")
-            targetFile.delete()
+          if (!copied) {
+            Log.e("TauriDownload", "Pre-Q copy size mismatch or incomplete write. expected=$expectedBytes target=${targetFile.length()}")
             return false
           }
 
@@ -818,6 +851,11 @@ class MainActivity : TauriActivity() {
         }
       } catch (e: Exception) {
         Log.e("TauriDownload", "Error saving file to public downloads: ${e.message}", e)
+        legacyTargetFile?.let { target ->
+          if (target.exists() && !target.delete()) {
+            Log.w("TauriDownload", "Failed to delete incomplete pre-Q download $target")
+          }
+        }
         insertedUri?.let {
           try {
             ctx.contentResolver.delete(it, null, null)
@@ -964,21 +1002,24 @@ class MainActivity : TauriActivity() {
     private fun copyUriToCache(ctx: Context, uri: Uri, cacheKey: String): String {
       val lock = uriCopyLocks.computeIfAbsent(cacheKey) { Any() }
       return synchronized(lock) {
+        var tempFile: File? = null
         try {
           uriCacheMap[cacheKey]?.takeIf { File(it).isFile }?.let { return@synchronized it }
           val fileName = getUniqueSanitizedFileName(ctx, uri)
-          val tempFile = File(ctx.cacheDir, fileName)
-          val copiedBytes = ctx.contentResolver.openInputStream(uri)?.use { copyInputToFile(it, tempFile) } ?: 0L
-          if (copiedBytes > 0L && tempFile.length() == copiedBytes) {
-            uriCacheMap[cacheKey] = tempFile.absolutePath
-            Log.i("TauriUpload", "Cached URI on a worker thread: $uri -> ${tempFile.absolutePath} ($copiedBytes bytes)")
-            tempFile.absolutePath
+          val reservedFile = createUniqueCacheFile(ctx.cacheDir, fileName)
+          tempFile = reservedFile
+          val copiedBytes = ctx.contentResolver.openInputStream(uri)?.use { copyInputToFile(it, reservedFile) } ?: 0L
+          if (copiedBytes > 0L && reservedFile.length() == copiedBytes) {
+            uriCacheMap[cacheKey] = reservedFile.absolutePath
+            Log.i("TauriUpload", "Cached URI on a worker thread: $uri -> ${reservedFile.absolutePath} ($copiedBytes bytes)")
+            reservedFile.absolutePath
           } else {
-            tempFile.delete()
+            reservedFile.delete()
             Log.e("TauriUpload", "URI cache copy was empty or incomplete: $uri")
             ""
           }
         } catch (error: Exception) {
+          tempFile?.delete()
           Log.e("TauriUpload", "Worker URI copy failed for $uri: ${error.message}", error)
           ""
         } finally {

@@ -89,6 +89,7 @@ function SettingsSyncSection({
   }, [settings.telegramSettingsSyncEnabled]);
 
   const upload = async () => {
+    if (!status || statusError || busyAction) return;
     if (status?.available && !status.current_device) {
       const approved = await confirm({
         title: 'Replace the settings backup?',
@@ -165,7 +166,7 @@ function SettingsSyncSection({
             <input type="password" value={passphrase} onChange={event => setPassphrase(event.target.value)} minLength={12} autoComplete="new-password" spellCheck={false} placeholder="At least 12 characters" className="mt-1.5 w-full rounded-control border border-app-border bg-app-surface px-3 py-2.5 text-sm text-app-text outline-none focus:border-app-accent" />
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" disabled={!passphraseIsValid || isBusy} onClick={() => void upload()} className="quiet-control flex items-center gap-2 px-3 py-2 text-xs font-medium text-app-text disabled:cursor-not-allowed disabled:opacity-50">{busyAction === 'upload' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}Upload this device</button>
+            <button type="button" disabled={!passphraseIsValid || isBusy || !status || !!statusError} onClick={() => void upload()} className="quiet-control flex items-center gap-2 px-3 py-2 text-xs font-medium text-app-text disabled:cursor-not-allowed disabled:opacity-50">{busyAction === 'upload' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}Upload this device</button>
             <button type="button" disabled={!passphraseIsValid || isBusy || status?.available === false} onClick={() => void download()} className="quiet-control flex items-center gap-2 px-3 py-2 text-xs font-medium text-app-text disabled:cursor-not-allowed disabled:opacity-50">{busyAction === 'download' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Download and apply</button>
             <button type="button" disabled={isBusy} onClick={() => void refreshStatus()} aria-label="Refresh settings sync status" className="quiet-control p-2 text-app-text-secondary disabled:opacity-50">{busyAction === 'status' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}</button>
           </div>
@@ -222,7 +223,7 @@ interface AdvancedSettingsTabProps {
 export function AdvancedSettingsTab({ onOpenApi, onOpenWebDav, onOpenProxy, onOpenVpn }: AdvancedSettingsTabProps) {
   return (
     <motion.section key="advanced" {...tabMotion} className="space-y-4">
-      <div><h3 className="text-base font-semibold text-app-text">Advanced</h3><p className="mt-1 text-sm text-app-text-secondary">Power-user connections are grouped here so everyday settings stay calm and focused. Use the settings search to find any option by name.</p></div>
+      <div><h3 className="text-base font-semibold text-app-text">Advanced</h3><p className="mt-1 text-sm text-app-text-secondary">Power-user connections are grouped here so everyday settings stay calm and focused. Use the settings search to find a category by name.</p></div>
       <div className="grid gap-3 sm:grid-cols-2">
         {([
           ['REST API', 'Local automation endpoint and API key', Globe, onOpenApi],

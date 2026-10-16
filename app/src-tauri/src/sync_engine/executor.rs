@@ -304,6 +304,7 @@ pub(crate) async fn delete_remote(
     app: &tauri::AppHandle,
     channel_id: i64,
     message_id: i32,
+    expected_hash: &str,
     account: &crate::workspace::AccountGuard,
 ) -> Result<(), String> {
     with_flood_wait(app, account, || {
@@ -314,6 +315,7 @@ pub(crate) async fn delete_remote(
             app.state::<DbConnection>(),
             app.clone(),
             Some(account.owner.to_string()),
+            Some(expected_hash.to_string()),
         )
     })
     .await
@@ -347,9 +349,7 @@ async fn verify_remote_precondition(
         .next()
         .ok_or("The remote file disappeared after planning; deletion was cancelled")?;
     let actual = super::message_fingerprint(&message)?;
-    if actual != expected_hash {
-        return Err("The remote file changed after planning; deletion was cancelled".into());
-    }
+    super::verify_remote_fingerprint(expected_hash, &actual)?;
     account.validate()
 }
 
@@ -420,6 +420,151 @@ async fn download(
             )
         })?;
     Ok(published_hash)
+}
+
+fn quarantine_path(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("file"))
+        .to_string_lossy();
+    path.with_file_name(format!(".{name}.td-sync-delete-{}", uuid::Uuid::new_v4()))
+}
+
+/// Atomically move a path without replacing an existing quarantine entry.
+/// A replacement that wins a race before the move is fingerprinted after the
+/// move and restored instead of deleted.
+#[cfg(target_os = "linux")]
+fn rename_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let source = std::ffi::CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "NUL in source path"))?;
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "NUL in destination path")
+    })?;
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == -1 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn rename_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let source = std::ffi::CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "NUL in source path"))?;
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes()).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "NUL in destination path")
+    })?;
+    let result =
+        unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+    if result == -1 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn rename_no_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let source = windows_extended_path(source);
+    let destination = windows_extended_path(destination);
+    let result = unsafe {
+        windows_sys::Win32::Storage::FileSystem::MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            windows_sys::Win32::Storage::FileSystem::MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn rename_no_replace(_source: &Path, _destination: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Race-resistant local deletion is unsupported on this platform",
+    ))
+}
+
+fn move_to_unique_quarantine(path: &Path) -> Result<PathBuf, String> {
+    for _ in 0..32 {
+        let quarantine = quarantine_path(path);
+        match rename_no_replace(path, &quarantine) {
+            Ok(()) => return Ok(quarantine),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err("Could not reserve a unique local deletion quarantine name".into())
+}
+
+fn restore_quarantine(quarantine: &Path, original: &Path) -> Result<(), String> {
+    rename_no_replace(quarantine, original).map_err(|error| {
+        format!(
+            "Could not safely restore changed local file ({}); it remains preserved at {}: {error}",
+            original.display(),
+            quarantine.display()
+        )
+    })
+}
+
+async fn delete_local_if_unchanged(
+    path: &Path,
+    expected_hash: &str,
+    validate_account: impl Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    let quarantine = move_to_unique_quarantine(path)?;
+    let hash_path = quarantine.clone();
+    let actual_hash = match tokio::task::spawn_blocking(move || super::hash_file(&hash_path)).await
+    {
+        Ok(Ok(hash)) => hash,
+        Ok(Err(error)) => {
+            return match restore_quarantine(&quarantine, path) {
+                Ok(()) => Err(error),
+                Err(restore_error) => Err(format!("{error}; {restore_error}")),
+            };
+        }
+        Err(error) => {
+            return match restore_quarantine(&quarantine, path) {
+                Ok(()) => Err(error.to_string()),
+                Err(restore_error) => Err(format!("{error}; {restore_error}")),
+            };
+        }
+    };
+    if actual_hash != expected_hash {
+        return match restore_quarantine(&quarantine, path) {
+            Ok(()) => Err(
+                "Local file changed after sync planning; changed file was preserved and deletion was cancelled".into(),
+            ),
+            Err(error) => Err(format!(
+                "Local file changed after sync planning; deletion was cancelled; {error}"
+            )),
+        };
+    }
+    if let Err(error) = validate_account() {
+        return match restore_quarantine(&quarantine, path) {
+            Ok(()) => Err(error),
+            Err(restore_error) => Err(format!("{error}; {restore_error}")),
+        };
+    }
+    tokio::fs::remove_file(&quarantine).await.map_err(|error| {
+        format!("Verified local file could not be removed from quarantine: {error}")
+    })
 }
 
 async fn verify_local_precondition(path: &Path, expected_hash: Option<&str>) -> Result<(), String> {
@@ -562,14 +707,7 @@ pub async fn execute(
                                                         Ok(current_hash)
                                                             if current_hash != local.hash =>
                                                         {
-                                                            let _ = delete_remote(
-                                                                app,
-                                                                pair.channel_id,
-                                                                message_id,
-                                                                account,
-                                                            )
-                                                            .await;
-                                                            Err("Local file changed during upload; uploaded attempt was discarded and will be retried".to_string())
+                                                            Err("Local file changed during upload; the remote snapshot was retained because it could not be safely fingerprint-verified for deletion. Sync will retry after review".to_string())
                                                         }
                                                         Ok(_) => match account.validate() {
                                                             Err(error) => Err(error),
@@ -640,17 +778,15 @@ pub async fn execute(
                     expected_local_hash,
                     ..
                 } => match safe_local_path(root, &path) {
-                    Ok(local) => {
-                        match verify_local_precondition(&local, Some(&expected_local_hash)).await {
-                            Ok(()) => match account.validate() {
-                                Ok(()) => tokio::fs::remove_file(local)
-                                    .await
-                                    .map_err(|error| error.to_string()),
-                                Err(error) => Err(error),
-                            },
-                            Err(error) => Err(error),
+                    Ok(local) => match account.validate() {
+                        Ok(()) => {
+                            delete_local_if_unchanged(&local, &expected_local_hash, || {
+                                account.validate()
+                            })
+                            .await
                         }
-                    }
+                        Err(error) => Err(error),
+                    },
                     Err(error) => Err(error),
                 },
                 SyncOperation::DeleteRemote {
@@ -667,7 +803,16 @@ pub async fn execute(
                     )
                     .await
                     {
-                        Ok(()) => delete_remote(app, pair.channel_id, message_id, account).await,
+                        Ok(()) => {
+                            delete_remote(
+                                app,
+                                pair.channel_id,
+                                message_id,
+                                &expected_remote_hash,
+                                account,
+                            )
+                            .await
+                        }
                         Err(error) => Err(error),
                     }
                 }
@@ -778,6 +923,81 @@ mod tests {
             .is_err());
         assert!(verify_local_precondition(&path, None).await.is_err());
 
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_local_preserves_changed_content_after_quarantine_check() {
+        let directory = test_directory("delete-changed");
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("report.txt");
+        std::fs::write(&path, b"edited after planning").unwrap();
+
+        let result = delete_local_if_unchanged(&path, "stale-fingerprint", || Ok(())).await;
+
+        assert!(result.unwrap_err().contains("changed"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"edited after planning");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_local_restores_quarantine_when_account_changes_before_unlink() {
+        let directory = test_directory("delete-account-changed");
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("report.txt");
+        std::fs::write(&path, b"unchanged content").unwrap();
+        let expected_hash = super::super::hash_file(&path).unwrap();
+
+        let result = delete_local_if_unchanged(&path, &expected_hash, || {
+            Err("ACCOUNT_CHANGED: active account changed during sync".into())
+        })
+        .await;
+
+        assert!(result.unwrap_err().contains("ACCOUNT_CHANGED"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"unchanged content");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn remote_delete_requires_the_planned_fingerprint() {
+        assert!(super::super::verify_remote_fingerprint("planned", "replacement").is_err());
+        assert!(super::super::verify_remote_fingerprint("planned", "planned").is_ok());
+    }
+
+    #[test]
+    fn quarantine_restore_collision_never_overwrites_either_file() {
+        let directory = test_directory("delete-restore-collision");
+        std::fs::create_dir_all(&directory).unwrap();
+        let original = directory.join("report.txt");
+        let quarantine = quarantine_path(&original);
+        std::fs::write(&quarantine, b"changed selected file").unwrap();
+        std::fs::write(&original, b"concurrent replacement").unwrap();
+
+        let error = restore_quarantine(&quarantine, &original).unwrap_err();
+
+        assert!(error.contains("remains preserved"));
+        assert_eq!(std::fs::read(&original).unwrap(), b"concurrent replacement");
+        assert_eq!(
+            std::fs::read(&quarantine).unwrap(),
+            b"changed selected file"
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn existing_quarantine_name_is_never_overwritten() {
+        let directory = test_directory("delete-quarantine-collision");
+        std::fs::create_dir_all(&directory).unwrap();
+        let original = directory.join("report.txt");
+        let quarantine = quarantine_path(&original);
+        std::fs::write(&original, b"selected file").unwrap();
+        std::fs::write(&quarantine, b"pre-existing file").unwrap();
+
+        assert!(rename_no_replace(&original, &quarantine).is_err());
+        assert_eq!(std::fs::read(&original).unwrap(), b"selected file");
+        assert_eq!(std::fs::read(&quarantine).unwrap(), b"pre-existing file");
         std::fs::remove_dir_all(directory).unwrap();
     }
 

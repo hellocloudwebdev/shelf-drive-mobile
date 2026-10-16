@@ -54,25 +54,86 @@ async fn encrypted_stream_record(
 }
 
 pub fn parse_range_header(header_val: &str, total_size: u64) -> Option<(u64, u64)> {
-    if !header_val.starts_with("bytes=") {
+    if total_size == 0 || !header_val.starts_with("bytes=") {
         return None;
     }
     let s = &header_val["bytes=".len()..];
-    let parts: Vec<&str> = s.split('-').collect();
-    if parts.is_empty() {
+    let (start, end) = s.split_once('-')?;
+    if end.contains('-') {
         return None;
     }
-    let start = parts[0].trim().parse::<u64>().ok()?;
-    let end = if parts.len() > 1 && !parts[1].trim().is_empty() {
-        let parsed_end = parts[1].trim().parse::<u64>().ok()?;
-        std::cmp::min(parsed_end, total_size - 1)
+    let start = start.trim();
+    let end = end.trim();
+    if start.is_empty() {
+        let suffix_length = end.parse::<u64>().ok()?;
+        if suffix_length == 0 {
+            return None;
+        }
+        let first = total_size.saturating_sub(suffix_length);
+        Some((first, total_size - 1))
     } else {
-        total_size - 1
-    };
-    if start <= end {
-        Some((start, end))
-    } else {
-        None
+        let first = start.parse::<u64>().ok()?;
+        if first >= total_size {
+            return None;
+        }
+        let last = if end.is_empty() {
+            total_size - 1
+        } else {
+            std::cmp::min(end.parse::<u64>().ok()?, total_size - 1)
+        };
+        (first <= last).then_some((first, last))
+    }
+}
+
+/// Revalidates a stream-specific operation handle between plaintext chunks.
+/// One handle is shared by multiple HTTP Range requests during playback, so
+/// response teardown must not revoke it; vault lock or its TTL does that.
+struct MediaStreamOperationLease {
+    crypto_state: crate::crypto::state::CryptoState,
+    handle: crate::crypto::state::OperationHandle,
+}
+
+impl MediaStreamOperationLease {
+    fn new(
+        crypto_state: crate::crypto::state::CryptoState,
+        handle: crate::crypto::state::OperationHandle,
+    ) -> Self {
+        Self {
+            crypto_state,
+            handle,
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.crypto_state
+            .operation_wrapping_key(
+                self.handle,
+                crate::crypto::state::OperationClass::MediaStream,
+            )
+            .is_ok()
+    }
+}
+
+fn protected_plaintext_stream(
+    plaintext: crate::crypto::secret::SecretBytes,
+    lease: MediaStreamOperationLease,
+    account: Option<crate::workspace::AccountGuard>,
+) -> impl futures::Stream<Item = Result<web::Bytes, actix_web::Error>> {
+    async_stream::stream! {
+        let _lease = lease;
+        const PLAINTEXT_YIELD_SIZE: usize = 64 * 1024;
+        for chunk in plaintext.expose().chunks(PLAINTEXT_YIELD_SIZE) {
+            // Revalidate at every yield boundary; once the vault lock revokes
+            // the handle, no subsequent plaintext chunk can be returned.
+            let account_active = account.as_ref().is_none_or(|account| account.validate().is_ok());
+            if !_lease.is_active() || !account_active {
+                yield Err(actix_web::error::ErrorForbidden("Protected media authorization expired"));
+                break;
+            }
+            // SecretBytes retains and zeroizes the backing buffer when the stream
+            // completes or is dropped; Bytes is the unavoidable transport copy.
+            yield Ok(web::Bytes::copy_from_slice(chunk));
+        }
     }
 }
 
@@ -345,21 +406,38 @@ struct EncryptedStreamMetadata {
     mime_type: String,
 }
 
-async fn build_encrypted_media_response(
-    client: &grammers_client::Client,
-    media: &Media,
-    req: &actix_web::HttpRequest,
+struct EncryptedMediaResponseContext<'a> {
+    client: &'a grammers_client::Client,
+    media: &'a Media,
+    req: &'a actix_web::HttpRequest,
     record: EncryptedStreamRecord,
-    wrapping_key: &crate::crypto::secret::SecretKey,
-    account: &crate::workspace::AccountGuard,
+    crypto_state: crate::crypto::state::CryptoState,
+    operation_handle: crate::crypto::state::OperationHandle,
+    wrapping_key: &'a crate::crypto::secret::SecretKey,
+    account: &'a crate::workspace::AccountGuard,
+}
+
+async fn build_encrypted_media_response(
+    context: EncryptedMediaResponseContext<'_>,
 ) -> HttpResponse {
+    let EncryptedMediaResponseContext {
+        client,
+        media,
+        req,
+        record,
+        crypto_state,
+        operation_handle,
+        wrapping_key,
+        account,
+    } = context;
     use crate::crypto::envelope::header::EnvelopeHeader;
     use crate::crypto::envelope::range::{
         chunk_ciphertext_offset, plaintext_range_to_ciphertext_records,
     };
     use crate::crypto::policy;
 
-    if account.validate().is_err() {
+    let lease = MediaStreamOperationLease::new(crypto_state, operation_handle);
+    if account.validate().is_err() || !lease.is_active() {
         return HttpResponse::NotFound().finish();
     }
     if record.plaintext_size == 0 {
@@ -432,11 +510,17 @@ async fn build_encrypted_media_response(
         Err(error) => return HttpResponse::BadGateway().body(error),
     };
 
-    if account.validate().is_err() {
+    // The fetch is an await point: never decrypt using a capability that was
+    // revoked while Telegram was supplying ciphertext.
+    if account.validate().is_err() || !lease.is_active() {
         return HttpResponse::NotFound().finish();
     }
     let mut cursor = 0usize;
-    let mut plaintext = Vec::new();
+    let plaintext_start = u64::from(first_chunk) * u64::from(header.core.chunk_size);
+    let plaintext_capacity =
+        (last_plaintext_offset + last_plaintext_length - plaintext_start) as usize;
+    let mut plaintext = crate::crypto::secret::ZeroizingBuffer::new(plaintext_capacity);
+    let mut plaintext_cursor = 0usize;
     for chunk_index in first_chunk..=last_chunk {
         let plaintext_offset = u64::from(chunk_index) * u64::from(header.core.chunk_size);
         let plaintext_length = record
@@ -449,7 +533,19 @@ async fn build_encrypted_media_response(
             return HttpResponse::BadGateway().body("Encrypted media record was truncated");
         }
         match decryptor.decrypt_chunk_at(chunk_index, &ciphertext[cursor..next]) {
-            Ok(chunk) => plaintext.extend_from_slice(&chunk),
+            Ok(chunk) => {
+                let chunk = crate::crypto::secret::SecretBytes::new(chunk);
+                let Some(next_plaintext) = plaintext_cursor.checked_add(chunk.len()) else {
+                    return HttpResponse::BadGateway().body("Decrypted media range overflowed");
+                };
+                if next_plaintext > plaintext.as_slice().len() {
+                    return HttpResponse::BadGateway()
+                        .body("Decrypted media range exceeded its bounds");
+                }
+                plaintext.as_mut_slice()[plaintext_cursor..next_plaintext]
+                    .copy_from_slice(chunk.expose());
+                plaintext_cursor = next_plaintext;
+            }
             Err(error) => {
                 return HttpResponse::UnprocessableEntity().body(format!(
                     "Encrypted media record authentication failed: {error}"
@@ -459,22 +555,25 @@ async fn build_encrypted_media_response(
         cursor = next;
     }
 
-    let combined_start = u64::from(first_chunk) * u64::from(header.core.chunk_size);
-    let slice_start = (start - combined_start) as usize;
+    let slice_start = (start - plaintext_start) as usize;
     let slice_length = (end - start + 1) as usize;
-    if slice_start.saturating_add(slice_length) > plaintext.len() {
+    if slice_start.saturating_add(slice_length) > plaintext.as_slice().len() {
         return HttpResponse::BadGateway().body("Decrypted media range was incomplete");
     }
-    let body = plaintext[slice_start..slice_start + slice_length].to_vec();
+    let body = crate::crypto::secret::SecretBytes::from_slice(
+        &plaintext.as_slice()[slice_start..slice_start + slice_length],
+    );
     let mime = serde_json::from_slice::<EncryptedStreamMetadata>(decryptor.metadata_plaintext())
         .ok()
         .map(|metadata| metadata.mime_type)
         .filter(|mime| !mime.is_empty())
         .unwrap_or_else(|| "application/octet-stream".to_string());
 
-    if account.validate().is_err() {
+    if account.validate().is_err() || !lease.is_active() {
         return HttpResponse::NotFound().finish();
     }
+    let body_length = body.len();
+    let stream = protected_plaintext_stream(body, lease, Some(account.clone()));
     HttpResponse::PartialContent()
         .insert_header(("Content-Type", mime))
         .insert_header(("Accept-Ranges", "bytes"))
@@ -482,9 +581,9 @@ async fn build_encrypted_media_response(
             "Content-Range",
             format!("bytes {start}-{end}/{}", record.plaintext_size),
         ))
-        .insert_header(("Content-Length", body.len().to_string()))
+        .insert_header(("Content-Length", body_length.to_string()))
         .insert_header(("Cache-Control", "no-store"))
-        .body(body)
+        .streaming(stream)
 }
 
 #[get("/stream/{folder_id}/{message_id}")]
@@ -503,14 +602,6 @@ async fn stream_media(
         Some(t) => t,
         None => return HttpResponse::Forbidden().body("Invalid or missing stream token"),
     };
-    if token_data
-        .manager
-        .validate_token(token, &message_id.to_string())
-        .is_err()
-    {
-        return HttpResponse::Forbidden().body("Invalid or expired stream authorization");
-    }
-
     let folder_id = match folder_id_str.as_str() {
         "me" | "home" | "null" => None,
         value => match value.parse::<i64>() {
@@ -522,6 +613,15 @@ async fn stream_media(
         Ok(account) => account,
         Err(_) => return HttpResponse::NotFound().body("The streaming account is unavailable"),
     };
+    let resource_key =
+        crate::stream_token::resource_key(account.owner, folder_id, message_id.into());
+    if token_data
+        .manager
+        .validate_token(token, &resource_key)
+        .is_err()
+    {
+        return HttpResponse::Forbidden().body("Invalid or expired stream authorization");
+    }
     let Some(client) = data.client.lock().await.clone() else {
         return HttpResponse::ServiceUnavailable().body("Telegram client not connected");
     };
@@ -586,7 +686,17 @@ async fn stream_media(
                     .body("The protected-media credential expired; unlock and retry")
             }
         };
-        return build_encrypted_media_response(&client, &media, &req, record, &key, &account).await;
+        return build_encrypted_media_response(EncryptedMediaResponseContext {
+            client: &client,
+            media: &media,
+            req: &req,
+            record,
+            crypto_state: crypto_state.get_ref().clone(),
+            operation_handle: credential,
+            wrapping_key: &key,
+            account: &account,
+        })
+        .await;
     }
     let mime = mime_type_from_media(&media);
     build_media_response_guarded(
@@ -715,9 +825,106 @@ fn start_server_with_listener(
 mod streaming_runtime_tests {
     use super::*;
     use crate::commands::TelegramState;
+    use grammers_session::{storages::SqliteSession, types::PeerInfo, Session};
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU32, AtomicU64};
     use tokio::sync::{Mutex, RwLock};
+
+    #[test]
+    fn byte_ranges_accept_suffixes_and_safely_reject_empty_or_invalid_ranges() {
+        assert_eq!(parse_range_header("bytes=2-5", 10), Some((2, 5)));
+        assert_eq!(parse_range_header("bytes=2-", 10), Some((2, 9)));
+        assert_eq!(parse_range_header("bytes=-4", 10), Some((6, 9)));
+        assert_eq!(parse_range_header("bytes=-40", 10), Some((0, 9)));
+        assert_eq!(parse_range_header("bytes=-1", 1), Some((0, 0)));
+        assert_eq!(parse_range_header("bytes=-1", 0), None);
+        assert_eq!(parse_range_header("bytes=0-", 0), None);
+        assert_eq!(parse_range_header("bytes=-0", 10), None);
+        assert_eq!(parse_range_header("bytes=10-", 10), None);
+        assert_eq!(parse_range_header("bytes=4-2", 10), None);
+        assert_eq!(parse_range_header("bytes=1-2-3", 10), None);
+    }
+
+    #[tokio::test]
+    async fn protected_stream_stops_after_lock_and_reuses_credentials_across_ranges() {
+        use crate::crypto::state::{CryptoState, OperationClass};
+        use crate::crypto::vault::MemoryVault;
+        use futures::StreamExt;
+
+        let crypto_state = CryptoState::new(Box::new(MemoryVault::new()));
+        let session = crypto_state.create_vault(b"test passphrase").unwrap();
+        let handle = crypto_state
+            .create_operation_handle(session, OperationClass::MediaStream)
+            .unwrap();
+        let mut locked_stream = Box::pin(protected_plaintext_stream(
+            crate::crypto::secret::SecretBytes::new(vec![b'x'; 64 * 1024 + 1]),
+            MediaStreamOperationLease::new(crypto_state.clone(), handle),
+            None,
+        ));
+        assert_eq!(
+            locked_stream.next().await.unwrap().unwrap().len(),
+            64 * 1024
+        );
+        crypto_state.lock();
+        assert!(locked_stream.next().await.unwrap().is_err());
+        assert!(locked_stream.next().await.is_none());
+        drop(locked_stream);
+        assert!(crypto_state
+            .operation_wrapping_key(handle, OperationClass::MediaStream)
+            .is_err());
+
+        let session = crypto_state.create_vault(b"test passphrase").unwrap();
+        let completed_handle = crypto_state
+            .create_operation_handle(session, OperationClass::MediaStream)
+            .unwrap();
+        let mut completed_stream = Box::pin(protected_plaintext_stream(
+            crate::crypto::secret::SecretBytes::from_slice(b"one chunk"),
+            MediaStreamOperationLease::new(crypto_state.clone(), completed_handle),
+            None,
+        ));
+        assert_eq!(
+            completed_stream.next().await.unwrap().unwrap(),
+            web::Bytes::from_static(b"one chunk")
+        );
+        assert!(completed_stream.next().await.is_none());
+        assert!(crypto_state
+            .operation_wrapping_key(completed_handle, OperationClass::MediaStream)
+            .is_ok());
+        let mut later_range = Box::pin(protected_plaintext_stream(
+            crate::crypto::secret::SecretBytes::from_slice(b"later range"),
+            MediaStreamOperationLease::new(crypto_state.clone(), completed_handle),
+            None,
+        ));
+        assert_eq!(
+            later_range.next().await.unwrap().unwrap(),
+            web::Bytes::from_static(b"later range")
+        );
+        assert!(later_range.next().await.is_none());
+        assert!(crypto_state
+            .operation_wrapping_key(completed_handle, OperationClass::MediaStream)
+            .is_ok());
+        drop(completed_stream);
+        drop(later_range);
+        crypto_state.revoke_operation_handle(completed_handle);
+
+        let aborted_handle = crypto_state
+            .create_operation_handle(session, OperationClass::MediaStream)
+            .unwrap();
+        let mut aborted_stream = Box::pin(protected_plaintext_stream(
+            crate::crypto::secret::SecretBytes::from_slice(b"drop me"),
+            MediaStreamOperationLease::new(crypto_state.clone(), aborted_handle),
+            None,
+        ));
+        assert!(aborted_stream.next().await.unwrap().is_ok());
+        drop(aborted_stream);
+        assert!(crypto_state
+            .operation_wrapping_key(aborted_handle, OperationClass::MediaStream)
+            .is_ok());
+        crypto_state.revoke_operation_handle(aborted_handle);
+        assert!(crypto_state
+            .operation_wrapping_key(aborted_handle, OperationClass::MediaStream)
+            .is_err());
+    }
 
     #[tokio::test]
     async fn encrypted_stream_uses_current_owned_header_and_plain_replacements_ignore_it() {
@@ -896,6 +1103,16 @@ mod streaming_runtime_tests {
             std::process::id(),
             address.port()
         ));
+        std::fs::create_dir_all(&cache_root).unwrap();
+        let session =
+            crate::test_block_on(SqliteSession::open(cache_root.join("telegram.session"))).unwrap();
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
+            id: 101,
+            auth: None,
+            bot: Some(false),
+            is_self: Some(true),
+        }))
+        .unwrap();
         let transcode_manager = Arc::new(TranscodeManager::new(cache_root.clone()));
         let crypto_state = crate::crypto::state::CryptoState::new(Box::new(
             crate::crypto::vault::memory::MemoryVault::new(),
@@ -938,8 +1155,8 @@ mod streaming_runtime_tests {
             "Invalid or missing stream token"
         );
 
-        // Token issued for a DIFFERENT resource (file 99 instead of 1) -> 403
-        let token_wrong_resource = token_manager.issue_token("99", None);
+        // Token issued for a DIFFERENT message in the same owner/folder -> 403
+        let token_wrong_resource = token_manager.issue_token("101_0_99", Some(101));
         let resp_wrong = client
             .get(format!("{endpoint}?token={token_wrong_resource}"))
             .send()
@@ -960,27 +1177,43 @@ mod streaming_runtime_tests {
             .unwrap();
         assert_eq!(resp_range_invalid.status(), reqwest::StatusCode::FORBIDDEN);
 
-        // Valid token for file 1 -> passes stream authorization boundary (advances to account check, returning 404 because no account is open in this test)
-        let token_valid = token_manager.issue_token("1", None);
+        // A token for the root folder must not authorize the same message ID in
+        // a different Telegram peer.
+        let token_valid = token_manager.issue_token("101_0_1", Some(101));
+        let resp_wrong_folder = client
+            .get(format!("http://{address}/stream/202/1?token={token_valid}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp_wrong_folder.status(), reqwest::StatusCode::FORBIDDEN);
+
+        // With the correct resource token, this disconnected test state reaches
+        // the normal transport guard without ever fetching a Telegram message.
         let resp_valid = client
             .get(format!("{endpoint}?token={token_valid}"))
             .send()
             .await
             .unwrap();
-        assert_eq!(resp_valid.status(), reqwest::StatusCode::NOT_FOUND);
+        assert_eq!(
+            resp_valid.status(),
+            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        );
         assert_eq!(
             resp_valid.text().await.unwrap(),
-            "The streaming account is unavailable"
+            "Telegram client not connected"
         );
 
-        // Range request with valid token -> passes stream authorization boundary (404 because no account is open)
+        // Range requests use the same complete resource authorization.
         let resp_range_valid = client
             .get(format!("{endpoint}?token={token_valid}"))
             .header("Range", "bytes=0-100")
             .send()
             .await
             .unwrap();
-        assert_eq!(resp_range_valid.status(), reqwest::StatusCode::NOT_FOUND);
+        assert_eq!(
+            resp_range_valid.status(),
+            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        );
 
         // Revoking all tokens immediately invalidates the bearer capability
         token_manager.revoke_all();
@@ -996,6 +1229,7 @@ mod streaming_runtime_tests {
             .await
             .expect("streaming server task panicked")
             .expect("streaming server stopped with an error");
+        drop(session);
         let _ = std::fs::remove_dir_all(cache_root);
     }
 }

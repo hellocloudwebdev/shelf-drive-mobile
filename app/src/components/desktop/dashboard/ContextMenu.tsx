@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eye, HardDrive, Trash2, FolderOpen, Pencil, Play, FileText, Link, Copy, ArrowRightLeft, Star } from 'lucide-react';
+import { Eye, HardDrive, Trash2, FolderOpen, Pencil, Play, FileText, Link, Copy, ArrowRightLeft, Star, Pin } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TelegramFile, TelegramFolder } from '../../../types';
 import { toast } from 'sonner';
@@ -23,7 +23,7 @@ interface ContextMenuProps {
     onTogglePinned?: () => void;
 }
 
-export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPreview, onShare, onRename, onMove, folders, activeFolderId, onToggleFavorite }: ContextMenuProps) {
+export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPreview, onShare, onRename, onMove, folders, activeFolderId, onToggleFavorite, onTogglePinned }: ContextMenuProps) {
     const [adjustedPos, setAdjustedPos] = useState({ x, y });
     const menuRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
@@ -120,6 +120,12 @@ export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPrevi
                 <button onClick={onToggleFavorite} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-telegram-text transition-colors hover:bg-telegram-hover">
                     <Star className={`h-4 w-4 ${file.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}`} />
                     {file.is_favorite ? 'Remove from Favorites' : 'Add to Favorites'}
+                </button>
+            )}
+            {!actions.isFolder && onTogglePinned && (
+                <button onClick={onTogglePinned} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-telegram-text transition-colors hover:bg-telegram-hover">
+                    <Pin className={`h-4 w-4 ${file.is_pinned ? 'fill-telegram-primary text-telegram-primary' : 'text-telegram-primary'}`} />
+                    {file.is_pinned ? 'Unpin' : 'Pin'}
                 </button>
             )}
             {!actions.isFolder && <button type="button" onClick={() => { requestFileOrganization(file, activeFolderId ?? null); onClose(); }} className="flex min-h-9 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-telegram-text hover:bg-telegram-hover"><FolderOpen className="h-4 w-4 text-telegram-primary" />{t('workspace.organize_file')}</button>}

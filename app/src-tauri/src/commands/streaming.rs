@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 
 /// Holds the streaming config (token manager + port)
 pub struct StreamConfig {
@@ -21,12 +21,28 @@ pub struct StreamInfo {
 /// capability token to the frontend.
 #[tauri::command]
 pub fn cmd_get_stream_info(
+    app_handle: tauri::AppHandle,
     file_id: Option<i64>,
-    _folder_id: Option<String>,
+    folder_id: Option<String>,
     config: State<'_, StreamConfig>,
     crypto_state: State<'_, crate::crypto::state::CryptoState>,
-) -> StreamInfo {
+) -> Result<StreamInfo, String> {
     let host = "localhost";
+    let file_id =
+        file_id.ok_or_else(|| "A file ID is required to authorize a media stream".to_string())?;
+    let folder_id = match folder_id.as_deref() {
+        None | Some("home") | Some("me") | Some("null") => None,
+        Some(value) => Some(
+            value
+                .parse::<i64>()
+                .map_err(|_| "Invalid folder ID for media stream".to_string())?,
+        ),
+    };
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    let account = crate::workspace::AccountGuard::open(&app_data_dir, None)?;
     let operation_token = crypto_state
         .current_session()
         .and_then(|session| {
@@ -36,14 +52,15 @@ pub fn cmd_get_stream_info(
         })
         .map(|handle| handle.to_string());
 
-    let resource_id = file_id
-        .map(|id| id.to_string())
-        .unwrap_or_else(|| "default".to_string());
-    let token = config.manager.issue_token(&resource_id, None);
+    let resource_id = crate::stream_token::resource_key(account.owner, folder_id, file_id);
+    account.validate()?;
+    let token = config
+        .manager
+        .issue_token(&resource_id, Some(account.owner));
 
-    StreamInfo {
+    Ok(StreamInfo {
         token,
         base_url: format!("http://{}:{}", host, config.port),
         operation_token,
-    }
+    })
 }

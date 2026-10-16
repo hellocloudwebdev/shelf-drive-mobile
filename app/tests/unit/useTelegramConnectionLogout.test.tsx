@@ -30,7 +30,7 @@ function deferred<T>() {
 function makeStore() {
   const values: Record<string, unknown> = {
     api_id: '12345', api_hash: 'legacy-api-hash', folders: [],
-    foldersLastSyncedAt: Date.now(), activeFolderId: null,
+    foldersLastSyncedAt: Date.now(), activeFolderId: 4242,
     unrelated_setting: 'must-preserve', theme: 'must-preserve',
   };
   return {
@@ -44,15 +44,17 @@ function makeStore() {
 
 let config: ReturnType<typeof makeStore>;
 let legacy: ReturnType<typeof makeStore>;
+let verifiedAccount: string;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  verifiedAccount = 'account-A';
   config = makeStore();
   legacy = makeStore();
   mocks.load.mockImplementation(async path => path === 'config.json' ? config : legacy);
   mocks.loading.mockReturnValue('logout-progress');
   mocks.invoke.mockImplementation(async command => {
-    if (command === 'cmd_workspace_account') return 'account-A';
+    if (command === 'cmd_workspace_account') return verifiedAccount;
     if (command === 'cmd_get_enriched_folders' || command === 'cmd_get_groups') return [];
     if (command === 'cmd_logout') return true;
     return undefined;
@@ -67,8 +69,8 @@ async function setup() {
     <QueryClientProvider client={client}><ConfirmProvider>{children}</ConfirmProvider></QueryClientProvider>
   );
   const hook = renderHook(() => useTelegramConnection(onLogout), { wrapper });
-  await waitFor(() => expect(hook.result.current.store).toBe(config));
-  await waitFor(() => expect(hook.result.current.accountId).toBe('account-A'));
+  await waitFor(() => expect(hook.result.current.store).not.toBeNull());
+  await waitFor(() => expect(hook.result.current.accountId).toBe(verifiedAccount));
   return { ...hook, client, onLogout };
 }
 
@@ -156,7 +158,7 @@ describe('confirmed Telegram sign-out', () => {
     expect(mocks.clearImages).toHaveBeenCalledOnce();
     expect(cleanupCommands()).toEqual(['cmd_clean_cache', 'cmd_clear_api_hash']);
     for (const target of [config, legacy]) {
-      expect(target.delete.mock.calls.map(([key]) => key).sort()).toEqual(['api_hash', 'api_id', 'folders']);
+      expect(target.delete.mock.calls.map(([key]) => key).sort()).toEqual(['activeFolderId', 'api_hash', 'api_id', 'folders']);
       expect(target.save).toHaveBeenCalledOnce();
       expect(target.values.unrelated_setting).toBe('must-preserve');
       expect(target.values.theme).toBe('must-preserve');
@@ -176,5 +178,23 @@ describe('confirmed Telegram sign-out', () => {
     expect(result.current.accountId).toBeNull();
     expect(mocks.warning).not.toHaveBeenCalled();
     expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it('does not restore account A active folder for account B after logout', async () => {
+    const { result, unmount } = await setup();
+    expect(result.current.activeFolderId).toBe(4242);
+
+    const { pending } = await confirmLogout(result.current.handleLogout);
+    await act(async () => { await pending; });
+    expect(result.current.activeFolderId).toBeNull();
+    expect(config.values.activeFolderId).toBeUndefined();
+    expect(legacy.values.activeFolderId).toBeUndefined();
+
+    unmount();
+    verifiedAccount = 'account-B';
+    const nextAccount = await setup();
+    expect(nextAccount.result.current.accountId).toBe('account-B');
+    expect(nextAccount.result.current.activeFolderId).toBeNull();
+    nextAccount.unmount();
   });
 });

@@ -544,7 +544,7 @@ mod tests {
             std::fs::write(output.join("output.mp4"), b"owner-specific media").unwrap();
         }
         let token_manager = std::sync::Arc::new(crate::stream_token::StreamTokenManager::new());
-        let token = token_manager.issue_token("42", None);
+        let token = token_manager.issue_token("22_0_42", Some(22));
         let app = web_test::init_service(
             actix_web::App::new()
                 .app_data(web::Data::new(manager))

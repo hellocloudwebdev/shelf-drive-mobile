@@ -12,6 +12,7 @@ on:
       - 'dependency-policy/**'
       - 'scripts/check-node-licenses.cjs'
       - 'scripts/check-npm-audit.cjs'
+      - 'scripts/**'
       - '.github/workflows/dependency-assurance.yml'
   push:
     branches: [main, develop]
@@ -56,5 +57,7 @@ jobs:
         run: cargo install cargo-deny --locked --version 0.18.7
       - name: Validate expiring Rust advisory baseline
         run: node scripts/check-rust-advisory-baseline.cjs
+      - name: Require immutable revisions for git dependencies
+        run: node scripts/check-rust-git-pins.cjs
       - name: Check dependency policy
         run: cargo deny --manifest-path app/src-tauri/Cargo.toml check --config ../../deny.toml --hide-inclusion-graph

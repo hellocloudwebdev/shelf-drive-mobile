@@ -202,6 +202,7 @@ export function useTelegramConnection(onLogoutParent: () => void) {
             signedOut = true;
             accountGeneration.current++;
             setAccountId(null);
+            setActiveFolderId(null);
             queryClient.clear();
             clearImageMemoryCaches();
             // Legacy installs can read either store. Remove only the Telegram
@@ -211,7 +212,7 @@ export function useTelegramConnection(onLogoutParent: () => void) {
                 auth.clearApiHash(),
                 ...['config.json', 'settings.json'].map(async path => {
                     const target = await load(path);
-                    const removals = await Promise.allSettled(['api_id', 'api_hash', 'folders'].map(key => target.delete(key)));
+                    const removals = await Promise.allSettled(['api_id', 'api_hash', 'folders', 'activeFolderId'].map(key => target.delete(key)));
                     await target.save();
                     if (removals.some(result => result.status === 'rejected')) throw new Error('Sign-in field cleanup failed');
                 }),
@@ -334,7 +335,7 @@ export function useTelegramConnection(onLogoutParent: () => void) {
         if (!makePublic) {
             const confirmed = await confirm({
                 title: "Make Private",
-                message: "Making this channel private will remove its public username. Any shared t.me links will stop working immediately.",
+                message: "Making this channel private removes its public username link. Previously exported private invite links may still work; revoke them in Telegram's invite settings if you need to invalidate them.",
                 confirmText: "Make Private",
                 variant: 'danger'
             });

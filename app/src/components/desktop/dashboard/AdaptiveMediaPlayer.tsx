@@ -26,6 +26,23 @@ interface AdaptiveMediaPlayerProps {
     playback?: DesktopPlayback;
 }
 
+export function dispatchQualityTransition(
+    quality: StreamingQuality,
+    isAdaptive: boolean,
+    actions: {
+        setManualQuality: (quality: StreamingQuality) => void;
+        transcodeAvailable: boolean;
+        startTranscode: (quality: StreamingQuality) => void;
+        switchToOriginal: () => void;
+        useThrottle: (quality: StreamingQuality) => void;
+    },
+): void {
+    if (!isAdaptive) actions.setManualQuality(quality);
+    if (quality === 'original') actions.switchToOriginal();
+    else if (actions.transcodeAvailable) actions.startTranscode(quality);
+    else actions.useThrottle(quality);
+}
+
 const STREAM_BASE_KEY = '/stream/';
 
 export function AdaptiveMediaPlayer({
@@ -189,6 +206,8 @@ export function AdaptiveMediaPlayer({
         tracks,
         loadProgress,
         currentQuality,
+        adaptiveQuality,
+        updateAdaptiveBandwidth,
         setQuality,
         adaptiveMode,
         setAdaptiveMode,
@@ -572,46 +591,61 @@ export function AdaptiveMediaPlayer({
     }, [file.id, activeFolderId, mseVideoRef, pollTranscodeStatus, abortMse, log, streamUrl]);
 
     // ── Handle quality change ────────────────────────────────────────
-    const handleQualityChange = useCallback((quality: StreamingQuality) => {
-        log('handleQualityChange', { quality, currentPlaybackMode: playbackMode, transcodeAvailable: transcodeCapabilities?.available });
+    const handleQualityChange = useCallback((quality: StreamingQuality, isAdaptive = false) => {
+        log('handleQualityChange', { quality, isAdaptive, currentPlaybackMode: playbackMode, transcodeAvailable: transcodeCapabilities?.available });
 
-        // Always update quality first for immediate UI feedback
-        setQuality(quality);
-
-        if (quality === 'original') {
-            // Clean up HLS if switching back from transcode mode
-            if (hlsRef.current) {
-                hlsRef.current.destroy();
-                hlsRef.current = null;
-            }
-            if (pollTimerRef.current) {
-                clearInterval(pollTimerRef.current);
-                pollTimerRef.current = null;
-            }
-            hlsQualityRef.current = null;
-            currentJobIdRef.current = null;
-            playbackConfirmedRef.current = false;
-            setPlaybackConfirmed(false);
-            setOriginalPlaybackError(null);
-            setPlaybackMode('original');
-            setHlsPhase('idle');
-            setHlsQuality(null);
-            setHlsPlaylistUrl(null);
-            setHlsError(null);
-            setHlsVideoReady(false);
-            // Force re-init of the MSE pipeline by bumping restartNonce.
-            // This causes useAdaptiveStreaming to reinitialize with a new streamUrl.
-            log('Switching back to original — restarting MSE pipeline');
-            setRestartNonce(n => n + 1);
-        } else if (transcodeCapabilities?.available) {
-            // FFmpeg available — start real transcode for HLS playback
-            startTranscode(quality);
-        } else {
-            // FFmpeg not available — log and fall through to throttle mode
-            log('FFmpeg unavailable, using throttle mode for', quality);
-        }
-        // If FFmpeg not available: setQuality already applied the bandwidth throttle
+        dispatchQualityTransition(quality, isAdaptive, {
+            setManualQuality: setQuality,
+            transcodeAvailable: !!transcodeCapabilities?.available,
+            startTranscode,
+            useThrottle: q => log('FFmpeg unavailable, using throttle mode for', q),
+            switchToOriginal: () => {
+                // Clean up HLS if switching back from transcode mode
+                if (hlsRef.current) {
+                    hlsRef.current.destroy();
+                    hlsRef.current = null;
+                }
+                if (pollTimerRef.current) {
+                    clearInterval(pollTimerRef.current);
+                    pollTimerRef.current = null;
+                }
+                hlsQualityRef.current = null;
+                currentJobIdRef.current = null;
+                playbackConfirmedRef.current = false;
+                setPlaybackConfirmed(false);
+                setOriginalPlaybackError(null);
+                setPlaybackMode('original');
+                setHlsPhase('idle');
+                setHlsQuality(null);
+                setHlsPlaylistUrl(null);
+                setHlsError(null);
+                setHlsVideoReady(false);
+                // Force re-init of the MSE pipeline by bumping restartNonce.
+                // This causes useAdaptiveStreaming to reinitialize with a new streamUrl.
+                log('Switching back to original — restarting MSE pipeline');
+                setRestartNonce(n => n + 1);
+            },
+        });
     }, [setQuality, startTranscode, transcodeCapabilities, playbackMode, log]);
+
+    const lastAdaptiveTransitionRef = useRef<StreamingQuality | null>(null);
+    useEffect(() => {
+        if (adaptiveMode && adaptiveQuality) {
+            const needsTranscodeRetry = !!transcodeCapabilities?.available && playbackMode !== 'hls';
+            if (lastAdaptiveTransitionRef.current !== adaptiveQuality || needsTranscodeRetry) {
+                lastAdaptiveTransitionRef.current = adaptiveQuality;
+                handleQualityChange(adaptiveQuality, true);
+            }
+            return;
+        }
+        if (!adaptiveMode && lastAdaptiveTransitionRef.current) {
+            lastAdaptiveTransitionRef.current = null;
+            handleQualityChange(currentQuality, true);
+        } else if (adaptiveMode && !adaptiveQuality) {
+            // A direct/manual selection supersedes the previous auto decision.
+            lastAdaptiveTransitionRef.current = null;
+        }
+    }, [adaptiveMode, adaptiveQuality, currentQuality, handleQualityChange, transcodeCapabilities?.available, playbackMode]);
 
     // ── Fullscreen helpers (DOM/video fullscreen first, Tauri fallback) ──
     const enterFullscreen = useCallback(async () => {
@@ -763,6 +797,14 @@ export function AdaptiveMediaPlayer({
                     video.play().catch(() => {});
                 });
 
+                hls.on(HlsRuntime.Events.FRAG_LOADED, (_event, data) => {
+                    const { loaded, loading } = data.frag.stats;
+                    const durationMs = loading.end - loading.start;
+                    if (loaded > 0 && durationMs > 0) {
+                        updateAdaptiveBandwidth(Math.round((loaded * 8) / durationMs));
+                    }
+                });
+
                 hls.on(HlsRuntime.Events.ERROR, (_event, data) => {
                     if (data.fatal) {
                         log('HLS fatal error', data.type, data.details);
@@ -824,7 +866,7 @@ export function AdaptiveMediaPlayer({
                 activeHls.destroy();
             }
         };
-    }, [playbackMode, hlsPlaylistUrl, hlsPhase, hlsVideoReady, log]);
+    }, [playbackMode, hlsPlaylistUrl, hlsPhase, hlsVideoReady, log, updateAdaptiveBandwidth]);
 
     // ── Cancel ongoing transcode ─────────────────────────────────────
     const cancelTranscode = useCallback(async () => {

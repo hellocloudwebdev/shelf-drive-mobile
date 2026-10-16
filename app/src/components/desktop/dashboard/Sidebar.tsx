@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { HardDrive, Folder, Plus, RefreshCw, LogOut, ChevronLeft, ChevronRight, Settings2, Trash2, Check, X, Eye, EyeOff, Clock3, Star, FileWarning, Copy, Database, Files, Image, Film, FileText } from 'lucide-react';
+import { HardDrive, Folder, Plus, RefreshCw, LogOut, ChevronLeft, ChevronRight, Settings2, Trash2, Check, X, Eye, EyeOff, Clock3, Star, FileWarning, Copy, Database, Files, Image, Film, FileText, Pin } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SidebarItem } from './SidebarItem';
 import { BandwidthWidget } from './BandwidthWidget';
@@ -346,6 +346,7 @@ export function Sidebar({
                     {([
                         ['recents', Clock3, t('common.recents')],
                         ['favorites', Star, t('common.favorites')],
+                        ['pinned', Pin, t('common.pinned')],
                         ['offline', Database, t('common.offline_files')],
                     ] as const).map(([view, Icon, label]) => (
                         <button

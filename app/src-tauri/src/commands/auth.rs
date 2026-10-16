@@ -353,8 +353,10 @@ pub async fn cmd_logout(
     app_handle: tauri::AppHandle,
     state: State<'_, TelegramState>,
     crypto_state: State<'_, crate::crypto::state::CryptoState>,
+    stream_config: State<'_, crate::commands::streaming::StreamConfig>,
 ) -> Result<bool, String> {
     log::info!("Logging out...");
+    stream_config.manager.revoke_all();
     crate::workspace::suspend();
     crypto_state.lock();
 

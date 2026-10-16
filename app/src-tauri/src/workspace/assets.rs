@@ -426,11 +426,11 @@ pub fn stored_file(account: &AccountGuard, key: &str) -> Result<WorkspaceFile, S
         .ok_or_else(|| "FILE_NOT_INDEXED: Scan this folder to add it to your library".into())
 }
 
-pub async fn remote_media(
+async fn remote_media_revision(
     app: &tauri::AppHandle,
     account: &AccountGuard,
     file: &WorkspaceFile,
-) -> Result<(Client, Media), String> {
+) -> Result<(Client, Media, String), String> {
     account.validate()?;
     if file.file.encryption_state != "plain" {
         return Err(
@@ -470,8 +470,88 @@ pub async fn remote_media(
     if media_size(&media) != file.file.size {
         return Err("FILE_CHANGED: Refresh the folder before saving this file".into());
     }
+    // Telegram message metadata gives us a cheap source revision check. A media
+    // ID distinguishes replacement uploads; edit_date catches edits that retain
+    // the message and media identity. No file payload is fetched on cache hits.
+    let identity = match &media {
+        Media::Photo(photo) => format!("photo:{}", photo.id()),
+        Media::Document(document) => format!("document:{}", document.id()),
+        _ => "other-media".to_string(),
+    };
+    let revision = format!(
+        "{:x}",
+        Sha256::digest(
+            format!(
+                "workspace-preview-v1:{identity}:{}:{}",
+                message
+                    .edit_date()
+                    .map(|date| date.as_second().to_string())
+                    .unwrap_or_else(|| "unmodified".into()),
+                file.file.size
+            )
+            .as_bytes()
+        )
+    );
     account.validate()?;
+    Ok((client, media, revision))
+}
+
+pub async fn remote_media(
+    app: &tauri::AppHandle,
+    account: &AccountGuard,
+    file: &WorkspaceFile,
+) -> Result<(Client, Media), String> {
+    let (client, media, _) = remote_media_revision(app, account, file).await?;
     Ok((client, media))
+}
+
+fn revision_path(target: &Path) -> PathBuf {
+    let mut name = target.as_os_str().to_os_string();
+    name.push(".revision");
+    PathBuf::from(name)
+}
+
+fn cache_matches_revision(
+    target: &Path,
+    expected_size: u64,
+    cap: u64,
+    thumbnail: bool,
+    revision: &str,
+) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(target) else {
+        return false;
+    };
+    let size_matches = if thumbnail {
+        metadata.len() > 0
+    } else {
+        metadata.len() == expected_size
+    };
+    metadata.file_type().is_file()
+        && metadata.len() <= cap
+        && size_matches
+        && std::fs::read_to_string(revision_path(target)).is_ok_and(|cached| cached == revision)
+}
+
+fn store_revision(target: &Path, revision: &str) -> Result<(), String> {
+    let revision_path = revision_path(target);
+    let temporary = revision_path.with_extension(format!("revision.{}.part", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
+        std::io::Write::write_all(&mut file, revision.as_bytes()).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        std::fs::rename(&temporary, &revision_path).map_err(|e| e.to_string())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(temporary);
+    }
+    result
 }
 
 pub struct DownloadSource<'a> {
@@ -717,38 +797,34 @@ pub async fn cmd_workspace_asset(
         false,
     ));
     let cap = if thumbnail { limits().1 } else { limits().0 };
+    // Fetch the Telegram message/media metadata even on a disk-cache hit so a
+    // same-size replacement or edit cannot reuse bytes from an older revision.
+    let (client, media, revision) = remote_media_revision(&app, &account, &file).await?;
+    if cache_matches_revision(&target, file.file.size, cap, thumbnail, &revision) {
+        let handle = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&target)
+            .map_err(|e| e.to_string())?;
+        handle
+            .set_times(std::fs::FileTimes::new().set_modified(SystemTime::now()))
+            .map_err(|e| e.to_string())?;
+        account.validate()?;
+        return Ok(target.to_string_lossy().to_string());
+    }
     match std::fs::symlink_metadata(&target) {
-        Ok(metadata)
-            if metadata.file_type().is_file()
-                && metadata.len() <= cap
-                && (if thumbnail {
-                    metadata.len() > 0
-                } else {
-                    metadata.len() == file.file.size
-                }) =>
-        {
-            let handle = std::fs::OpenOptions::new()
-                .write(true)
-                .open(&target)
-                .map_err(|e| e.to_string())?;
-            handle
-                .set_times(std::fs::FileTimes::new().set_modified(SystemTime::now()))
-                .map_err(|e| e.to_string())?;
-            account.validate()?;
-            return Ok(target.to_string_lossy().to_string());
-        }
         Ok(metadata) if metadata.file_type().is_file() => {
             std::fs::remove_file(&target).map_err(|e| e.to_string())?;
+            let _ = std::fs::remove_file(revision_path(&target));
         }
         Ok(_) => return Err("STORAGE_UNAVAILABLE: Invalid preview file".into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.to_string()),
     }
+    let _ = std::fs::remove_file(revision_path(&target));
     if !thumbnail && file.file.size > cap {
         return Err("PREVIEW_TOO_LARGE: Keep this file offline or increase the cache limit".into());
     }
     let operation = async {
-        let (client, media) = remote_media(&app, &account, &file).await?;
         if thumbnail {
             let thumbs = match &media {
                 Media::Photo(photo) => photo.thumbs(),
@@ -902,6 +978,10 @@ pub async fn cmd_workspace_asset(
             let _ = tokio::fs::remove_file(&target).await;
             return Err("CANCELLED".into());
         }
+        if let Err(error) = store_revision(&target, &revision) {
+            let _ = tokio::fs::remove_file(&target).await;
+            return Err(error);
+        }
         let current_cap = if thumbnail { limits().1 } else { limits().0 };
         if std::fs::metadata(&target).map_err(|e| e.to_string())?.len() > current_cap {
             std::fs::remove_file(&target).map_err(|e| e.to_string())?;
@@ -1021,6 +1101,30 @@ mod tests {
         assert!(verify_length(5, 10, true).is_err());
         assert!(verify_length(11, 10, false).is_err());
         assert!(verify_length(10, 10, true).is_ok());
+    }
+    #[test]
+    fn same_key_same_size_replacement_invalidates_cached_preview_revision() {
+        let root = temp();
+        let target = root.join("stable-key.pdf");
+        // The cache path and byte count are unchanged, as with a same-size
+        // replacement at the same Telegram message identity.
+        std::fs::write(&target, b"old!").unwrap();
+        store_revision(&target, "document-1-edit-1").unwrap();
+        assert!(cache_matches_revision(
+            &target,
+            4,
+            16,
+            false,
+            "document-1-edit-1"
+        ));
+        assert!(!cache_matches_revision(
+            &target,
+            4,
+            16,
+            false,
+            "document-2-edit-2"
+        ));
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn preview_pruning_preserves_current_file_and_never_traverses_siblings() {

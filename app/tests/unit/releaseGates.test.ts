@@ -243,7 +243,9 @@ describe('release safety gates', () => {
     expect(readme).toContain('TDENC2-protected audio, video, and PDF content can stream');
     expect(readme).not.toContain('In-app image, PDF, archive, audio, and video previews.');
     expect(readme).not.toContain('Androidv4.0.0beta');
-    expect(androidRunbook).toContain('publishes only after every gate passes');
+    expect(androidRunbook).toContain('Android-only release workflow');
+    expect(androidRunbook).toContain('publishes only after release-assurance gates pass');
+    expect(androidRunbook).toContain('It does not build desktop applications.');
     expect(androidRunbook).not.toContain('Telegram-Drive-v3.5.0-android-universal.apk');
     expect(cargoManifest).not.toContain('unlimited, secure cloud storage');
     expect(authWizard).not.toContain('Self-hosted secure storage');

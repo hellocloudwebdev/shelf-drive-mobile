@@ -20,6 +20,10 @@ const control = 'min-h-11 rounded-xl border border-telegram-border bg-telegram-s
 
 export interface WorkspaceHubProps { folders: TelegramFolder[]; initialKeys?: string[]; onClose: () => void; onOpen: (file: TelegramFile, orderedFiles?: TelegramFile[], localPath?: string) => void; onFolder: (id: number | null) => void }
 
+export function preserveSelectedWorkspaceContext<T extends { key: string }>(file: T, orderedFiles: T[]): T[] {
+    return orderedFiles.some(item => item.key === file.key) ? orderedFiles : [...orderedFiles, file];
+}
+
 export function WorkspaceHub({ folders, initialKeys = [], onClose, onOpen, onFolder }: WorkspaceHubProps) {
     const { t } = useTranslation();
     const workspace = useWorkspace();
@@ -54,8 +58,9 @@ export function WorkspaceHub({ folders, initialKeys = [], onClose, onOpen, onFol
     const perform = async (action: () => Promise<unknown>) => { setBusy(true); setError(null); try { await action(); } catch (reason) { reportError(reason); } finally { setBusy(false); } };
     useEffect(() => { setSelected(new Set(initialKeys)); }, [initialKeys.join('|'), owner]);
     const open = (file: WorkspaceFile, orderedFiles: WorkspaceFile[] = files) => {
-        if (isImageFile(file.name)) { setSlideshow({ key: file.key, keys: orderedFiles.filter(item => isImageFile(item.name)).map(item => item.key), autoPlay: false }); return; }
-        onOpen(file, files);
+        const openContext = preserveSelectedWorkspaceContext(file, orderedFiles);
+        if (isImageFile(file.name)) { setSlideshow({ key: file.key, keys: openContext.filter(item => isImageFile(item.name)).map(item => item.key), autoPlay: false }); return; }
+        onOpen(file, openContext);
     };
     const favorite = (file: WorkspaceFile) => { void perform(() => workspace.mutate({ type: 'favorite', key: file.key, value: !file.is_favorite })); };
     const select = (key: string) => setSelected(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });

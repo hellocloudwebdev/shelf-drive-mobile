@@ -2434,7 +2434,7 @@ mod cache_tests {
         cache.add_variant("77_123_456", "480p", &[1, 2, 3, 4]);
         let manager = Arc::new(TranscodeManager::new(cache.root.clone()));
         let token_manager = Arc::new(crate::stream_token::StreamTokenManager::new());
-        let token = token_manager.issue_token("456", None);
+        let token = token_manager.issue_token("77_123_456", Some(77));
         let service = actix_web::test::init_service(
             actix_web::App::new()
                 .app_data(web::Data::new(manager))

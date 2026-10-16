@@ -61,7 +61,7 @@ describe('AuthWizard phone authentication', () => {
 
     fireEvent.change(screen.getByLabelText('API ID'), { target: { value: '12345' } });
     fireEvent.change(screen.getByLabelText('API Hash'), { target: { value: 'abcdef' } });
-    fireEvent.click(screen.getByRole('button', { name: /Continue to QR sign in/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
 
     await screen.findByText('Scan with your Telegram app');
     fireEvent.click(screen.getByRole('button', { name: /Phone Number/ }));
@@ -98,7 +98,7 @@ describe('AuthWizard phone authentication', () => {
     render(<AuthWizard onLogin={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('API ID'), { target: { value: '123abc' } });
     fireEvent.change(screen.getByLabelText('API Hash'), { target: { value: 'abcdef' } });
-    fireEvent.click(screen.getByRole('button', { name: /Continue to QR sign in/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('API ID must contain digits only.');
     expect(invokeMock.mock.calls.some(([command]) => command === 'cmd_store_api_hash')).toBe(false);
@@ -113,7 +113,7 @@ describe('AuthWizard phone authentication', () => {
     render(<AuthWizard onLogin={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('API ID'), { target: { value: '12345' } });
     fireEvent.change(screen.getByLabelText('API Hash'), { target: { value: 'abcdef' } });
-    fireEvent.click(screen.getByRole('button', { name: /Continue to QR sign in/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('Unable to save sign-in credentials securely.');
     expect(invokeMock.mock.calls.some(([command]) => String(command).startsWith('cmd_auth_'))).toBe(false);

@@ -5,6 +5,7 @@ import '../../src/i18n';
 import { useFileOperations } from '../../src/hooks/useFileOperations';
 import { ShareDialog } from '../../src/components/desktop/dashboard/ShareDialog';
 import { sourceFolder } from '../../src/services/fileIdentity';
+import { createOwnedShareLinks } from '../../src/services/shareLinks';
 import { filterAndRankFiles, DEFAULT_SEARCH_FILTERS } from '../../src/services/fileSearch';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -20,6 +21,14 @@ describe('source folder contracts at real callers', () => {
         expect(sourceFolder(file, 9)).toBeNull();
         expect(sourceFolder({}, 9)).toBe(9);
         expect(sourceFolder(undefined, 9)).toBe(9);
+    });
+    it('creates mobile-style share links with the verified owner and each file source', async () => {
+        const channelFile = { ...file, id: 43, name: 'Channel.pdf', folder_id: 7 };
+        const contextualFile = { ...file, id: 44, name: 'Context.pdf', folder_id: undefined };
+        await createOwnedShareLinks('account-a', [file, channelFile, contextualFile], 9, () => true);
+        expect(invoke).toHaveBeenCalledWith('cmd_create_share', expect.objectContaining({ ownerId: 'account-a', folderId: null, messageId: 42 }));
+        expect(invoke).toHaveBeenCalledWith('cmd_create_share', expect.objectContaining({ ownerId: 'account-a', folderId: 7, messageId: 43 }));
+        expect(invoke).toHaveBeenCalledWith('cmd_create_share', expect.objectContaining({ ownerId: 'account-a', folderId: 9, messageId: 44 }));
     });
     it('deletes and bulk moves Saved Messages using null after visiting another folder', async () => {
         const client = new QueryClient();

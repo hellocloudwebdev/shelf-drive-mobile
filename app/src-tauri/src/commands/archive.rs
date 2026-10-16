@@ -1,10 +1,12 @@
 use crate::commands::utils::resolve_peer;
 use crate::commands::TelegramState;
 use crate::vpn_optimizer::NetworkConfig;
+use crate::workspace::AccountGuard;
 use grammers_client::media::Media;
 use serde::Serialize;
 use std::io::{Cursor, Read};
 use std::sync::Arc;
+use tauri::Manager;
 use tauri::State;
 use tokio::io::AsyncWriteExt;
 
@@ -62,19 +64,29 @@ pub async fn cmd_list_archive_contents(
     folder_id: Option<i64>,
     state: State<'_, TelegramState>,
     net_config: State<'_, Arc<NetworkConfig>>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<ArchiveEntry>, String> {
+    let account = active_account(&app)?;
     let (client, media, filename, max_bytes) =
-        prepare_archive_operation(message_id, folder_id, &state, &net_config).await?;
+        prepare_archive_operation(message_id, folder_id, &state, &net_config, &account).await?;
     let archive_type = detect_archive_type(&filename);
 
-    match archive_type {
-        ArchiveType::Zip => list_zip_contents(&client, &media, max_bytes, &filename).await,
+    let result = match archive_type {
+        ArchiveType::Zip => {
+            list_zip_contents(&client, &media, max_bytes, &filename, &account).await
+        }
         #[cfg(not(target_os = "android"))]
-        ArchiveType::Rar => list_rar_contents(&client, &media, max_bytes, &filename).await,
+        ArchiveType::Rar => {
+            list_rar_contents(&client, &media, max_bytes, &filename, &account).await
+        }
         #[cfg(target_os = "android")]
         ArchiveType::Rar => Err("RAR archives are not supported on Android".to_string()),
-        ArchiveType::SevenZ => list_sevenz_contents(&client, &media, max_bytes, &filename).await,
-    }
+        ArchiveType::SevenZ => {
+            list_sevenz_contents(&client, &media, max_bytes, &filename, &account).await
+        }
+    }?;
+    account.validate()?;
+    Ok(result)
 }
 
 /// Extract a single file from an archive and return its temp path for
@@ -86,20 +98,41 @@ pub async fn cmd_extract_archive_entry(
     entry_index: usize,
     state: State<'_, TelegramState>,
     net_config: State<'_, Arc<NetworkConfig>>,
+    app: tauri::AppHandle,
 ) -> Result<ExtractedFile, String> {
+    let account = active_account(&app)?;
     let (client, media, filename, max_bytes) =
-        prepare_archive_operation(message_id, folder_id, &state, &net_config).await?;
+        prepare_archive_operation(message_id, folder_id, &state, &net_config, &account).await?;
     let archive_type = detect_archive_type(&filename);
 
     let extracted = match archive_type {
-        ArchiveType::Zip => extract_zip_entry(&client, &media, max_bytes, entry_index).await,
+        ArchiveType::Zip => {
+            extract_zip_entry(&client, &media, max_bytes, entry_index, &account).await
+        }
         #[cfg(not(target_os = "android"))]
-        ArchiveType::Rar => extract_rar_entry(&client, &media, max_bytes, entry_index).await,
+        ArchiveType::Rar => {
+            extract_rar_entry(&client, &media, max_bytes, entry_index, &account).await
+        }
         #[cfg(target_os = "android")]
         ArchiveType::Rar => Err("RAR archives are not supported on Android".to_string()),
-        ArchiveType::SevenZ => extract_sevenz_entry(&client, &media, max_bytes, entry_index).await,
+        ArchiveType::SevenZ => {
+            extract_sevenz_entry(&client, &media, max_bytes, entry_index, &account).await
+        }
     }?;
-    crate::temp_artifacts::register(std::path::Path::new(&extracted.temp_path))?;
+    if let Err(error) = account.validate() {
+        let _ = tokio::fs::remove_file(&extracted.temp_path).await;
+        return Err(error);
+    }
+    if let Err(error) = crate::temp_artifacts::register(std::path::Path::new(&extracted.temp_path))
+    {
+        let _ = tokio::fs::remove_file(&extracted.temp_path).await;
+        return Err(error);
+    }
+    if let Err(error) = account.validate() {
+        let _ =
+            crate::temp_artifacts::delete_registered(std::path::Path::new(&extracted.temp_path));
+        return Err(error);
+    }
     Ok(extracted)
 }
 
@@ -110,24 +143,27 @@ async fn prepare_archive_operation(
     folder_id: Option<i64>,
     state: &TelegramState,
     net_config: &Arc<NetworkConfig>,
+    account: &AccountGuard,
 ) -> Result<(grammers_client::Client, Media, String, u64), String> {
+    account.validate()?;
     let client_opt = { state.client.lock().await.clone() };
     let client = match client_opt {
         Some(c) => c,
         None => return Err("Telegram client is not connected".to_string()),
     };
 
-    let peer = resolve_peer(&client, folder_id, &state.peer_cache)
-        .await
-        .map_err(|e| format!("Failed to resolve peer: {}", e))?;
-
-    let messages = client
-        .get_messages_by_id(
-            crate::commands::utils::peer_to_ref(&peer).await?,
-            &[message_id],
-        )
-        .await
-        .map_err(|e| format!("Failed to fetch message: {}", e))?;
+    let client_validation = account.validate_client(&client).await;
+    account.validate()?;
+    client_validation?;
+    let peer_result = resolve_peer(&client, folder_id, &state.peer_cache).await;
+    account.validate()?;
+    let peer = peer_result.map_err(|e| format!("Failed to resolve peer: {}", e))?;
+    let peer_ref_result = crate::commands::utils::peer_to_ref(&peer).await;
+    account.validate()?;
+    let peer_ref = peer_ref_result?;
+    let messages_result = client.get_messages_by_id(peer_ref, &[message_id]).await;
+    account.validate()?;
+    let messages = messages_result.map_err(|e| format!("Failed to fetch message: {}", e))?;
 
     let msg = messages
         .into_iter()
@@ -156,7 +192,22 @@ async fn prepare_archive_operation(
         ));
     }
 
+    account.validate()?;
     Ok((client, media, filename, max_bytes))
+}
+
+fn active_account(app: &tauri::AppHandle) -> Result<AccountGuard, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    AccountGuard::open(&root, None)
+}
+
+fn map_download_chunk<E: std::fmt::Display>(
+    result: Result<Option<Vec<u8>>, E>,
+) -> Result<Option<Vec<u8>>, String> {
+    result.map_err(|error| format!("Download error: {error}"))
 }
 
 // ── ZIP helpers ─────────────────────────────────────────────────────────
@@ -166,12 +217,18 @@ async fn download_to_memory(
     media: &Media,
     max_bytes: u64,
     label: &str,
+    account: &AccountGuard,
 ) -> Result<Vec<u8>, String> {
     let mut data = Vec::new();
     let mut download_iter = client.iter_download(media);
     let mut total_bytes: u64 = 0;
 
-    while let Some(chunk) = download_iter.next().await.ok().flatten() {
+    loop {
+        let next = download_iter.next().await;
+        account.validate()?;
+        let Some(chunk) = map_download_chunk(next)? else {
+            break;
+        };
         total_bytes += chunk.len() as u64;
         if max_bytes > 0 && total_bytes > max_bytes {
             return Err(format!(
@@ -182,6 +239,7 @@ async fn download_to_memory(
         }
         data.extend_from_slice(&chunk);
     }
+    account.validate()?;
     Ok(data)
 }
 
@@ -190,8 +248,9 @@ async fn list_zip_contents(
     media: &Media,
     max_bytes: u64,
     filename: &str,
+    account: &AccountGuard,
 ) -> Result<Vec<ArchiveEntry>, String> {
-    let data = download_to_memory(client, media, max_bytes, "ZIP").await?;
+    let data = download_to_memory(client, media, max_bytes, "ZIP", account).await?;
     let cursor = Cursor::new(data);
     let mut archive =
         zip::ZipArchive::new(cursor).map_err(|e| format!("Failed to parse ZIP file: {}", e))?;
@@ -223,8 +282,9 @@ async fn extract_zip_entry(
     media: &Media,
     max_bytes: u64,
     entry_index: usize,
+    account: &AccountGuard,
 ) -> Result<ExtractedFile, String> {
-    let data = download_to_memory(client, media, max_bytes, "ZIP").await?;
+    let data = download_to_memory(client, media, max_bytes, "ZIP", account).await?;
 
     let (buf, safe_name, entry_size, temp_path) = {
         let cursor = Cursor::new(data);
@@ -260,9 +320,10 @@ async fn extract_zip_entry(
         Ok::<_, String>((buf, safe_name, entry_size, temp_path))
     }?;
 
-    tokio::fs::write(&temp_path, &buf)
-        .await
-        .map_err(|e| format!("Failed to write extracted file: {}", e))?;
+    if let Err(error) = tokio::fs::write(&temp_path, &buf).await {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err(format!("Failed to write extracted file: {}", error));
+    }
 
     Ok(ExtractedFile {
         temp_path: temp_path.to_string_lossy().to_string(),
@@ -279,27 +340,31 @@ async fn download_to_temp_file(
     max_bytes: u64,
     label: &str,
     extension: &str,
+    account: &AccountGuard,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
     let unique_id = generate_unique_temp_prefix("viewer");
     let archive_path = std::env::temp_dir().join(format!("{}.{}", unique_id, extension));
     let extract_dir = std::env::temp_dir().join(format!("{}_extract", unique_id));
 
-    tokio::fs::create_dir_all(&extract_dir)
-        .await
-        .map_err(|e| format!("Failed to create temp extract directory: {}", e))?;
+    let download_result: Result<(), String> = async {
+        tokio::fs::create_dir_all(&extract_dir)
+            .await
+            .map_err(|e| format!("Failed to create temp extract directory: {}", e))?;
 
-    {
         let mut file = tokio::fs::File::create(&archive_path)
             .await
             .map_err(|e| format!("Failed to create temp file: {}", e))?;
         let mut download_iter = client.iter_download(media);
         let mut total_bytes: u64 = 0;
 
-        while let Some(chunk) = download_iter.next().await.ok().flatten() {
+        loop {
+            let next = download_iter.next().await;
+            account.validate()?;
+            let Some(chunk) = map_download_chunk(next)? else {
+                break;
+            };
             total_bytes += chunk.len() as u64;
             if max_bytes > 0 && total_bytes > max_bytes {
-                let _ = tokio::fs::remove_file(&archive_path).await;
-                let _ = tokio::fs::remove_dir_all(&extract_dir).await;
                 return Err(format!(
                     "{} download exceeded the {} MiB limit",
                     label,
@@ -309,12 +374,21 @@ async fn download_to_temp_file(
             file.write_all(&chunk)
                 .await
                 .map_err(|e| format!("Failed to write temp file: {}", e))?;
+            account.validate()?;
         }
         file.flush()
             .await
             .map_err(|e| format!("Failed to flush temp file: {}", e))?;
+        account.validate()?;
+        Ok(())
     }
+    .await;
 
+    if let Err(error) = download_result {
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        let _ = tokio::fs::remove_dir_all(&extract_dir).await;
+        return Err(error);
+    }
     Ok((archive_path, extract_dir))
 }
 
@@ -324,9 +398,10 @@ async fn list_rar_contents(
     media: &Media,
     max_bytes: u64,
     filename: &str,
+    account: &AccountGuard,
 ) -> Result<Vec<ArchiveEntry>, String> {
     let (archive_path, extract_dir) =
-        download_to_temp_file(client, media, max_bytes, "RAR", "rar").await?;
+        download_to_temp_file(client, media, max_bytes, "RAR", "rar", account).await?;
     let rar_path = archive_path.clone();
 
     // List-only mode: reads headers WITHOUT extracting (zero disk writes)
@@ -373,9 +448,10 @@ async fn extract_rar_entry(
     media: &Media,
     max_bytes: u64,
     entry_index: usize,
+    account: &AccountGuard,
 ) -> Result<ExtractedFile, String> {
     let (archive_path, extract_dir) =
-        download_to_temp_file(client, media, max_bytes, "RAR", "rar").await?;
+        download_to_temp_file(client, media, max_bytes, "RAR", "rar", account).await?;
     let rar_path = archive_path.clone();
     let extract_dir_cleanup = extract_dir.clone();
     let extraction_result: Result<ExtractedFile, String> = tokio::task::spawn_blocking(move || {
@@ -443,8 +519,10 @@ async fn extract_rar_entry(
                 safe_name
             ));
             let data_len = data.len() as u64;
-            std::fs::write(&temp_path, data)
-                .map_err(|e| format!("Failed to write extracted RAR entry: {}", e))?;
+            if let Err(error) = std::fs::write(&temp_path, data) {
+                let _ = std::fs::remove_file(&temp_path);
+                return Err(format!("Failed to write extracted RAR entry: {}", error));
+            }
 
             return Ok(ExtractedFile {
                 temp_path: temp_path.to_string_lossy().to_string(),
@@ -474,9 +552,10 @@ async fn list_sevenz_contents(
     media: &Media,
     max_bytes: u64,
     filename: &str,
+    account: &AccountGuard,
 ) -> Result<Vec<ArchiveEntry>, String> {
     let (archive_path, extract_dir) =
-        download_to_temp_file(client, media, max_bytes, "7z", "7z").await?;
+        download_to_temp_file(client, media, max_bytes, "7z", "7z", account).await?;
     let path = archive_path.clone();
 
     let entries_result: Result<Vec<ArchiveEntry>, String> =
@@ -519,9 +598,10 @@ async fn extract_sevenz_entry(
     media: &Media,
     max_bytes: u64,
     entry_index: usize,
+    account: &AccountGuard,
 ) -> Result<ExtractedFile, String> {
     let (archive_path, extract_dir) =
-        download_to_temp_file(client, media, max_bytes, "7z", "7z").await?;
+        download_to_temp_file(client, media, max_bytes, "7z", "7z", account).await?;
     let path = archive_path.clone();
 
     let extraction_result: Result<ExtractedFile, String> = tokio::task::spawn_blocking(move || {
@@ -592,8 +672,10 @@ async fn extract_sevenz_entry(
             generate_unique_temp_prefix("extract"),
             safe_name
         ));
-        std::fs::write(&temp_path, &buf)
-            .map_err(|e| format!("Failed to write extracted 7z entry: {}", e))?;
+        if let Err(error) = std::fs::write(&temp_path, &buf) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(format!("Failed to write extracted 7z entry: {}", error));
+        }
 
         Ok(ExtractedFile {
             temp_path: temp_path.to_string_lossy().to_string(),
@@ -658,8 +740,10 @@ fn validate_archive_entries(entries: &[ArchiveEntry]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_archive_entries, ArchiveEntry, MAX_ARCHIVE_ENTRIES, MAX_ARCHIVE_ENTRY_BYTES,
+        map_download_chunk, validate_archive_entries, AccountGuard, ArchiveEntry,
+        MAX_ARCHIVE_ENTRIES, MAX_ARCHIVE_ENTRY_BYTES,
     };
+    use grammers_session::{storages::SqliteSession, types::PeerInfo, Session};
 
     fn entry(size: u64, compressed_size: u64) -> ArchiveEntry {
         ArchiveEntry {
@@ -676,5 +760,48 @@ mod tests {
         assert!(validate_archive_entries(&[entry(MAX_ARCHIVE_ENTRY_BYTES + 1, 1)]).is_err());
         assert!(validate_archive_entries(&[entry(2_000, 1)]).is_err());
         assert!(validate_archive_entries(&[entry(1_000, 1)]).is_ok());
+    }
+
+    #[test]
+    fn iterator_errors_after_a_chunk_are_propagated_not_eof() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(
+            &map_download_chunk::<&str>(Ok(Some(vec![4, 5])))
+                .unwrap()
+                .unwrap(),
+        );
+        let error = map_download_chunk::<&str>(Err("injected Telegram failure")).unwrap_err();
+        assert!(error.contains("injected Telegram failure"));
+        assert_eq!(bytes, vec![4, 5]);
+    }
+
+    #[test]
+    fn captured_account_guard_rejects_a_replacement_account() {
+        let root = std::env::temp_dir().join(format!("archive-owner-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        sign_in(&root, 101);
+        let account = AccountGuard::open(&root, Some("101")).unwrap();
+        sign_in(&root, 202);
+        assert!(account.validate().unwrap_err().contains("ACCOUNT_CHANGED"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn sign_in(root: &std::path::Path, owner: i64) {
+        for name in [
+            "telegram.session",
+            "telegram.session-wal",
+            "telegram.session-shm",
+        ] {
+            let _ = std::fs::remove_file(root.join(name));
+        }
+        let session =
+            crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
+            id: owner,
+            auth: None,
+            bot: Some(false),
+            is_self: Some(true),
+        }))
+        .unwrap();
     }
 }

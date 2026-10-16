@@ -23,6 +23,12 @@ pub const DEFAULT_STREAM_TOKEN_TTL: Duration = Duration::from_secs(60 * 60);
 /// memory growth.
 const MAX_ACTIVE_TOKENS: usize = 10_000;
 
+/// Canonical identity shared by direct, HLS, and fMP4 media routes.
+/// Folder `0` is the stable Saved Messages sentinel used by media caches.
+pub fn resource_key(owner_id: i64, folder_id: Option<i64>, message_id: i64) -> String {
+    format!("{}_{}_{}", owner_id, folder_id.unwrap_or(0), message_id)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum StreamAuthError {
     MissingToken,
@@ -114,10 +120,8 @@ impl StreamTokenManager {
 
     /// Validates a stream token against the requested resource.
     ///
-    /// Resource matching:
-    /// - Direct match: `entry.resource_id == requested_resource`
-    /// - HLS/fMP4 file_key match: `{owner}_{folder}_{msg_id}` matches if the
-    ///   message ID portion equals the token's bound resource ID.
+    /// Tokens must match the complete resource identity. HLS and fMP4 use the
+    /// same canonical `{owner}_{folder}_{message_id}` key as direct streams.
     pub fn validate_token(
         &self,
         token: &str,
@@ -130,6 +134,15 @@ impl StreamTokenManager {
         if now > entry.expires_at {
             return Err(StreamAuthError::Expired);
         }
+        if entry.owner_id.is_some_and(|owner_id| {
+            requested_resource
+                .split('_')
+                .next()
+                .and_then(|value| value.parse::<i64>().ok())
+                != Some(owner_id)
+        }) {
+            return Err(StreamAuthError::ResourceMismatch);
+        }
 
         if !self.resource_matches(&entry.resource_id, requested_resource) {
             return Err(StreamAuthError::ResourceMismatch);
@@ -139,22 +152,7 @@ impl StreamTokenManager {
     }
 
     fn resource_matches(&self, bound: &str, requested: &str) -> bool {
-        if bound == requested {
-            return true;
-        }
-        // Match if requested is `{owner}_{folder}_{msg_id}` and bound is `{msg_id}`
-        if let Some((_, msg_id)) = requested.rsplit_once('_') {
-            if bound == msg_id {
-                return true;
-            }
-        }
-        // Match if bound is `{owner}_{folder}_{msg_id}` and requested is `{msg_id}`
-        if let Some((_, msg_id)) = bound.rsplit_once('_') {
-            if requested == msg_id {
-                return true;
-            }
-        }
-        false
+        bound == requested
     }
 
     pub fn revoke_all(&self) {
@@ -209,14 +207,15 @@ mod tests {
     #[test]
     fn hls_file_key_matches_bound_message_id() {
         let manager = StreamTokenManager::new();
-        let token = manager.issue_token("42", None);
-        // HLS file key format: {owner}_{folder}_{message_id}
+        let token = manager.issue_token("100_0_42", Some(100));
         assert_eq!(manager.validate_token(&token, "100_0_42"), Ok(()));
-        // Mismatched message ID fails
-        assert_eq!(
-            manager.validate_token(&token, "100_0_99"),
-            Err(StreamAuthError::ResourceMismatch)
-        );
+        for other_resource in ["101_0_42", "100_123_42", "100_0_99", "0_42"] {
+            assert_eq!(
+                manager.validate_token(&token, other_resource),
+                Err(StreamAuthError::ResourceMismatch),
+                "unexpected authorization for {other_resource}"
+            );
+        }
     }
 
     #[test]
@@ -236,10 +235,10 @@ mod tests {
     #[test]
     fn token_replay_within_ttl_succeeds_for_same_resource() {
         let manager = StreamTokenManager::new();
-        let token = manager.issue_token("42", None);
-        // Multiple requests (e.g. range requests or HLS segments) succeed
-        assert_eq!(manager.validate_token(&token, "42"), Ok(()));
-        assert_eq!(manager.validate_token(&token, "42"), Ok(()));
+        let token = manager.issue_token("100_0_42", Some(100));
+        // Multiple requests (e.g. range requests or HLS segments) succeed only
+        // for the complete resource identity.
+        assert_eq!(manager.validate_token(&token, "100_0_42"), Ok(()));
         assert_eq!(manager.validate_token(&token, "100_0_42"), Ok(()));
     }
 

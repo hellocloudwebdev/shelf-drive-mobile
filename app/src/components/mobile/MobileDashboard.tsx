@@ -30,6 +30,9 @@ import { useFileDownload } from '../../hooks/useFileDownload';
 import { useUpdateCheck } from '../../hooks/useUpdateCheck';
 import { useFileOperations } from '../../hooks/useFileOperations';
 import { useGlobalFileSearch } from '../../hooks/useGlobalFileSearch';
+import { useActionScope } from '../../hooks/useActionScope';
+import { createOwnedShareLinks } from '../../services/shareLinks';
+import { sourceFolder } from '../../services/fileIdentity';
 import { formatBytes, isMediaFile, isPdfFile, isImageFile, isVideoFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
 import { LazyFeatureBoundary } from '../shared/LazyFeatureBoundary';
 import { TelegramFile, TelegramFolder, type SmartView, type QueueItem, type DownloadItem } from '../../types';
@@ -281,6 +284,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     handleFolderRename, handleFolderToggleVisibility, handleExportFolderInvite,
     handleCreateGroup,
   } = useTelegramConnection(logoutHandler);
+  const captureOwnerScope = useActionScope(accountId ?? null);
 
   const { data: androidTransferEnvironment } = useQuery({
     queryKey: ['android-transfer-environment'],
@@ -329,7 +333,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   ]);
 
   const {
-    uploadQueue, setUploadQueue, handleManualUpload: rawManualUpload, handleFolderUpload: rawFolderUpload, clearFinished: clearUploads,
+    uploadQueue, enqueueUploadItems, handleManualUpload: rawManualUpload, handleFolderUpload: rawFolderUpload, clearFinished: clearUploads,
     cancelAll: cancelUploads, pauseAll: pauseUploads, resumeAll: resumeUploads,
     cancelItem: cancelUpload, retryItem: retryUpload,
   } = useFileUpload(activeFolderId, store, transferAllowed, transferWaitingReason, accountId ?? undefined);
@@ -583,12 +587,18 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   });
 
   const handleUploadCachedFile = useCallback(async (entry: CachedFileEntry) => {
+    const ownerId = accountId;
+    if (!ownerId) {
+      toast.error('Connect an account before uploading shared files');
+      return;
+    }
     const tid = `cache-upload-${++transferIdCounter.current}-${Date.now()}`;
     setUploadingCacheFiles(prev => new Set(prev).add(entry.cached_path));
     try {
       const stagedPath = await android.stageUpload(entry.cached_path);
-      setUploadQueue(queue => [...queue, {
+      await enqueueUploadItems([{
         id: tid,
+        ownerId,
         path: stagedPath,
         folderId: activeFolderId,
         status: 'pending',
@@ -608,7 +618,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
         return next;
       });
     }
-  }, [activeFolderId, refetchCachedFiles, setUploadQueue, settings.videoUploadMode]);
+  }, [accountId, activeFolderId, enqueueUploadItems, refetchCachedFiles, settings.videoUploadMode]);
 
   const handleClearCachedFiles = useCallback(async () => {
     try {
@@ -740,7 +750,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   }, [activeFolderId, allFiles, playbackHistory]);
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const { handleDelete: handleDeleteOp, handleBulkDelete, handleBulkDownload, handleBulkMove, handleMoveFiles, handleRenameFile: handleRenameFileOp } = useFileOperations(activeFolderId, selectedIds, setSelectedIds, allFiles, queueBulkDownload);
+  const { handleDelete: handleDeleteOp, handleBulkDelete, handleBulkDownload, handleBulkMove, handleMoveFiles, handleRenameFile: handleRenameFileOp } = useFileOperations(activeFolderId, selectedIds, setSelectedIds, allFiles, queueBulkDownload, accountId ?? undefined);
 
   const activeFolder = activeFolderId === null
     ? 'Saved Messages'
@@ -850,12 +860,17 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   }, []);
 
   const handleDownload = useCallback((file: TelegramFile) => {
-    queueDownload(file.id, file.name, activeFolderId);
+    queueDownload(file.id, file.name, sourceFolder(file, activeFolderId), file.size);
   }, [queueDownload, activeFolderId]);
 
   const handleDeleteFile = useCallback((file: TelegramFile) => {
-    handleDeleteOp(file.id);
+    handleDeleteOp(file);
   }, [handleDeleteOp]);
+
+  const handleShareFile = useCallback((file: TelegramFile) => {
+    if (!accountId) return;
+    setShareFile({ ...file, folder_id: sourceFolder(file, activeFolderId) });
+  }, [accountId, activeFolderId]);
 
   const handlePreview = useCallback((file: TelegramFile) => {
     if (isMediaFile(file.name, file.mime_type)) {
@@ -871,28 +886,28 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
   const handleKeepOffline = useCallback(async (file: TelegramFile) => {
     const toastId = toast.loading(`Saving ${file.name} for offline use…`);
-    const folderId = file.folder_id ?? activeFolderId;
+    const folderId = sourceFolder(file, activeFolderId);
     try {
       await media.getPreview(file.id, folderId);
       await media.setPreviewPinned(file.id, folderId, true);
-      await Promise.all([refetchOfflineCache(), invalidateFolderFileQueries(queryClient, activeFolderId, accountId ?? undefined)]);
+      await Promise.all([refetchOfflineCache(), invalidateFolderFileQueries(queryClient, folderId, accountId ?? undefined)]);
       toast.success(`${file.name} will be kept offline`, { id: toastId });
     } catch (error) {
       toast.error(`Could not keep this file offline: ${error}`, { id: toastId });
     }
-  }, [activeFolderId, queryClient, refetchOfflineCache]);
+  }, [accountId, activeFolderId, queryClient, refetchOfflineCache]);
 
   const handleRemoveOffline = useCallback(async (file: TelegramFile) => {
-    const folderId = file.folder_id ?? activeFolderId;
+    const folderId = sourceFolder(file, activeFolderId);
     try {
       await media.setPreviewPinned(file.id, folderId, false);
       await media.deletePreviewForMessage(file.id, folderId);
-      await Promise.all([refetchOfflineCache(), invalidateFolderFileQueries(queryClient, activeFolderId, accountId ?? undefined)]);
+      await Promise.all([refetchOfflineCache(), invalidateFolderFileQueries(queryClient, folderId, accountId ?? undefined)]);
       toast.success(`Removed the offline copy of ${file.name}`);
     } catch (error) {
       toast.error(`Could not remove the offline copy: ${error}`);
     }
-  }, [activeFolderId, queryClient, refetchOfflineCache]);
+  }, [accountId, activeFolderId, queryClient, refetchOfflineCache]);
 
   // ── Copy Telegram native t.me link ────────────────────────────────────
   const handleCopyTelegramLink = useCallback((file: TelegramFile) => {
@@ -912,6 +927,10 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
   // Bulk share: generate links for all selected non-folder files
   const handleBulkShare = useCallback(async () => {
+    const ownerId = accountId;
+    const ownerIsCurrent = captureOwnerScope();
+    if (!ownerId || !ownerIsCurrent()) return;
+    const isCurrent = () => ownerIsCurrent();
     const shareFiles = allFiles.filter(f => selectedIds.includes(f.id) && f.type !== 'folder');
     if (shareFiles.length === 0) {
       toast.info('No shareable files selected (folders cannot be shared)');
@@ -922,36 +941,20 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     setBulkShareLoading(true);
     setBulkShareCopied(new Set());
     try {
-      const results = await Promise.all(
-        shareFiles.map(async (file) => {
-          try {
-            const info = await shares.create({
-              folderId: null,
-              messageId: file.id,
-              fileName: file.name,
-              fileSize: file.size,
-              password: null,
-              expiryHours: 24, // default 1 day
-            });
-            return { file, link: info.link };
-          } catch (e) {
-            toast.error(`Failed to share ${file.name}: ${e}`);
-            return null;
-          }
-        })
-      );
-      const valid = results.filter((r): r is { file: TelegramFile; link: string } => r !== null);
-      if (valid.length > 0) {
-        setBulkShareLinks(valid);
+      const { links, errors } = await createOwnedShareLinks(ownerId, shareFiles, activeFolderId, isCurrent);
+      if (!isCurrent()) return;
+      for (const { file, error } of errors) toast.error(`Failed to share ${file.name}: ${error}`);
+      if (links.length > 0) {
+        setBulkShareLinks(links);
         setSelectedIds([]); // Clear selection after successful bulk share
       } else {
         setBulkShareLinks(null);
         toast.error('Failed to generate any share links');
       }
     } finally {
-      setBulkShareLoading(false);
+      if (isCurrent()) setBulkShareLoading(false);
     }
-  }, [allFiles, selectedIds]);
+  }, [accountId, activeFolderId, allFiles, captureOwnerScope, selectedIds]);
 
   const handleCopyBulkLink = useCallback((link: string) => {
     navigator.clipboard.writeText(link);
@@ -1266,7 +1269,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   onDelete={handleDeleteFile}
                   onPreview={handlePreview}
                   onRename={setRenameFileSheet}
-                  onShare={setShareFile}
+                  onShare={handleShareFile}
                   onCopyTelegramLink={handleCopyTelegramLink}
                   onKeepOffline={handleKeepOffline}
                   onRemoveOffline={handleRemoveOffline}
@@ -2255,7 +2258,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
           onClose={() => setActionFile(null)}
           onOpen={handlePreview}
           onDownload={handleDownload}
-          onShare={setShareFile}
+          onShare={handleShareFile}
           onKeepOffline={handleKeepOffline}
           onRemoveOffline={handleRemoveOffline}
           onRename={setRenameFileSheet}
@@ -2300,10 +2303,10 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       {playingFile && (
         <LazyFeatureBoundary>
           <LazyMobileMediaPlayer
-            key={playingFile.id}
+            key={`${sourceFolder(playingFile, activeFolderId) ?? 'home'}:${playingFile.id}`}
             file={playingFile}
             onClose={() => setPlayingFile(null)}
-            activeFolderId={activeFolderId}
+            activeFolderId={sourceFolder(playingFile, activeFolderId)}
             preferences={{
               privateMetadata: settings.androidPrivateMediaMetadata,
               privacyScreen: settings.androidPrivacyScreen,
@@ -2320,7 +2323,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             <LazyPdfViewer
               file={pdfFile}
               onClose={() => setPdfFile(null)}
-              activeFolderId={activeFolderId}
+              activeFolderId={sourceFolder(pdfFile, activeFolderId)}
             />
           </LazyFeatureBoundary>
         </div>
@@ -2329,7 +2332,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
         <LazyFeatureBoundary>
           <LazyPreviewModal
             file={previewFile}
-            activeFolderId={activeFolderId}
+            activeFolderId={sourceFolder(previewFile, activeFolderId)}
             onClose={() => setPreviewFile(null)}
           />
         </LazyFeatureBoundary>

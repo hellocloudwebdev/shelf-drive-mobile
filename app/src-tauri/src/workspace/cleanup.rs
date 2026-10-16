@@ -5,13 +5,9 @@ use super::{
     store::{Store, WorkspaceFile},
     AccountGuard,
 };
-use crate::commands::{
-    utils::{media_size, resolve_peer},
-    TelegramState,
-};
-use grammers_client::{media::Media, message::Message, Client};
+use crate::commands::{utils::resolve_peer, TelegramState};
+use grammers_client::{message::Message, Client};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
@@ -36,30 +32,6 @@ pub struct ScheduleResult {
     pub key: String,
     pub scheduled: bool,
     pub error: Option<String>,
-}
-
-fn fingerprint(message: &Message) -> Result<String, String> {
-    let media = message.media().ok_or("FILE_NOT_FOUND")?;
-    let identity = match &media {
-        Media::Document(document) => format!("document:{}", document.id()),
-        Media::Photo(photo) => format!("photo:{}", photo.id()),
-        _ => return Err("UNSUPPORTED_FILE".into()),
-    };
-    Ok(format!(
-        "{:x}",
-        Sha256::digest(
-            format!(
-                "{identity}:{}:{}:{}",
-                media_size(&media),
-                message
-                    .edit_date()
-                    .map(|date| date.as_second())
-                    .unwrap_or(0),
-                message.text()
-            )
-            .as_bytes()
-        )
-    ))
 }
 
 async fn message(
@@ -183,7 +155,7 @@ pub async fn cmd_cleanup_schedule(
             let file = stored_file(&account, &key)?;
             let (_, _, remote) = message(&app, &account, &file).await?;
             let remote = remote.ok_or("FILE_NOT_FOUND")?;
-            let fingerprint = fingerprint(&remote)?;
+            let fingerprint = crate::sync_engine::message_fingerprint(&remote)?;
             let store = Store::open(&root, account.owner)?;
             account.validate()?;
             schedule(
@@ -226,7 +198,49 @@ pub async fn cmd_cleanup_restore(
 
 /// The delete callback runs only after durable intent has been committed.
 /// An ambiguous RPC error stays `deleting`: claiming restoration at that point
-/// could promise a file which the server has already removed.
+/// could promise a file which the server has already removed. Telegram has no
+/// atomic compare-and-delete, so even the final re-fetch leaves a small
+/// server-side race between verification and deletion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeleteDisposition {
+    Deleted,
+    AlreadyAbsent,
+    Conflict,
+}
+
+/// Revalidate the account and message in the destructive callback itself. A
+/// caller that retries after a flood-wait must invoke this whole callback
+/// again, which performs a fresh read before every delete attempt.
+async fn final_delete<V, F, FFut, D, DFut>(
+    expected_fingerprint: &str,
+    mut validate: V,
+    fetch_fingerprint: F,
+    delete: D,
+) -> Result<DeleteDisposition, String>
+where
+    V: FnMut() -> Result<(), String>,
+    F: FnOnce() -> FFut,
+    FFut: std::future::Future<Output = Result<Option<String>, String>>,
+    D: FnOnce() -> DFut,
+    DFut: std::future::Future<Output = Result<(), String>>,
+{
+    validate()?;
+    let actual = match fetch_fingerprint().await {
+        Ok(Some(actual)) => actual,
+        Ok(None) => return Ok(DeleteDisposition::AlreadyAbsent),
+        Err(error) if error == "FILE_CHANGED" => return Ok(DeleteDisposition::Conflict),
+        Err(error) => return Err(error),
+    };
+    if crate::sync_engine::verify_remote_fingerprint(expected_fingerprint, &actual).is_err() {
+        return Ok(DeleteDisposition::Conflict);
+    }
+    // Check account scope again after the awaited read and immediately before
+    // the irreversible Telegram request.
+    validate()?;
+    delete().await?;
+    Ok(DeleteDisposition::Deleted)
+}
+
 async fn process_one<F, Fut>(
     root: &std::path::Path,
     owner: i64,
@@ -238,14 +252,16 @@ async fn process_one<F, Fut>(
 ) -> Result<Removal, String>
 where
     F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<(), String>>,
+    Fut: std::future::Future<Output = Result<DeleteDisposition, String>>,
 {
     if !is_due(&removal, now) {
         return Ok(removal);
     }
     validate()?;
     if let Some(fingerprint) = remote {
-        if fingerprint != removal.fingerprint {
+        if crate::sync_engine::verify_remote_fingerprint(&removal.fingerprint, &fingerprint)
+            .is_err()
+        {
             removal.status = "failed".into();
             removal.error = Some("FILE_CHANGED".into());
             Store::open(root, owner)?.put_record("removal", &removal.key, &removal)?;
@@ -255,10 +271,19 @@ where
         removal.error = None;
         Store::open(root, owner)?.put_record("removal", &removal.key, &removal)?;
         validate()?;
-        if delete().await.is_err() {
-            removal.error = Some("NETWORK_UNAVAILABLE".into());
-            Store::open(root, owner)?.put_record("removal", &removal.key, &removal)?;
-            return Ok(removal);
+        match delete().await {
+            Ok(DeleteDisposition::Deleted | DeleteDisposition::AlreadyAbsent) => {}
+            Ok(DeleteDisposition::Conflict) => {
+                removal.status = "failed".into();
+                removal.error = Some("FILE_CHANGED".into());
+                Store::open(root, owner)?.put_record("removal", &removal.key, &removal)?;
+                return Ok(removal);
+            }
+            Err(_) => {
+                removal.error = Some("NETWORK_UNAVAILABLE".into());
+                Store::open(root, owner)?.put_record("removal", &removal.key, &removal)?;
+                return Ok(removal);
+            }
         }
     }
     removal.status = "deleted".into();
@@ -295,8 +320,14 @@ pub async fn cmd_cleanup_process(
             Err(error) if error == "NETWORK_UNAVAILABLE" => continue,
             Err(error) => return Err(error),
         };
-        let fingerprint = remote.as_ref().map(fingerprint).transpose()?;
+        let fingerprint = remote
+            .as_ref()
+            .map(crate::sync_engine::message_fingerprint)
+            .transpose()?;
         let id = i32::try_from(removal.file.file.id).map_err(|_| "INVALID_FILE")?;
+        let expected_fingerprint = removal.fingerprint.clone();
+        let final_account = account.clone();
+        let final_client = client.clone();
         process_one(
             &root,
             account.owner,
@@ -304,12 +335,42 @@ pub async fn cmd_cleanup_process(
             chrono::Utc::now().timestamp_millis(),
             fingerprint,
             || account.validate(),
-            || async {
-                client
-                    .delete_messages(peer, &[id])
+            || {
+                let expected_fingerprint = expected_fingerprint.clone();
+                let account = final_account.clone();
+                let client = final_client.clone();
+                async move {
+                    let fetch_client = client.clone();
+                    let delete_client = client.clone();
+                    // Verify the connected Telegram identity on each callback
+                    // attempt. The synchronous guard below is then the last
+                    // check after refetch and before the destructive RPC.
+                    account.validate_client(&client).await?;
+                    final_delete(
+                        &expected_fingerprint,
+                        || account.validate(),
+                        || async move {
+                            let messages = fetch_client
+                                .get_messages_by_id(peer, &[id])
+                                .await
+                                .map_err(|_| "NETWORK_UNAVAILABLE".to_string())?;
+                            let Some(message) = messages.into_iter().flatten().next() else {
+                                return Ok(None);
+                            };
+                            let fingerprint = crate::sync_engine::message_fingerprint(&message)
+                                .map_err(|_| "FILE_CHANGED".to_string())?;
+                            Ok(Some(fingerprint))
+                        },
+                        || async move {
+                            delete_client
+                                .delete_messages(peer, &[id])
+                                .await
+                                .map(|_| ())
+                                .map_err(|error| error.to_string())
+                        },
+                    )
                     .await
-                    .map(|_| ())
-                    .map_err(|_| "NETWORK_UNAVAILABLE".into())
+                }
             },
         )
         .await?;
@@ -424,6 +485,56 @@ mod tests {
         drop(store);
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[tokio::test]
+    async fn replacement_at_final_callback_boundary_is_persisted_as_conflict_without_delete() {
+        let root = std::env::temp_dir().join(format!("cleanup-test-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&root, 1).unwrap();
+        let value = schedule(&store, file(), "original".into(), 1, 0).unwrap();
+        let delete_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let conflicted = process_one(
+            &root,
+            1,
+            value,
+            i64::MAX,
+            Some("original".into()),
+            || Ok(()),
+            || async {
+                final_delete(
+                    "original",
+                    || Ok(()),
+                    // This fresh read at the destructive boundary sees a
+                    // replacement occupying the same Telegram message ID.
+                    || async { Ok(Some("replacement-message-fingerprint".into())) },
+                    || {
+                        let delete_called = std::sync::Arc::clone(&delete_called);
+                        async move {
+                            delete_called.store(true, std::sync::atomic::Ordering::SeqCst);
+                            Ok(())
+                        }
+                    },
+                )
+                .await
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(conflicted.status, "failed");
+        assert_eq!(conflicted.error.as_deref(), Some("FILE_CHANGED"));
+        assert!(
+            !delete_called.load(std::sync::atomic::Ordering::SeqCst),
+            "Telegram delete must not be invoked on mismatch"
+        );
+        let persisted = store
+            .record::<Removal>("removal", "saved:1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.status, "failed");
+        assert_eq!(persisted.error.as_deref(), Some("FILE_CHANGED"));
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn grace_period_is_durable_and_restore_prevents_deletion_after_deadline() {
         let root = std::env::temp_dir().join(format!("cleanup-test-{}", uuid::Uuid::new_v4()));

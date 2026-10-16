@@ -1,8 +1,9 @@
 use crate::commands::utils::resolve_peer;
 use crate::mp4_utils;
+use crate::workspace::AccountGuard;
 use crate::TelegramState;
 use grammers_client::media::Media;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(serde::Serialize)]
 pub struct VideoMetadata {
@@ -33,14 +34,22 @@ pub async fn cmd_get_video_metadata(
     message_id: i32,
     folder_id: Option<i64>,
     state: State<'_, TelegramState>,
+    app: tauri::AppHandle,
 ) -> Result<VideoMetadata, String> {
+    let account = active_account(&app)?;
     let client = { state.client.lock().await.clone() };
+    account.validate()?;
     let client = client.ok_or_else(|| "Not connected to Telegram".to_string())?;
+    let client_validation = account.validate_client(&client).await;
+    account.validate()?;
+    client_validation?;
 
-    let buffer = download_moov_chunk(&client, message_id, folder_id, &state).await?;
+    let buffer = download_moov_chunk(&client, message_id, folder_id, &state, &account).await?;
+    account.validate()?;
     let meta = parse_mp4_metadata(&buffer)?;
     let (width, height) = mp4_utils::scan_video_tkhd_dimensions(&buffer);
 
+    account.validate()?;
     Ok(VideoMetadata {
         duration_secs: meta.duration_secs,
         video_codec: meta.video_codec,
@@ -56,10 +65,17 @@ pub async fn cmd_get_video_metadata_batch(
     requests: Vec<BatchMetadataRequest>,
     folder_id: Option<i64>,
     state: State<'_, TelegramState>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<BatchMetadataEntry>, String> {
+    let account = active_account(&app)?;
     let client = { state.client.lock().await.clone() };
+    account.validate()?;
     let client = client.ok_or_else(|| "Not connected to Telegram".to_string())?;
+    let client_validation = account.validate_client(&client).await;
+    account.validate()?;
+    client_validation?;
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
+    account.validate()?;
 
     let mut results: Vec<BatchMetadataEntry> = Vec::with_capacity(requests.len());
 
@@ -67,7 +83,9 @@ pub async fn cmd_get_video_metadata_batch(
         if !req.file_name.to_lowercase().ends_with(".mp4") {
             continue;
         }
-        match download_and_process(&client, &peer, req).await {
+        let download_result = download_and_process(&client, &peer, req, &account).await;
+        account.validate()?;
+        match download_result {
             Ok(e) => results.push(e),
             Err(_) => results.push(BatchMetadataEntry {
                 message_id: req.message_id,
@@ -78,6 +96,7 @@ pub async fn cmd_get_video_metadata_batch(
         }
     }
 
+    account.validate()?;
     Ok(results)
 }
 
@@ -95,12 +114,14 @@ async fn download_and_process(
     client: &grammers_client::Client,
     peer: &grammers_client::peer::Peer,
     req: &BatchMetadataRequest,
+    account: &AccountGuard,
 ) -> Result<BatchMetadataEntry, String> {
-    let peer_ref = crate::commands::utils::peer_to_ref(peer).await?;
-    let messages = client
-        .get_messages_by_id(peer_ref, &[req.message_id])
-        .await
-        .map_err(|e| e.to_string())?;
+    let peer_ref_result = crate::commands::utils::peer_to_ref(peer).await;
+    account.validate()?;
+    let peer_ref = peer_ref_result?;
+    let messages_result = client.get_messages_by_id(peer_ref, &[req.message_id]).await;
+    account.validate()?;
+    let messages = messages_result.map_err(|e| e.to_string())?;
     let msg = messages
         .into_iter()
         .flatten()
@@ -113,7 +134,8 @@ async fn download_and_process(
         _ => return Err("Not a document".to_string()),
     };
 
-    let buffer = download_bytes(client, &media, size).await?;
+    let buffer = download_bytes(client, &media, size, account).await?;
+    account.validate()?;
     let meta = parse_mp4_metadata(&buffer)?;
     let (width, height) = mp4_utils::scan_video_tkhd_dimensions(&buffer);
 
@@ -130,15 +152,17 @@ async fn download_moov_chunk(
     message_id: i32,
     folder_id: Option<i64>,
     state: &TelegramState,
+    account: &AccountGuard,
 ) -> Result<Vec<u8>, String> {
-    let peer = resolve_peer(client, folder_id, &state.peer_cache).await?;
-    let messages = client
-        .get_messages_by_id(
-            crate::commands::utils::peer_to_ref(&peer).await?,
-            &[message_id],
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    let peer_result = resolve_peer(client, folder_id, &state.peer_cache).await;
+    account.validate()?;
+    let peer = peer_result?;
+    let peer_ref_result = crate::commands::utils::peer_to_ref(&peer).await;
+    account.validate()?;
+    let peer_ref = peer_ref_result?;
+    let messages_result = client.get_messages_by_id(peer_ref, &[message_id]).await;
+    account.validate()?;
+    let messages = messages_result.map_err(|e| e.to_string())?;
     let msg = messages
         .into_iter()
         .flatten()
@@ -149,7 +173,7 @@ async fn download_moov_chunk(
         Media::Document(d) => d.size().map_or(0, |s| s as u64),
         _ => return Err("Not a document".to_string()),
     };
-    download_bytes(client, &media, size).await
+    download_bytes(client, &media, size, account).await
 }
 
 /// Download at most the first 2 MB from a Telegram document.
@@ -157,6 +181,7 @@ async fn download_bytes(
     client: &grammers_client::Client,
     media: &Media,
     file_size: u64,
+    account: &AccountGuard,
 ) -> Result<Vec<u8>, String> {
     let max_bytes = std::cmp::min(2 * 1024 * 1024, file_size) as usize;
     let mut buffer: Vec<u8> = Vec::with_capacity(max_bytes);
@@ -164,20 +189,36 @@ async fn download_bytes(
     download_iter = download_iter.chunk_size(65536);
 
     while buffer.len() < max_bytes {
-        match download_iter.next().await {
-            Ok(Some(chunk)) => {
+        let next = download_iter.next().await;
+        account.validate()?;
+        match map_download_chunk(next)? {
+            Some(chunk) => {
                 let remaining = max_bytes.saturating_sub(buffer.len());
                 let take = std::cmp::min(chunk.len(), remaining);
                 buffer.extend_from_slice(&chunk[..take]);
             }
-            Ok(None) => break,
-            Err(e) => return Err(format!("Download error: {e}")),
+            None => break,
         }
     }
     if buffer.is_empty() {
         return Err("Downloaded zero bytes".to_string());
     }
+    account.validate()?;
     Ok(buffer)
+}
+
+fn map_download_chunk<E: std::fmt::Display>(
+    result: Result<Option<Vec<u8>>, E>,
+) -> Result<Option<Vec<u8>>, String> {
+    result.map_err(|error| format!("Download error: {error}"))
+}
+
+fn active_account(app: &tauri::AppHandle) -> Result<AccountGuard, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    AccountGuard::open(&root, None)
 }
 
 fn parse_mp4_metadata(buffer: &[u8]) -> Result<ParsedMetadata, String> {
@@ -206,4 +247,54 @@ fn parse_mp4_metadata(buffer: &[u8]) -> Result<ParsedMetadata, String> {
         has_audio,
         track_count: context.tracks.len(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grammers_session::{storages::SqliteSession, types::PeerInfo, Session};
+
+    #[test]
+    fn iterator_errors_are_not_treated_as_eof_after_a_chunk() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(
+            &map_download_chunk::<&str>(Ok(Some(vec![1, 2, 3])))
+                .unwrap()
+                .unwrap(),
+        );
+        let error = map_download_chunk::<&str>(Err("injected Telegram failure")).unwrap_err();
+        assert!(error.contains("injected Telegram failure"));
+        assert_eq!(bytes, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn captured_account_guard_rejects_a_replacement_account() {
+        let root =
+            std::env::temp_dir().join(format!("video-metadata-owner-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        sign_in(&root, 101);
+        let account = AccountGuard::open(&root, Some("101")).unwrap();
+        sign_in(&root, 202);
+        assert!(account.validate().unwrap_err().contains("ACCOUNT_CHANGED"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn sign_in(root: &std::path::Path, owner: i64) {
+        for name in [
+            "telegram.session",
+            "telegram.session-wal",
+            "telegram.session-shm",
+        ] {
+            let _ = std::fs::remove_file(root.join(name));
+        }
+        let session =
+            crate::test_block_on(SqliteSession::open(root.join("telegram.session"))).unwrap();
+        crate::test_block_on(session.cache_peer(PeerInfo::User {
+            id: owner,
+            auth: None,
+            bot: Some(false),
+            is_self: Some(true),
+        }))
+        .unwrap();
+    }
 }

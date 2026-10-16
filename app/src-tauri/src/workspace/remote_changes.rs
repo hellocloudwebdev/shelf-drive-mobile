@@ -5,6 +5,54 @@ use super::{
     AccountGuard,
 };
 
+fn migrate_opened(
+    store: &Store,
+    old_key: &str,
+    new_key: &str,
+    target: Option<i64>,
+    new_message: i32,
+) -> Result<(), String> {
+    if old_key == new_key {
+        return Ok(());
+    }
+    if let Some(mut opened) = store.record::<serde_json::Value>("opened", old_key)? {
+        if let Some(destination) = store.record::<serde_json::Value>("opened", new_key)? {
+            let old_time = opened
+                .get("last_opened_at")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or_default();
+            let destination_time = destination
+                .get("last_opened_at")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or_default();
+            let old_count = opened
+                .get("open_count")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default();
+            let destination_count = destination
+                .get("open_count")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default();
+            if let Some(fields) = opened.as_object_mut() {
+                fields.insert(
+                    "last_opened_at".into(),
+                    old_time.max(destination_time).into(),
+                );
+                fields.insert(
+                    "open_count".into(),
+                    old_count.saturating_add(destination_count).into(),
+                );
+            }
+        }
+        if let Some(fields) = opened.as_object_mut() {
+            fields.insert("folder_id".into(), serde_json::to_value(target).unwrap());
+            fields.insert("message_id".into(), i64::from(new_message).into());
+        }
+        store.put_record("opened", new_key, &opened)?;
+    }
+    store.remove_record("opened", old_key)
+}
+
 pub enum Change {
     Rename {
         folder: Option<i64>,
@@ -74,6 +122,8 @@ fn apply(account: &AccountGuard, changes: Vec<Change>) -> Result<(), String> {
                             }
                         }
                     }
+                    migrate_opened(&store, &old_key, &new_key, target, new_message)?;
+                    super::playback::reconcile_move(&store, source, message, target, new_message)?;
                     store.execute("DELETE FROM workspace_files WHERE key=?", &[old_key.into()])?;
                     store.remove_record("envelope-v1", &file_key(source, i64::from(message)))?;
                 }
@@ -212,6 +262,123 @@ mod tests {
             b.file("saved:42").unwrap().unwrap().file.name,
             "private-202.txt"
         );
+    }
+
+    #[test]
+    fn remote_move_rekeys_recents_playback_bookmarks_and_queue() {
+        let fixture = Fixture::new();
+        let account = fixture.account();
+        let store = Store::open(&fixture.root, 101).unwrap();
+        store
+            .put_record(
+                "opened",
+                "saved:42",
+                &serde_json::json!({
+                    "folder_id": null,
+                    "message_id": 42,
+                    "last_opened_at": 123,
+                    "open_count": 3
+                }),
+            )
+            .unwrap();
+        store
+            .put_record(
+                "opened",
+                "9:84",
+                &serde_json::json!({
+                    "folder_id": 9,
+                    "message_id": 84,
+                    "last_opened_at": 150,
+                    "open_count": 2
+                }),
+            )
+            .unwrap();
+        let playback_file = crate::workspace::playback::PlaybackFile {
+            folder_id: None,
+            message_id: 42,
+            name: "private-101.txt".into(),
+            size: 10,
+            mime_type: Some("video/mp4".into()),
+            encryption_state: "plain".into(),
+        };
+        crate::workspace::playback::mutate(
+            &store,
+            crate::workspace::playback::PlaybackMutation::Progress {
+                file: playback_file.clone(),
+                position_ms: 4_200,
+                duration_ms: 10_000,
+                volume: 0.8,
+                speed: 1.25,
+            },
+        )
+        .unwrap();
+        crate::workspace::playback::mutate(
+            &store,
+            crate::workspace::playback::PlaybackMutation::Bookmark {
+                file: playback_file.clone(),
+                position_ms: 2_000,
+                label: "Chapter two".into(),
+            },
+        )
+        .unwrap();
+        let destination = crate::workspace::playback::PlaybackFile {
+            folder_id: Some(9),
+            message_id: 84,
+            ..playback_file.clone()
+        };
+        let neighbor = crate::workspace::playback::PlaybackFile {
+            folder_id: Some(9),
+            message_id: 85,
+            ..playback_file.clone()
+        };
+        crate::workspace::playback::mutate(
+            &store,
+            crate::workspace::playback::PlaybackMutation::Enqueue {
+                files: vec![playback_file, destination.clone(), neighbor.clone()],
+            },
+        )
+        .unwrap();
+
+        apply(
+            &account,
+            vec![Change::Move {
+                source: None,
+                message: 42,
+                target: Some(9),
+                new_message: 84,
+            }],
+        )
+        .unwrap();
+
+        let recents =
+            crate::commands::file_activity::read_activity(&store, "recents", None).unwrap();
+        assert_eq!(recents.len(), 1);
+        assert_eq!(
+            (recents[0].file.folder_id, recents[0].file.id),
+            (Some(9), 84)
+        );
+        assert_eq!(recents[0].last_opened_at, 150);
+        let opened: serde_json::Value = store.record("opened", "9:84").unwrap().unwrap();
+        assert_eq!(opened["open_count"], 5);
+        assert!(store
+            .record::<serde_json::Value>("opened", "saved:42")
+            .unwrap()
+            .is_none());
+
+        let snapshot = crate::workspace::playback::snapshot(&store).unwrap();
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].media_id, "101:9:84");
+        assert_eq!(snapshot.items[0].position_ms, 4_200);
+        assert_eq!(snapshot.items[0].bookmarks[0].position_ms, 2_000);
+        assert_eq!(snapshot.items[0].bookmarks[0].label, "Chapter two");
+        assert_eq!(snapshot.items[0].file.folder_id, Some(9));
+        assert_eq!(snapshot.items[0].file.message_id, 84);
+        assert!(snapshot
+            .queue
+            .iter()
+            .any(|file| file.folder_id == Some(9) && file.message_id == 84));
+        assert!(snapshot.queue.iter().any(|file| file.message_id == 85));
+        assert_eq!(snapshot.queue.len(), 2);
     }
     #[test]
     fn file_cache_update_after_account_switch_preserves_both_owners() {

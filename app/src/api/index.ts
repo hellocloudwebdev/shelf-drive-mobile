@@ -222,8 +222,13 @@ export const files = {
   createFolder(name: string) {
     return tauriInvoke<TelegramFolder>("cmd_create_folder", { name });
   },
-  deleteFile(messageId: number, folderId: number | null, ownerId: string) {
-    return tauriInvokeVoid("cmd_delete_file", { messageId, folderId, ownerId });
+  deleteFile(messageId: number, folderId: number | null, ownerId: string, expectedFingerprint?: string) {
+    return tauriInvokeVoid("cmd_delete_file", {
+      messageId,
+      folderId,
+      ownerId,
+      ...(expectedFingerprint === undefined ? {} : { expectedFingerprint }),
+    });
   },
   renameFile(ownerId: string, messageId: number, folderId: number | null, newName: string) {
     return tauriInvokeVoid("cmd_rename_file", { ownerId, messageId, folderId, newName });

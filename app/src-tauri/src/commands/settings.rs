@@ -1,7 +1,9 @@
 //! Tauri commands for applying proxy and VPN optimizer settings.
 //! These are called from the frontend when the user changes network configuration.
 
-use crate::vpn_optimizer::{NetworkConfig, NetworkConfigSnapshot, ProxyConfig, VpnConfig};
+use crate::vpn_optimizer::{
+    apply_candidate_transaction, NetworkConfig, NetworkConfigSnapshot, ProxyConfig, VpnConfig,
+};
 use tauri::State;
 
 #[derive(Debug, serde::Deserialize)]
@@ -22,16 +24,13 @@ pub async fn cmd_apply_proxy_settings(
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
+    let net_config = net_config.inner().clone();
+    let _update_guard = net_config.settings_update_lock.lock().await;
+    let old_snapshot = net_config.snapshot();
     let password = if req.password.is_empty() {
-        net_config
-            .proxy
-            .read()
-            .map_err(|error| error.to_string())?
-            .password
-            .clone()
+        old_snapshot.proxy.password.clone()
     } else {
-        crate::proxy_secret::store_password(&req.password)?;
-        req.password
+        req.password.clone()
     };
     let config = ProxyConfig {
         enabled: req.enabled,
@@ -50,22 +49,66 @@ pub async fn cmd_apply_proxy_settings(
         config.port
     );
 
-    *net_config.proxy.write().map_err(|e| e.to_string())? = config.clone();
+    let candidate = NetworkConfigSnapshot {
+        proxy: config.clone(),
+        vpn: old_snapshot.vpn.clone(),
+    };
+    let proxy_for_bridge = config;
+    let secret_to_store = (!req.password.is_empty()).then_some(req.password);
+    let net_config_for_publish = net_config.clone();
+    let app_for_publish = app.clone();
+    let rollback_snapshot = old_snapshot.clone();
 
-    // Start or stop local SOCKS5 bridge as needed
-    if config.enabled && (config.proxy_type == "http" || config.proxy_type == "https") {
-        if let Err(e) = net_config.start_http_bridge().await {
-            log::error!("Failed to start SOCKS5 bridge for HTTP/HTTPS proxy: {}", e);
-            return Err(format!("Failed to start SOCKS5 bridge: {}", e));
-        }
-    } else {
-        net_config.stop_http_bridge();
-    }
+    apply_candidate_transaction(
+        candidate,
+        || async move { NetworkConfig::prepare_proxy_bridge(&proxy_for_bridge).await },
+        move |candidate, prepared_bridge| {
+            // Hold both guards while persisting and swapping, so readers can
+            // see either the old proxy/bridge pair or the fully committed pair.
+            let mut proxy = net_config_for_publish
+                .proxy
+                .write()
+                .map_err(|error| error.to_string())?;
+            let mut bridge = net_config_for_publish
+                .bridge_handle
+                .lock()
+                .map_err(|error| error.to_string())?;
 
-    let snapshot = net_config.snapshot();
-    if let Err(e) = crate::vpn_optimizer::save_network_config(&app, &snapshot) {
-        log::error!("Failed to save proxy settings to disk: {}", e);
-    }
+            crate::vpn_optimizer::save_network_config(&app_for_publish, candidate)
+                .map_err(|error| format!("Failed to save proxy settings: {error}"))?;
+
+            if let Some(password) = secret_to_store.as_deref() {
+                if let Err(error) = crate::proxy_secret::store_password(password) {
+                    let rollback = crate::vpn_optimizer::save_network_config(
+                        &app_for_publish,
+                        &rollback_snapshot,
+                    );
+                    return Err(match rollback {
+                        Ok(()) => format!("Failed to save proxy credentials: {error}"),
+                        Err(rollback_error) => format!(
+                            "Failed to save proxy credentials: {error}; also failed to restore prior settings: {rollback_error}"
+                        ),
+                    });
+                }
+            }
+
+            *proxy = candidate.proxy.clone();
+            let replaced = std::mem::replace(&mut *bridge, prepared_bridge.take());
+            drop(bridge);
+            drop(proxy);
+            if let Some(previous) = replaced {
+                previous.handle.abort();
+                log::info!("Previous SOCKS5 bridge stopped after proxy settings commit.");
+            }
+            Ok(())
+        },
+        |prepared_bridge| {
+            if let Some(bridge) = prepared_bridge {
+                bridge.handle.abort();
+            }
+        },
+    )
+    .await?;
 
     Ok("Proxy settings applied".into())
 }
@@ -135,6 +178,9 @@ pub async fn cmd_apply_vpn_settings(
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
+    let net_config = net_config.inner().clone();
+    let _update_guard = net_config.settings_update_lock.lock().await;
+    let old_snapshot = net_config.snapshot();
     let config = VpnConfig {
         enabled: req.enabled,
         timeout_multiplier: req.timeout_multiplier.clamp(1, 5),
@@ -168,12 +214,29 @@ pub async fn cmd_apply_vpn_settings(
         config.flood_wait_respect
     );
 
-    *net_config.vpn.write().map_err(|e| e.to_string())? = config;
+    let candidate = NetworkConfigSnapshot {
+        proxy: old_snapshot.proxy,
+        vpn: config,
+    };
+    let net_config_for_publish = net_config.clone();
+    let app_for_publish = app.clone();
 
-    let snapshot = net_config.snapshot();
-    if let Err(e) = crate::vpn_optimizer::save_network_config(&app, &snapshot) {
-        log::error!("Failed to save VPN settings to disk: {}", e);
-    }
+    apply_candidate_transaction(
+        candidate,
+        || async { Ok::<(), String>(()) },
+        move |candidate, _| {
+            let mut vpn = net_config_for_publish
+                .vpn
+                .write()
+                .map_err(|error| error.to_string())?;
+            crate::vpn_optimizer::save_network_config(&app_for_publish, candidate)
+                .map_err(|error| format!("Failed to save VPN settings: {error}"))?;
+            *vpn = candidate.vpn.clone();
+            Ok(())
+        },
+        |_| {},
+    )
+    .await?;
 
     Ok("VPN settings applied".into())
 }

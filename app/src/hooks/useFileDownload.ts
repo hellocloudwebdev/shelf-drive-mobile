@@ -651,27 +651,26 @@ export function useFileDownload(
             pausedRef.current.delete(item.id);
             networkPausedRef.current.delete(item.id);
             clearItemRetryBookkeeping(item.id);
-            if (cancelledRef.current.has(item.id)) {
-                cancelledRef.current.delete(item.id);
-            } else {
-                setDownloadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'success', progress: 100 } : i));
-                triggerHaptic('success');
-                toast.success(`Downloaded: ${item.filename}`, !isAndroidPlatform && savePath ? {
+            // A resolved backend invocation means the destination is complete,
+            // even if cancellation raced with the backend's final bytes.
+            cancelledRef.current.delete(item.id);
+            setDownloadQueue(q => q.map(i => i.id === item.id ? { ...i, status: 'success', progress: 100 } : i));
+            triggerHaptic('success');
+            toast.success(`Downloaded: ${item.filename}`, !isAndroidPlatform && savePath ? {
+                action: {
+                    label: 'Show in folder',
+                    onClick: () => { void revealItemInDir(savePath as string); },
+                },
+            } : undefined);
+            if (!isAndroidPlatform && !webDavTipShownRef.current) {
+                webDavTipShownRef.current = true;
+                updateSetting('downloadWebdavTipSeen', true);
+                window.setTimeout(() => toast.info('Tip: browse the same files directly in Finder or File Explorer with WebDAV.', {
                     action: {
-                        label: 'Show in folder',
-                        onClick: () => { void revealItemInDir(savePath as string); },
+                        label: 'WebDAV settings',
+                        onClick: () => window.dispatchEvent(new CustomEvent('shelf-drive-open-settings', { detail: { tab: 'webdav' } })),
                     },
-                } : undefined);
-                if (!isAndroidPlatform && !webDavTipShownRef.current) {
-                    webDavTipShownRef.current = true;
-                    updateSetting('downloadWebdavTipSeen', true);
-                    window.setTimeout(() => toast.info('Tip: browse the same files directly in Finder or File Explorer with WebDAV.', {
-                        action: {
-                            label: 'WebDAV settings',
-                            onClick: () => window.dispatchEvent(new CustomEvent('shelf-drive-open-settings', { detail: { tab: 'webdav' } })),
-                        },
-                    }), 900);
-                }
+                }), 900);
             }
         } catch (e) {
             if (!isCurrent()) return;

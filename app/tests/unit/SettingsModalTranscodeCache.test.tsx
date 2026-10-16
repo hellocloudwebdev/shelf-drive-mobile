@@ -68,6 +68,7 @@ describe('SettingsModal transcode cache state', () => {
   it('shows a recoverable error instead of an infinite loading state', async () => {
     render(<SettingsModal ownerId={null} isOpen onClose={vi.fn()} />);
 
+    expect(screen.getByLabelText('Search settings categories').getAttribute('placeholder')).toBe('Search categories');
     expect((await screen.findByRole('alert')).textContent).toContain('Windows cache access denied');
     await waitFor(() => {
       expect(screen.queryByLabelText('Loading...')).toBeNull();

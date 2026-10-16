@@ -30,7 +30,9 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 function getSystemTheme(): Theme {
-    return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: light)').matches
+    return typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-color-scheme: light)').matches
         ? 'light'
         : 'dark';
 }
@@ -73,6 +75,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const allThemes = [...BUILTIN_THEMES, ...userThemes];
 
     useLayoutEffect(() => {
+        if (typeof window.matchMedia !== 'function') return;
         const query = window.matchMedia('(prefers-color-scheme: light)');
         const handleChange = (event: MediaQueryListEvent) => setSystemTheme(event.matches ? 'light' : 'dark');
         query.addEventListener('change', handleChange);

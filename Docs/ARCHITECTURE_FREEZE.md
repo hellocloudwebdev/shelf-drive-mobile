@@ -117,12 +117,13 @@ Dependency-policy baselines (`dependency-policy/`, `deny.toml`) expire 2026-12-2
 
 ## Deferred (known, tracked — do not invent new blockers)
 
+Android support is implemented in `app/android-overrides/` and its generated project is built by the reusable `.github/workflows/android.yml` workflow, which is called for tagged releases and also supports manual dispatch. `gen/android` is generated build output, not a prerequisite checked into a clean checkout; production signing remains gated by protected secrets.
+
 1. Updater endpoint points at the private `hellocloudwebdev/shelf-drive` repo (anonymous fetch fails) — `tauri.conf.json:9`.
 2. Updater minisign pubkey is still upstream's (`507B700E3497963C`) — rotate to a Shelf Drive keypair.
 3. Arch CI fixture still pins the upstream `caamer20/Telegram-Drive` v3.7.0 deb — regenerate a Shelf Drive fixture (`arch-package.yml`, inline remediation note).
 4. Upstream license never obtained; no LICENSE file — `packaging/arch/UPSTREAM-LICENSE-NOTICE` defers AUR publication.
-5. Android implementation deferred (no `gen/android`; overrides + fail-closed signing gate present; workflow is dispatch-only).
-6. README/PRIVACY/Docs still describe the removed supporter/licensing system (broken links) — docs-phase cleanup.
+5. README/PRIVACY/Docs still describe the removed supporter/licensing system (broken links) — docs-phase cleanup.
 
 ## Verification invariants
 

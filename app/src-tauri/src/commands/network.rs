@@ -1,7 +1,45 @@
 use crate::vpn_optimizer::NetworkConfig;
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 use tauri::State;
+
+/// Resolve a proxy hostname and try each address within one overall timeout.
+/// DNS lookup is also covered by that deadline, unlike synchronous
+/// `ToSocketAddrs`, which can block indefinitely on resolver problems.
+async fn proxy_connection_latency(host: &str, port: u16, timeout: Duration) -> Option<i64> {
+    let started = std::time::Instant::now();
+    let resolved = tokio::time::timeout(timeout, tokio::net::lookup_host((host, port)))
+        .await
+        .ok()?
+        .ok()?;
+    let addresses: Vec<SocketAddr> = resolved.collect();
+
+    for address in addresses {
+        let remaining = timeout.checked_sub(started.elapsed())?;
+        if remaining.is_zero() {
+            return None;
+        }
+        if tokio::time::timeout(remaining, tokio::net::TcpStream::connect(address))
+            .await
+            .is_ok_and(|result| result.is_ok())
+        {
+            return Some(started.elapsed().as_millis() as i64);
+        }
+    }
+
+    None
+}
+
+/// An unauthenticated `get_me` call normally returns an authorization RPC
+/// error. Any RPC response proves Telegram was reached; transport and local
+/// session failures do not.
+fn proxy_test_response_reachable<T>(result: Result<T, grammers_client::InvocationError>) -> bool {
+    match result {
+        Ok(_) => true,
+        Err(grammers_client::InvocationError::Rpc(_)) => true,
+        Err(_) => false,
+    }
+}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,10 +169,7 @@ pub fn cmd_get_android_network_status() -> Result<bool, String> {
     }
 }
 
-/// Test whether Telegram MTProto traffic can pass through the configured proxy.
-/// Unlike cmd_is_network_available (which only TCP-pings the proxy host:port),
-/// this creates a temporary grammers session and attempts a real API call.
-/// Returns true only if the Telegram API responds successfully through the proxy.
+/// Result of a bounded TCP reachability check to the configured proxy.
 #[derive(Debug, serde::Serialize)]
 pub struct ProxyStatus {
     pub reachable: bool,
@@ -145,52 +180,33 @@ pub struct ProxyStatus {
 pub async fn cmd_get_proxy_status(
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
 ) -> Result<ProxyStatus, String> {
-    let proxy = net_config.proxy.read().map_err(|e| e.to_string())?.clone();
-    if !proxy.enabled || proxy.host.is_empty() {
+    let (enabled, host, port) = {
+        let proxy = net_config.proxy.read().map_err(|e| e.to_string())?;
+        (proxy.enabled, proxy.host.clone(), proxy.port)
+    };
+    if !enabled || host.is_empty() {
         return Ok(ProxyStatus {
             reachable: false,
             latency_ms: -1,
         });
     }
 
-    let addr_str = format!("{}:{}", proxy.host, proxy.port);
-    tokio::task::spawn_blocking(move || {
-        let timeout = Duration::from_secs(3);
-        let start = std::time::Instant::now();
-
-        let addrs = match std::net::ToSocketAddrs::to_socket_addrs(&addr_str) {
-            Ok(iter) => iter.collect::<Vec<_>>(),
-            Err(_) => {
-                return Ok(ProxyStatus {
-                    reachable: false,
-                    latency_ms: -1,
-                })
-            }
-        };
-
-        for addr in addrs {
-            if TcpStream::connect_timeout(&addr, timeout).is_ok() {
-                let latency = start.elapsed().as_millis() as i64;
-                return Ok(ProxyStatus {
-                    reachable: true,
-                    latency_ms: latency,
-                });
-            }
-        }
-
-        Ok(ProxyStatus {
+    let latency = proxy_connection_latency(&host, port, Duration::from_secs(3)).await;
+    Ok(match latency {
+        Some(latency_ms) => ProxyStatus {
+            reachable: true,
+            latency_ms,
+        },
+        None => ProxyStatus {
             reachable: false,
             latency_ms: -1,
-        })
+        },
     })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
-/// Test whether Telegram MTProto traffic can pass through the configured proxy.
-/// Unlike cmd_is_network_available (which only TCP-pings the proxy host:port),
-/// this creates a temporary grammers session and attempts a real API call.
-/// Returns true only if the Telegram API responds successfully through the proxy.
+/// Probe Telegram reachability through the configured proxy using an isolated,
+/// unauthenticated session. Any Telegram RPC response (including an
+/// authorization-required response) proves reachability; transport failures do not.
 #[tauri::command]
 pub async fn cmd_test_proxy_traffic(
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
@@ -214,21 +230,18 @@ pub async fn cmd_test_proxy_traffic(
         proxy_port
     );
 
-    // Create a temporary session in a temp directory
-    let temp_dir = std::env::temp_dir().join("shelf_drive_proxy_test");
-    let _ = std::fs::create_dir_all(&temp_dir);
-    let session_path = temp_dir.join("test.session");
+    // Use a unique throwaway session: never open, replace, or delete the user's
+    // saved Telegram session or another probe's files.
+    let session_path = std::env::temp_dir().join(format!(
+        "shelf_drive_proxy_test_{}.session",
+        uuid::Uuid::new_v4()
+    ));
     let session_path_str = session_path.to_string_lossy().to_string();
-
-    // Remove any previous test session
-    let _ = std::fs::remove_file(&session_path);
-    let _ = std::fs::remove_file(format!("{}-wal", session_path_str));
-    let _ = std::fs::remove_file(format!("{}-shm", session_path_str));
 
     let result: Result<bool, String> = tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
         rt.block_on(async {
-            // Open a fresh in-memory-ish SQLite session
+            // Open a fresh SQLite session used only by this probe.
             let session = grammers_session::storages::SqliteSession::open(&session_path_str)
                 .await
                 .map_err(|e| format!("Failed to open test session: {}", e))?;
@@ -242,12 +255,8 @@ pub async fn cmd_test_proxy_traffic(
 
             let pool = grammers_mtsender::SenderPool::with_configuration(
                 session.clone(),
-                // Use a hardcoded test app ID (telegram.org test credentials won't work,
-                // but with a real session the API ID doesn't matter for get_me).
-                // We just need the transport to work. Use API ID 0 as a sentinel —
-                // grammers will still establish the TCP+TLS tunnel.
-                // NOTE: grammers requires a non-zero API ID for connection params.
-                // We use a minimal valid value; the session will still try to connect.
+                // The probe is intentionally unauthenticated; get_me either
+                // succeeds or yields a server authorization error.
                 12345,
                 conn_params,
             );
@@ -278,10 +287,12 @@ pub async fn cmd_test_proxy_traffic(
             let _ = std::fs::remove_file(format!("{}-shm", session_path_str));
 
             match result {
-                Ok(Ok(_me)) => Ok(true),
-                Ok(Err(e)) => {
-                    log::warn!("Proxy traffic test failed (API error): {}", e);
-                    Ok(false)
+                Ok(response) => {
+                    let reachable = proxy_test_response_reachable(response);
+                    if !reachable {
+                        log::warn!("Proxy traffic probe received no successful or authorization-required Telegram response");
+                    }
+                    Ok(reachable)
                 }
                 Err(_timeout) => {
                     log::warn!("Proxy traffic test timed out after 10s");
@@ -315,8 +326,14 @@ pub async fn cmd_is_network_available(
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
 ) -> Result<bool, String> {
     let timeout_secs = net_config.connect_timeout_secs();
-    let is_proxy = net_config.is_proxy_active();
-    let proxy_addr = net_config.proxy_addr();
+    let (proxy_host, proxy_port) = {
+        let proxy = net_config.proxy.read().map_err(|e| e.to_string())?;
+        if proxy.enabled && !proxy.host.is_empty() {
+            (Some(proxy.host.clone()), proxy.port)
+        } else {
+            (None, proxy.port)
+        }
+    };
     let dc_attempts = {
         let vpn = net_config.vpn.read().map_err(|e| e.to_string())?;
         if vpn.enabled {
@@ -326,22 +343,14 @@ pub async fn cmd_is_network_available(
         }
     };
 
+    let timeout = Duration::from_secs(timeout_secs);
+    if let Some(host) = proxy_host {
+        return Ok(proxy_connection_latency(&host, proxy_port, timeout)
+            .await
+            .is_some());
+    }
+
     tokio::task::spawn_blocking(move || {
-        let timeout = Duration::from_secs(timeout_secs);
-
-        // If proxy is active, check proxy reachability
-        if is_proxy {
-            if let Some(addr) = &proxy_addr {
-                if let Ok(sock_addr) = addr.parse() {
-                    return match TcpStream::connect_timeout(&sock_addr, timeout) {
-                        Ok(_) => Ok(true),
-                        Err(_) => Ok(false),
-                    };
-                }
-            }
-            return Ok(false);
-        }
-
         // Try DCs (up to dc_attempts when VPN mode is on)
         let attempts = dc_attempts.min(DC_ADDRESSES.len());
         for dc in &DC_ADDRESSES[..attempts] {
@@ -364,20 +373,19 @@ pub async fn cmd_check_latency(
     net_config: State<'_, std::sync::Arc<NetworkConfig>>,
 ) -> Result<i64, String> {
     let timeout_secs = net_config.connect_timeout_secs();
-    let is_proxy = net_config.is_proxy_active();
-    let proxy_addr = net_config.proxy_addr();
+    let proxy_endpoint = {
+        let proxy = net_config.proxy.read().map_err(|e| e.to_string())?;
+        (proxy.enabled && !proxy.host.is_empty()).then(|| (proxy.host.clone(), proxy.port))
+    };
+    let timeout = Duration::from_secs(timeout_secs);
+    if let Some((host, port)) = proxy_endpoint {
+        return Ok(proxy_connection_latency(&host, port, timeout)
+            .await
+            .unwrap_or(-1));
+    }
 
     tokio::task::spawn_blocking(move || {
-        let timeout = Duration::from_secs(timeout_secs);
-
-        // Target: proxy if active, else DC2
-        let target: String = if is_proxy {
-            proxy_addr.unwrap_or_else(|| DC_ADDRESSES[0].to_string())
-        } else {
-            DC_ADDRESSES[0].to_string()
-        };
-
-        let addr = match target.parse() {
+        let addr = match DC_ADDRESSES[0].parse() {
             Ok(a) => a,
             Err(_) => return Ok(-1i64),
         };
@@ -468,4 +476,46 @@ pub async fn cmd_detect_vpn() -> Result<bool, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grammers_client::InvocationError;
+    use grammers_mtsender::RpcError;
+
+    #[test]
+    fn authorization_required_response_proves_telegram_was_reached() {
+        let response: Result<(), InvocationError> = Err(InvocationError::Rpc(RpcError {
+            code: 401,
+            name: "AUTH_KEY_UNREGISTERED".to_string(),
+            value: None,
+            caused_by: None,
+        }));
+
+        assert!(proxy_test_response_reachable(response));
+    }
+
+    #[test]
+    fn transport_failure_is_not_reported_as_reachable() {
+        let response: Result<(), InvocationError> = Err(InvocationError::Io(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        )));
+
+        assert!(!proxy_test_response_reachable(response));
+    }
+
+    #[tokio::test]
+    async fn proxy_connection_resolves_and_tries_hostname_addresses() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind test listener");
+        let port = listener.local_addr().expect("listener address").port();
+
+        let latency = proxy_connection_latency("localhost", port, Duration::from_secs(2)).await;
+
+        assert!(latency.is_some(), "localhost should resolve and connect");
+        listener.accept().await.expect("accept resolved connection");
+    }
 }

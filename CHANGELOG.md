@@ -1,3 +1,16 @@
+## [4.4.4] - 2026-10-16
+
+### Security and reliability
+
+- Hardened authentication and Android platform behavior, with regression coverage for secure sign-in and two-factor flows.
+- Fixed audit-identified edge cases across account-scoped file operations, transfers, streaming, sync, archives, workspace cleanup, and settings.
+- Improved media playback and network handling, and added safeguards for upload cancellation and settings synchronization.
+
+### Build and release assurance
+
+- Pinned Grammers Git dependencies to immutable full revisions and expanded dependency-assurance checks.
+- Added regression tests for mobile/desktop workflows, transfer cancellation, streaming, and settings safety.
+
 ## [4.4.3] - 2026-10-16
 
 ### Authentication and country selection

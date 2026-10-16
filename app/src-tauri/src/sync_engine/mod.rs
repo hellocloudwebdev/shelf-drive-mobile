@@ -625,7 +625,9 @@ fn remote_fingerprint(
     )
 }
 
-fn message_fingerprint(message: &grammers_client::message::Message) -> Result<String, String> {
+pub(crate) fn message_fingerprint(
+    message: &grammers_client::message::Message,
+) -> Result<String, String> {
     let media = message
         .media()
         .ok_or("The remote file has no downloadable media")?;
@@ -641,6 +643,17 @@ fn message_fingerprint(message: &grammers_client::message::Message) -> Result<St
         message.id(),
         media_id,
     ))
+}
+
+pub(crate) fn verify_remote_fingerprint(
+    expected_hash: &str,
+    actual_hash: &str,
+) -> Result<(), String> {
+    if actual_hash == expected_hash {
+        Ok(())
+    } else {
+        Err("The remote file changed after planning; deletion was cancelled".into())
+    }
 }
 
 fn retain_tree_paths(
@@ -721,11 +734,21 @@ async fn retry_pending_cleanup(
         match action {
             CleanupAction::DeleteOld => {
                 account.validate()?;
-                executor::delete_remote(app, pair.channel_id, item.old_message_id, account)
-                    .await
-                    .map_err(|error| {
-                        format!("Uploaded replacement is preserved; cleanup will retry: {error}")
-                    })?;
+                let expected_hash = item
+                    .old_remote_hash
+                    .as_deref()
+                    .ok_or("The old remote fingerprint is missing; cleanup was cancelled")?;
+                executor::delete_remote(
+                    app,
+                    pair.channel_id,
+                    item.old_message_id,
+                    expected_hash,
+                    account,
+                )
+                .await
+                .map_err(|error| {
+                    format!("Uploaded replacement is preserved; cleanup will retry: {error}")
+                })?;
             }
             CleanupAction::PreserveOld => {
                 set_state_status(db, pair.id, &item.relative_path, "conflict").await?;

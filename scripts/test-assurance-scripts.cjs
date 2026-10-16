@@ -37,4 +37,31 @@ if (checksumLines.length !== 2 || !checksumLines.every(line => /^[0-9a-f]{64}  .
   throw new Error('Checksum manifest is incomplete or malformed.');
 }
 
-console.log('[assurance] Gradle SBOM and checksum generators passed their contract test.');
+const gitPinChecker = path.join(scriptRoot, 'check-rust-git-pins.cjs');
+const pinFixtures = [
+  {
+    name: 'full revision',
+    source: 'grammers = { git = "https://example.test/repo", rev = "0123456789abcdef0123456789abcdef01234567" }\n',
+    expected: 0,
+  },
+  {
+    name: 'abbreviated revision',
+    source: 'grammers = { git = "https://example.test/repo", rev = "0123456" }\n',
+    expected: 1,
+  },
+  {
+    name: 'missing revision',
+    source: 'grammers = { git = "https://example.test/repo", branch = "main" }\n',
+    expected: 1,
+  },
+];
+for (const fixture of pinFixtures) {
+  const manifestPath = path.join(temporaryRoot, `Cargo-${fixture.name.replace(/\s+/g, '-')}.toml`);
+  fs.writeFileSync(manifestPath, fixture.source);
+  const result = spawnSync(process.execPath, [gitPinChecker, manifestPath], { encoding: 'utf8' });
+  if (result.status !== fixture.expected) {
+    throw new Error(`Git pin checker failed its ${fixture.name} contract: ${result.stderr || result.stdout}`);
+  }
+}
+
+console.log('[assurance] SBOM, checksum, and immutable git-pin contracts passed.');

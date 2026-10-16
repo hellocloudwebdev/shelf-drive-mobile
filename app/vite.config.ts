@@ -39,6 +39,13 @@ export default defineConfig(async ({ command }) => ({
 
   build: {
     manifest: true,
+    rollupOptions: {
+      output: {
+        assetFileNames: asset => asset.name?.endsWith(".woff2")
+          ? "assets/font-[hash][extname]"
+          : "assets/[name]-[hash][extname]",
+      },
+    },
     // Keep Vite's warning aligned with the reviewed hard failure ceiling in
     // bundle-budget.json. The budget checker still fails the build at 550 kB.
     chunkSizeWarningLimit: 550,

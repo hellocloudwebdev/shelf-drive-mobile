@@ -744,7 +744,7 @@ function OwnedSettingsModal({ ownerId, isOpen, onClose, initialTab = 'general' }
                         <aside className="w-56 shrink-0 overflow-y-auto border-e border-app-border-subtle bg-app-sidebar p-3">
                             <div className="relative mb-3">
                                 <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-app-text-tertiary" />
-                                <input value={settingsSearch} onChange={(event) => setSettingsSearch(event.target.value)} placeholder="Search settings" className="quiet-control h-9 w-full border border-app-border bg-app-surface-sunken ps-8 pe-2 text-sm text-app-text outline-none focus:border-app-accent" />
+                                <input value={settingsSearch} onChange={(event) => setSettingsSearch(event.target.value)} placeholder="Search categories" aria-label="Search settings categories" className="quiet-control h-9 w-full border border-app-border bg-app-surface-sunken ps-8 pe-2 text-sm text-app-text outline-none focus:border-app-accent" />
                             </div>
                             {([
                                 ['Essentials', [['general', Globe, 'General transfers language updates'], ['themes', Palette, 'Appearance colors themes']] as const],

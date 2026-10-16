@@ -109,6 +109,9 @@ pub struct NetworkConfig {
     pub proxy: RwLock<ProxyConfig>,
     pub vpn: RwLock<VpnConfig>,
     pub bridge_handle: std::sync::Mutex<Option<crate::socks5_bridge::RunningBridge>>,
+    /// Serializes settings transactions so concurrent updates cannot persist
+    /// stale combined snapshots over one another.
+    pub settings_update_lock: tokio::sync::Mutex<()>,
 }
 
 impl NetworkConfig {
@@ -117,6 +120,7 @@ impl NetworkConfig {
             proxy: RwLock::new(ProxyConfig::default()),
             vpn: RwLock::new(VpnConfig::default()),
             bridge_handle: std::sync::Mutex::new(None),
+            settings_update_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -125,6 +129,7 @@ impl NetworkConfig {
             proxy: RwLock::new(config.proxy),
             vpn: RwLock::new(config.vpn),
             bridge_handle: std::sync::Mutex::new(None),
+            settings_update_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -205,6 +210,30 @@ impl NetworkConfig {
         if let Some(bridge) = guard.take() {
             bridge.handle.abort();
             log::info!("SOCKS5 bridge stopped.");
+        }
+    }
+
+    /// Prepare a bridge for a candidate proxy without stopping or publishing
+    /// over the currently active bridge. The caller commits or aborts it only
+    /// after persistence succeeds.
+    pub async fn prepare_proxy_bridge(
+        proxy: &ProxyConfig,
+    ) -> Result<Option<crate::socks5_bridge::RunningBridge>, String> {
+        if proxy.enabled
+            && !proxy.host.is_empty()
+            && (proxy.proxy_type == "http" || proxy.proxy_type == "https")
+        {
+            crate::socks5_bridge::start_bridge(
+                proxy.host.clone(),
+                proxy.port,
+                proxy.proxy_type.clone(),
+                proxy.username.clone(),
+                proxy.password.clone(),
+            )
+            .await
+            .map(Some)
+        } else {
+            Ok(None)
         }
     }
 
@@ -350,6 +379,29 @@ impl NetworkConfig {
             256 * 1024 * 1024 // default 256 MiB when VPN off
         }
     }
+}
+
+/// Prepare candidate resources before persistence and publish only after the
+/// caller's persistence step succeeds. On either injected/start or publish
+/// failure, discard the prepared resource and leave published state untouched.
+pub(crate) async fn apply_candidate_transaction<B, Prepare, PrepareFuture, Publish, Discard>(
+    candidate: NetworkConfigSnapshot,
+    prepare: Prepare,
+    publish: Publish,
+    discard: Discard,
+) -> Result<(), String>
+where
+    Prepare: FnOnce() -> PrepareFuture,
+    PrepareFuture: std::future::Future<Output = Result<B, String>>,
+    Publish: FnOnce(&NetworkConfigSnapshot, &mut B) -> Result<(), String>,
+    Discard: FnOnce(B),
+{
+    let mut prepared = prepare().await?;
+    if let Err(error) = publish(&candidate, &mut prepared) {
+        discard(prepared);
+        return Err(error);
+    }
+    Ok(())
 }
 
 impl Default for NetworkConfig {
@@ -509,5 +561,56 @@ mod tests {
         assert!(!serialized.contains("password"));
         assert!(!debug.contains("top-secret"));
         assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[tokio::test]
+    async fn candidate_transaction_keeps_old_state_when_bridge_start_fails() {
+        let old = NetworkConfigSnapshot {
+            proxy: ProxyConfig::default(),
+            vpn: VpnConfig::default(),
+        };
+        let effective = std::sync::Arc::new(std::sync::Mutex::new("old".to_string()));
+        let published = effective.clone();
+        let publish_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let was_published = publish_called.clone();
+
+        let result = apply_candidate_transaction(
+            old,
+            || async { Err::<(), _>("injected bridge-start failure".to_string()) },
+            move |_, _| {
+                was_published.store(true, std::sync::atomic::Ordering::SeqCst);
+                *published.lock().unwrap() = "new".to_string();
+                Ok(())
+            },
+            |_| {},
+        )
+        .await;
+
+        assert!(result.unwrap_err().contains("bridge-start"));
+        assert_eq!(*effective.lock().unwrap(), "old");
+        assert!(!publish_called.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn candidate_transaction_keeps_old_state_when_persistence_fails() {
+        let old = NetworkConfigSnapshot {
+            proxy: ProxyConfig::default(),
+            vpn: VpnConfig::default(),
+        };
+        let effective = std::sync::Arc::new(std::sync::Mutex::new("old".to_string()));
+        let discarded = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let discarded_handle = discarded.clone();
+
+        let result = apply_candidate_transaction(
+            old,
+            || async { Ok::<_, String>("prepared bridge") },
+            move |_, _| Err("injected persistence failure".to_string()),
+            move |_| discarded_handle.store(true, std::sync::atomic::Ordering::SeqCst),
+        )
+        .await;
+
+        assert!(result.unwrap_err().contains("persistence"));
+        assert_eq!(*effective.lock().unwrap(), "old");
+        assert!(discarded.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

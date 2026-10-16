@@ -60,12 +60,61 @@ interface PlayerState {
 const FALLBACK_EXTENSIONS = ['webm', 'ogg', 'mov', 'mkv', 'avi'];
 const SPEED_WINDOW_MS = 3000;
 const SPEED_CHECK_INTERVAL_MS = 2000;
+const ADAPTIVE_HYSTERESIS = 0.2;
+const ADAPTIVE_STABLE_SAMPLES = 2;
 const SEEK_DEBOUNCE_MS = 300;
 const MOOV_DISCOVERY_BYTES = 131072;   // 128KB — covers ftyp + moov for most files
 const MOOV_RETRY_BYTES = 524288;       // 512KB — retry with larger range before tail lookup
 const MOOV_TAIL_BYTES = 524288;        // 512KB — tail fetch for moov-at-end files
 const MOOV_FALLBACK_TIMEOUT_MS = 3000;
 const PROGRESSIVE_CACHE_WARM_BYTES = 3145728; // 3MB — pre-warm HTTP cache for native <video> moov discovery
+
+/** Chooses stable adaptive tiers without bouncing around threshold boundaries. */
+export class AdaptiveQualityController {
+    private current: StreamingQuality | null = null;
+    private pending: StreamingQuality | null = null;
+    private pendingSamples = 0;
+
+    reset(): void {
+        this.current = null;
+        this.pending = null;
+        this.pendingSamples = 0;
+    }
+
+    update(kbps: number): StreamingQuality | null {
+        const rawTarget = ADAPTIVE_THRESHOLDS.find(t => kbps >= t.minKbps)?.quality ?? '360p';
+        let target = rawTarget;
+        if (this.current && rawTarget !== this.current) {
+            const currentIndex = ADAPTIVE_THRESHOLDS.findIndex(t => t.quality === this.current);
+            const targetIndex = ADAPTIVE_THRESHOLDS.findIndex(t => t.quality === rawTarget);
+            if (targetIndex < currentIndex) {
+                // Higher tier: require 20% headroom above its normal threshold.
+                const threshold = ADAPTIVE_THRESHOLDS[targetIndex].minKbps;
+                if (kbps < threshold * (1 + ADAPTIVE_HYSTERESIS)) target = this.current;
+            } else {
+                // Lower tier: tolerate a 20% dip below the current tier's threshold.
+                const threshold = ADAPTIVE_THRESHOLDS[currentIndex].minKbps;
+                if (kbps >= threshold * (1 - ADAPTIVE_HYSTERESIS)) target = this.current;
+            }
+        }
+
+        if (target === this.current) {
+            this.pending = null;
+            this.pendingSamples = 0;
+            return null;
+        }
+        if (target === this.pending) this.pendingSamples += 1;
+        else {
+            this.pending = target;
+            this.pendingSamples = 1;
+        }
+        if (this.pendingSamples < ADAPTIVE_STABLE_SAMPLES) return null;
+        this.current = target;
+        this.pending = null;
+        this.pendingSamples = 0;
+        return target;
+    }
+}
 
 // When a progressive (non-fragmented) MP4 is detected and we fall back to
 // native <video>, the native player must make a Range request to the end
@@ -195,6 +244,8 @@ export interface UseAdaptiveStreamingResult {
     tracks: VideoTrackInfo[];
     loadProgress: number;
     currentQuality: StreamingQuality;
+    adaptiveQuality: StreamingQuality | null;
+    updateAdaptiveBandwidth: (kbps: number) => void;
     setQuality: (q: StreamingQuality) => void;
     adaptiveMode: boolean;
     setAdaptiveMode: (enabled: boolean) => void;
@@ -222,7 +273,7 @@ export function useAdaptiveStreaming(
     const playerPhaseRef = useRef<PlayerPhase>('initializing');
     const isSeekingRef = useRef(false);
     const pendingSeekTimeRef = useRef<number | null>(null);
-    const speedSamplesRef = useRef<{ time: number; bytes: number }[]>([]);
+    const speedSamplesRef = useRef<{ time: number; bytes: number; networkMs: number }[]>([]);
     const fileSizeRef = useRef<number>(0);
     const appendQueuesRef = useRef<{ [trackId: number]: ArrayBuffer[] }>({});
     const lastSampleNumRef = useRef<number>(0);
@@ -251,7 +302,17 @@ export function useAdaptiveStreaming(
         measuredKbps: 0,
     });
 
-    const { settings, setQuality, setAdaptiveMode } = useStreamingSettings();
+    const { settings, setQuality: setStoredQuality, setAdaptiveMode } = useStreamingSettings();
+    const [adaptiveQuality, setAdaptiveQuality] = useState<StreamingQuality | null>(null);
+    const adaptiveControllerRef = useRef(new AdaptiveQualityController());
+    const currentQuality = settings.adaptiveMode && adaptiveQuality
+        ? adaptiveQuality
+        : settings.quality;
+    const setQuality = useCallback((quality: StreamingQuality) => {
+        setStoredQuality(quality);
+        adaptiveControllerRef.current.reset();
+        setAdaptiveQuality(null);
+    }, [setStoredQuality]);
 
     const useFallback = !isMp4File(fileName) || shouldUseFallback(fileName) || !mseSupported();
     // Dynamic fallback: if MSE pipeline fails to init, switch to native <video>
@@ -263,15 +324,36 @@ export function useAdaptiveStreaming(
     }, [streamUrl, fileName]);
 
     useEffect(() => {
-        const kbps = QUALITY_THROTTLE_MAP[settings.quality];
+        const kbps = QUALITY_THROTTLE_MAP[currentQuality];
         const bps = kbps > 0 ? kbps * 1024 : 0;
         throttleBpsRef.current = bps;
         debugAdaptiveStreaming('[AdaptiveStreaming] throttle updated', {
-            quality: settings.quality,
+            quality: currentQuality,
             throttleBps: bps,
             throttleKbps: kbps,
         });
-    }, [settings.quality]);
+    }, [currentQuality]);
+
+    useEffect(() => {
+        if (!settings.adaptiveMode) {
+            adaptiveControllerRef.current.reset();
+            setAdaptiveQuality(null);
+        }
+    }, [settings.adaptiveMode]);
+
+    const updateAdaptiveBandwidth = useCallback((kbps: number) => {
+        if (!Number.isFinite(kbps) || kbps <= 0) return;
+        setState(s => ({ ...s, measuredKbps: kbps }));
+        if (!settings.adaptiveMode) return;
+        const nextQuality = adaptiveControllerRef.current.update(kbps);
+        if (nextQuality) {
+            debugAdaptiveStreaming('[AdaptiveStreaming] auto-quality', {
+                to: nextQuality,
+                measuredKbps: kbps,
+            });
+            setAdaptiveQuality(nextQuality);
+        }
+    }, [settings.adaptiveMode]);
 
     // ── Abort helpers ────────────────────────────────────────────────
     const abortFetch = useCallback(() => {
@@ -398,9 +480,20 @@ export function useAdaptiveStreaming(
                 speedSamplesRef.current = [];
 
                 while (true) {
+                    const readStartedAt = performance.now();
                     const { done, value } = await reader.read();
+                    const readCompletedAt = performance.now();
                     if (done) { debugAdaptiveStreaming('[AdaptiveStreaming] ⬇️ stream complete'); break; }
                     if (abortController.signal.aborted) break;
+
+                    speedSamplesRef.current.push({
+                        time: readCompletedAt,
+                        bytes: value.byteLength,
+                        networkMs: Math.max(1, readCompletedAt - readStartedAt),
+                    });
+                    speedSamplesRef.current = speedSamplesRef.current.filter(
+                        sample => readCompletedAt - sample.time < SPEED_WINDOW_MS,
+                    );
 
                     const chunkBuffer = value.buffer.slice(
                         value.byteOffset,
@@ -449,11 +542,6 @@ export function useAdaptiveStreaming(
                         }));
                     }
 
-                    const now = performance.now();
-                    speedSamplesRef.current.push({ time: now, bytes: chunkBuffer.byteLength });
-                    speedSamplesRef.current = speedSamplesRef.current.filter(
-                        s => now - s.time < SPEED_WINDOW_MS,
-                    );
                 }
 
                 if (playerPhaseRef.current !== 'seeking' && playerPhaseRef.current !== 'error') {
@@ -927,13 +1015,12 @@ export function useAdaptiveStreaming(
         const interval = setInterval(() => {
             const samples = speedSamplesRef.current;
             if (samples.length < 2) return;
-            const oldest = samples[0];
-            const newest = samples[samples.length - 1];
-            const elapsedSec = (newest.time - oldest.time) / 1000;
-            if (elapsedSec <= 0) return;
             const totalBytes = samples.reduce((sum, s) => sum + s.bytes, 0);
-            const kbps = Math.round((totalBytes * 8) / elapsedSec / 1000);
-            setState(s => ({ ...s, measuredKbps: kbps }));
+            const networkMs = samples.reduce((sum, s) => sum + s.networkMs, 0);
+            if (networkMs <= 0) return;
+            // The reader duration excludes intentional sleeps used to enforce a
+            // quality cap, so an adaptive low tier does not hide available headroom.
+            const kbps = Math.round((totalBytes * 8) / networkMs);
 
             // Log measured speed separately from throttle cap
             const throttleBps = throttleBpsRef.current;
@@ -946,23 +1033,12 @@ export function useAdaptiveStreaming(
                 });
             }
 
-            // Adaptive auto-quality: only when NOT throttled (quality === 'original')
-            // This prevents the feedback loop where throttled speed is measured
-            // and used to downgrade quality, trapping playback at lower settings.
-            if (settings.adaptiveMode && playerPhaseRef.current === 'playing' && settings.quality === 'original') {
-                for (const t of ADAPTIVE_THRESHOLDS) {
-                    if (kbps >= t.minKbps) {
-                        if (settings.quality !== t.quality) {
-                            debugAdaptiveStreaming('[AdaptiveStreaming] auto-quality', { from: settings.quality, to: t.quality, measuredKbps: kbps });
-                            setQuality(t.quality);
-                        }
-                        break;
-                    }
-                }
-            }
+            if (settings.adaptiveMode && playerPhaseRef.current === 'playing') {
+                updateAdaptiveBandwidth(kbps);
+            } else setState(s => ({ ...s, measuredKbps: kbps }));
         }, SPEED_CHECK_INTERVAL_MS);
         return () => clearInterval(interval);
-    }, [useFallback, settings.adaptiveMode, settings.quality, setQuality]);
+    }, [useFallback, settings.adaptiveMode, updateAdaptiveBandwidth]);
 
     // ── Main initialization effect ───────────────────────────────────
     useEffect(() => {
@@ -1171,7 +1247,9 @@ export function useAdaptiveStreaming(
         error: state.error,
         tracks: state.tracks,
         loadProgress: state.loadProgress,
-        currentQuality: settings.quality,
+        currentQuality,
+        adaptiveQuality,
+        updateAdaptiveBandwidth,
         setQuality,
         adaptiveMode: settings.adaptiveMode,
         setAdaptiveMode,

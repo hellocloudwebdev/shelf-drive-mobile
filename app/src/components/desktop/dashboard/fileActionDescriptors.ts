@@ -38,8 +38,10 @@ export function resolvePublicFolderUsername(
   folders: TelegramFolder[] | undefined,
   activeFolderId: number | null | undefined,
 ): string | null {
-  const folder = folders?.find(candidate => candidate.id === file.folder_id)
-    ?? folders?.find(candidate => candidate.id === activeFolderId);
+  // An explicit null is Saved Messages, not missing context. Only a legacy
+  // item without folder_id may inherit the currently active folder.
+  const sourceFolderId = file.folder_id === undefined ? activeFolderId : file.folder_id;
+  const folder = folders?.find(candidate => candidate.id === sourceFolderId);
   const legacyFolder = folder as FolderWithLegacyPeer | undefined;
   return folder?.username ?? legacyFolder?.chat?.username ?? legacyFolder?.channel?.username ?? null;
 }
