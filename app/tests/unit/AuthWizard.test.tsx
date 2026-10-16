@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthWizard } from '../../src/components/shared/AuthWizard';
+import { AuthCodeStep } from '../../src/components/shared/auth/AuthSteps';
 
 const invokeMock = vi.fn();
 
@@ -81,5 +82,55 @@ describe('AuthWizard phone authentication', () => {
       'cmd_auth_request_code',
       'cmd_auth_sign_in',
     ]);
+  });
+
+  it('masks the API hash unless the user explicitly reveals it', () => {
+    render(<AuthWizard onLogin={vi.fn()} />);
+    const apiHash = screen.getByLabelText('API Hash') as HTMLInputElement;
+    expect(apiHash.type).toBe('password');
+    fireEvent.click(screen.getByRole('button', { name: 'Show API Hash' }));
+    expect(apiHash.type).toBe('text');
+    fireEvent.click(screen.getByRole('button', { name: 'Hide API Hash' }));
+    expect(apiHash.type).toBe('password');
+  });
+
+  it('rejects malformed API IDs before persisting credentials or starting login', async () => {
+    render(<AuthWizard onLogin={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('API ID'), { target: { value: '123abc' } });
+    fireEvent.change(screen.getByLabelText('API Hash'), { target: { value: 'abcdef' } });
+    fireEvent.click(screen.getByRole('button', { name: /Continue to QR sign in/ }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('API ID must contain digits only.');
+    expect(invokeMock.mock.calls.some(([command]) => command === 'cmd_store_api_hash')).toBe(false);
+    expect(invokeMock.mock.calls.some(([command]) => String(command).startsWith('cmd_auth_'))).toBe(false);
+  });
+
+  it('does not proceed with sign-in if secure API-hash storage fails', async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'cmd_store_api_hash') throw new Error('secure store unavailable');
+      return null;
+    });
+    render(<AuthWizard onLogin={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('API ID'), { target: { value: '12345' } });
+    fireEvent.change(screen.getByLabelText('API Hash'), { target: { value: 'abcdef' } });
+    fireEvent.click(screen.getByRole('button', { name: /Continue to QR sign in/ }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Unable to save sign-in credentials securely.');
+    expect(invokeMock.mock.calls.some(([command]) => String(command).startsWith('cmd_auth_'))).toBe(false);
+  });
+
+  it('offers QR login on mobile when Telegram cannot deliver a usable phone code', () => {
+    const onUseQr = vi.fn();
+    render(<AuthCodeStep
+      codeDelivery={{ status: 'qr_recommended', delivery: 'firebase', numericCode: false }}
+      deliveryMessage="Phone code delivery is unsupported"
+      code="" loading={false} resendWait={0} isMobile
+      onCodeChange={vi.fn()} onSubmit={vi.fn()} onOpenFragment={vi.fn()}
+      onResend={vi.fn()} onUseQr={onUseQr} onChangePhone={vi.fn()}
+    />);
+
+    expect(screen.queryByLabelText('Telegram code')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Use QR instead' }));
+    expect(onUseQr).toHaveBeenCalledOnce();
   });
 });

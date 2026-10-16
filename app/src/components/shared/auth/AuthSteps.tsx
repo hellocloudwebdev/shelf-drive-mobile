@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, ExternalLink, HelpCircle, Key, Lock, Phone, QrCode } from 'lucide-react';
+import { ArrowRight, ExternalLink, Eye, EyeOff, HelpCircle, Key, Lock, Phone, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../../../i18n';
@@ -36,6 +36,7 @@ interface AuthSetupStepProps {
   apiId: string;
   apiHash: string;
   isMobile: boolean;
+  loading: boolean;
   onApiIdChange: (value: string) => void;
   onApiHashChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
@@ -47,12 +48,14 @@ export function AuthSetupStep({
   apiId,
   apiHash,
   isMobile,
+  loading,
   onApiIdChange,
   onApiHashChange,
   onSubmit,
   onShowHelp,
   onDevLogin,
 }: AuthSetupStepProps) {
+  const [showApiHash, setShowApiHash] = useState(false);
   return (
     <motion.form key="setup" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} onSubmit={onSubmit} className="space-y-4">
       <div className="rounded-container border border-app-accent/20 bg-app-accent/5 p-4 text-center">
@@ -66,18 +69,21 @@ export function AuthSetupStep({
           <label htmlFor="telegram-api-id" className="auth-label">{i18n.t("auth.api_id")}</label>
           <div className="relative">
             <Key className="auth-input-icon" />
-            <input type="text" id="telegram-api-id" value={apiId} onChange={event => onApiIdChange(event.target.value)} placeholder="12345678" className="auth-input font-mono" />
+            <input type="text" id="telegram-api-id" name="api_id" inputMode="numeric" autoComplete="off" spellCheck={false} value={apiId} onChange={event => onApiIdChange(event.target.value)} placeholder="12345678" className="auth-input font-mono" />
           </div>
         </div>
         <div>
           <label htmlFor="telegram-api-hash" className="auth-label">{i18n.t("auth.api_hash")}</label>
           <div className="relative">
             <Key className="auth-input-icon" />
-            <input type="text" id="telegram-api-hash" value={apiHash} onChange={event => onApiHashChange(event.target.value)} placeholder="abcdef123456..." className="auth-input font-mono" />
+            <input type={showApiHash ? 'text' : 'password'} id="telegram-api-hash" name="api_hash" autoComplete="off" autoCapitalize="none" spellCheck={false} value={apiHash} onChange={event => onApiHashChange(event.target.value)} placeholder="••••••••••••••••" className="auth-input pe-11 font-mono" />
+            <button type="button" onClick={() => setShowApiHash(value => !value)} aria-label={showApiHash ? 'Hide API Hash' : 'Show API Hash'} aria-pressed={showApiHash} className="quiet-control absolute end-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-app-text-tertiary hover:text-app-text">
+              {showApiHash ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+            </button>
           </div>
         </div>
       </div>
-      <button type="submit" className="quiet-control auth-primary-action">
+      <button type="submit" disabled={loading} className="quiet-control auth-primary-action disabled:opacity-45">
         {isMobile ? 'Continue to phone sign in' : 'Continue to QR sign in'} <ArrowRight className="h-4 w-4 rtl:rotate-180" />
       </button>
       <button type="button" onClick={onShowHelp} className="quiet-control auth-secondary-action w-full">
@@ -106,6 +112,7 @@ interface AuthMethodStepProps {
 }
 
 export function AuthMethodStep({
+  isMobile = false,
   loginMethod,
   loading,
   phone,
@@ -171,9 +178,11 @@ export function AuthMethodStep({
         <button type="button" onClick={onSelectPhone} className={`quiet-control order-2 flex h-8 flex-1 items-center justify-center gap-2 text-metadata font-medium ${loginMethod === 'phone' ? 'bg-app-surface-raised text-app-text shadow-sm' : 'text-app-text-secondary hover:text-app-text'}`}>
           <Phone className="w-4 h-4" /> {i18n.t("auth.phone_number")}
         </button>
-        <button type="button" onClick={onSelectQr} className={`quiet-control order-1 flex h-8 flex-1 items-center justify-center gap-2 text-metadata font-medium ${loginMethod === 'qr' ? 'bg-app-surface-raised text-app-text shadow-sm' : 'text-app-text-secondary hover:text-app-text'}`}>
-          <QrCode className="w-4 h-4" /> {i18n.t("auth.qr_code")}
-        </button>
+        {!isMobile && (
+          <button type="button" onClick={onSelectQr} className={`quiet-control order-1 flex h-8 flex-1 items-center justify-center gap-2 text-metadata font-medium ${loginMethod === 'qr' ? 'bg-app-surface-raised text-app-text shadow-sm' : 'text-app-text-secondary hover:text-app-text'}`}>
+            <QrCode className="w-4 h-4" /> {i18n.t("auth.qr_code")}
+          </button>
+        )}
       </div>
 
       {loginMethod === 'phone' ? (
@@ -201,6 +210,9 @@ export function AuthMethodStep({
                   id="telegram-phone-number"
                   type="tel"
                   inputMode="numeric"
+                  autoComplete="tel"
+                  name="phone_number"
+                  required
                   value={localNumber}
                   onChange={handleLocalNumberChange}
                   placeholder="12345 67890"
@@ -284,9 +296,10 @@ export function AuthCodeStep({
 }: AuthCodeStepProps) {
   const { t } = useTranslation();
   const isNumeric = codeDelivery ? codeDelivery.numericCode : true;
+  const needsQr = codeDelivery?.status === 'qr_recommended';
   return (
     <motion.form key="code" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} onSubmit={onSubmit} className="space-y-5">
-      <div className="rounded-control border border-app-accent/20 bg-app-selected p-3 text-center">
+      <div role="status" className="rounded-control border border-app-accent/20 bg-app-selected p-3 text-center">
         <p className="text-ui leading-relaxed text-app-text">{deliveryMessage}</p>
       </div>
       {codeDelivery?.fragmentUrl && (
@@ -294,37 +307,41 @@ export function AuthCodeStep({
           {t('auth.open_fragment')} <ExternalLink className="h-4 w-4" />
         </button>
       )}
-      <div className="space-y-2">
-        <label htmlFor="telegram-auth-code" className="auth-label">{t('auth.telegram_code')}</label>
-        <div className="relative">
-          <Key className="auth-input-icon" />
-          <input
-            id="telegram-auth-code"
-            type="text"
-            inputMode={isNumeric ? 'numeric' : 'text'}
-            autoComplete="one-time-code"
-            value={code}
-            onChange={event => {
-              const value = isNumeric ? event.target.value.replace(/\D/g, '') : event.target.value;
-              onCodeChange(codeDelivery?.codeLength ? value.slice(0, codeDelivery.codeLength) : value);
-            }}
-            maxLength={codeDelivery?.codeLength}
-            placeholder={isNumeric ? '1 2 3 4 5' : t('auth.code_word_placeholder')}
-            autoFocus
-            className={`auth-input pe-3 ps-10 text-center font-mono text-base ${isNumeric ? 'tracking-[0.4em]' : 'tracking-wide'}`}
-          />
+      {!needsQr && (
+        <div className="space-y-2">
+          <label htmlFor="telegram-auth-code" className="auth-label">{t('auth.telegram_code')}</label>
+          <div className="relative">
+            <Key className="auth-input-icon" />
+            <input
+              id="telegram-auth-code"
+              type="text"
+              inputMode={isNumeric ? 'numeric' : 'text'}
+              autoComplete="one-time-code"
+              value={code}
+              onChange={event => {
+                const value = isNumeric ? event.target.value.replace(/\D/g, '') : event.target.value;
+                onCodeChange(codeDelivery?.codeLength ? value.slice(0, codeDelivery.codeLength) : value);
+              }}
+              maxLength={codeDelivery?.codeLength}
+              placeholder={isNumeric ? '1 2 3 4 5' : t('auth.code_word_placeholder')}
+              autoFocus
+              className={`auth-input pe-3 ps-10 text-center font-mono text-base ${isNumeric ? 'tracking-[0.4em]' : 'tracking-wide'}`}
+            />
+          </div>
         </div>
-      </div>
+      )}
       <div className="flex flex-col gap-3">
-        <button type="submit" disabled={loading || !code} className="quiet-control auth-primary-action disabled:opacity-45">
-          {loading ? t('auth.verifying') : t('auth.sign_in')}
-        </button>
-        {codeDelivery?.nextDelivery && codeDelivery.resendAfterSeconds !== undefined && (
+        {!needsQr && (
+          <button type="submit" disabled={loading || !code} className="quiet-control auth-primary-action disabled:opacity-45">
+            {loading ? t('auth.verifying') : t('auth.sign_in')}
+          </button>
+        )}
+        {!needsQr && codeDelivery?.nextDelivery && codeDelivery.resendAfterSeconds !== undefined && (
           <button type="button" onClick={onResend} disabled={loading || resendWait > 0} className="quiet-control auth-secondary-action w-full disabled:opacity-45">
             {loading ? t('auth.resending') : resendWait > 0 ? t('auth.resend_in', { seconds: resendWait }) : t('auth.resend_code')}
           </button>
         )}
-        {!isMobile && (
+        {(!isMobile || needsQr) && (
           <button type="button" onClick={onUseQr} className="quiet-control auth-secondary-action w-full"><QrCode className="h-4 w-4" /> {t('auth.use_qr_instead')}</button>
         )}
         <button type="button" onClick={onChangePhone} className="quiet-control auth-secondary-action w-full">{t('auth.change_phone')}</button>
@@ -351,7 +368,7 @@ export function AuthPasswordStep({ password, loading, onPasswordChange, onSubmit
         <label htmlFor="telegram-cloud-password" className="auth-label">{i18n.t("auth.cloud_password")}</label>
         <div className="relative">
           <Lock className="auth-input-icon" />
-          <input id="telegram-cloud-password" type="password" value={password} onChange={event => onPasswordChange(event.target.value)} placeholder={i18n.t("auth.password_placeholder")} className="auth-input" autoFocus />
+          <input id="telegram-cloud-password" name="password" type="password" autoComplete="current-password" required value={password} onChange={event => onPasswordChange(event.target.value)} placeholder={i18n.t("auth.password_placeholder")} className="auth-input" autoFocus />
         </div>
       </div>
       <div className="flex flex-col gap-3">

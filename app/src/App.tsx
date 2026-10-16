@@ -42,6 +42,7 @@ import { version as appVersion } from "../package.json";
 import { consumeWhatsNew, type WhatsNewDetails } from "./services/updateReliability";
 import { useTvSpatialNavigation } from "./hooks/useTvSpatialNavigation";
 import { ensureLanguageResource } from "./i18n";
+import { parseTelegramApiId } from "./services/telegramCredentials";
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -147,8 +148,10 @@ function AppContent() {
           return;
         }
 
-        const apiId = parseInt(savedId, 10);
-        if (isNaN(apiId)) {
+        let apiId: number;
+        try {
+          apiId = parseTelegramApiId(savedId);
+        } catch {
           setStartupProgress({ label: "Ready to sign in", detail: "The saved session needs attention.", percent: 100 });
           setAuthStatus("unauthenticated");
           return;
@@ -189,14 +192,8 @@ function AppContent() {
         }
       } catch (err) {
         console.warn("Session restore failed, showing login:", err);
-        // Session file is corrupt or revoked — clean up and show login
-        try {
-          const store = await load("config.json");
-          await store.delete("api_id");
-          await store.save();
-        } catch {
-          // best-effort cleanup
-        }
+        // Preserve the saved API ID so a temporary network, proxy, or service
+        // failure does not make the user re-enter credentials on the next try.
         setAuthStatus("unauthenticated");
       }
     };

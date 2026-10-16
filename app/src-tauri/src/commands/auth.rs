@@ -816,9 +816,13 @@ pub async fn cmd_auth_request_code(
     api_hash: String,
     state: State<'_, TelegramState>,
 ) -> Result<AuthCodeRequestResult, String> {
+    if api_id <= 0 {
+        return Err("API ID must be a positive 32-bit integer.".to_string());
+    }
     if api_hash.trim().is_empty() {
         return Err("API Hash cannot be empty.".to_string());
     }
+    let api_hash = api_hash.trim().to_string();
 
     let phone = normalize_phone_number(&phone)?;
     let attempt_id = state.auth_attempt_counter.fetch_add(1, Ordering::SeqCst) + 1;
@@ -1077,13 +1081,100 @@ pub async fn cmd_auth_check_password(
     password: String,
     state: State<'_, TelegramState>,
 ) -> Result<AuthResult, String> {
+    async fn refresh_password_token(client: &Client) -> Result<PasswordToken, String> {
+        let password: tl::types::account::Password = timeout(
+            Duration::from_secs(30),
+            client.invoke(&tl::functions::account::GetPassword {}),
+        )
+        .await
+        .map_err(|_| {
+            "Telegram did not respond while refreshing two-step verification.".to_string()
+        })?
+        .map_err(map_auth_error)?
+        .into();
+        Ok(PasswordToken::new(password))
+    }
+
+    async fn restore_password_token(
+        client: &Client,
+        state: &TelegramState,
+        attempt_id: u64,
+    ) -> bool {
+        if state.auth_attempt_counter.load(Ordering::SeqCst) != attempt_id {
+            return false;
+        }
+        let active_attempt = state
+            .phone_login
+            .lock()
+            .await
+            .as_ref()
+            .map(|login| login.attempt_id);
+        if active_attempt != Some(attempt_id) {
+            return false;
+        }
+        match refresh_password_token(client).await {
+            Ok(token) => {
+                if state.auth_attempt_counter.load(Ordering::SeqCst) == attempt_id {
+                    let active_attempt = state
+                        .phone_login
+                        .lock()
+                        .await
+                        .as_ref()
+                        .map(|login| login.attempt_id);
+                    if active_attempt == Some(attempt_id) {
+                        *state.password_token.lock().await = Some(token);
+                        return true;
+                    }
+                }
+                false
+            }
+            Err(error) => {
+                log::warn!("Unable to refresh Telegram password challenge: {}", error);
+                false
+            }
+        }
+    }
+
     let (client, captured) = authentication_client(&state).await?;
+    let attempt_id = state
+        .phone_login
+        .lock()
+        .await
+        .as_ref()
+        .map(|login| login.attempt_id)
+        .ok_or("No active two-step verification. Request a new sign-in code.")?;
+    let pw_token = state
+        .password_token
+        .lock()
+        .await
+        .take()
+        .ok_or("No password session found")?;
 
-    let mut pw_guard = state.password_token.lock().await;
-    let pw_token = pw_guard.take().ok_or("No password session found")?;
-
-    match client.check_password(pw_token, password.as_str()).await {
-        Ok(user) => {
+    match timeout(
+        Duration::from_secs(30),
+        client.check_password(pw_token, password.as_str()),
+    )
+    .await
+    {
+        Err(_) => {
+            if !restore_password_token(&client, &state, attempt_id).await {
+                return Err(
+                    "The two-step verification session expired. Go back and request a new sign-in code."
+                        .to_string(),
+                );
+            }
+            Err(
+                "Telegram did not respond while verifying the two-step password. Please try again."
+                    .to_string(),
+            )
+        }
+        Ok(Ok(user)) => {
+            if state.auth_attempt_counter.load(Ordering::SeqCst) != attempt_id {
+                return Err(
+                    "This sign-in attempt was cancelled. Start again with your phone number."
+                        .to_string(),
+                );
+            }
             log::info!("2FA Success.");
             *state.phone_login.lock().await = None;
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1096,7 +1187,16 @@ pub async fn cmd_auth_check_password(
                 error: None,
             })
         }
-        Err(e) => Err(format!("2FA Failed: {}", e)),
+        Ok(Err(error)) => {
+            if restore_password_token(&client, &state, attempt_id).await {
+                Err(format!("2FA Failed: {}", error))
+            } else {
+                Err(
+                    "The two-step verification session expired. Go back and request a new sign-in code."
+                        .to_string(),
+                )
+            }
+        }
     }
 }
 
@@ -1109,9 +1209,13 @@ pub async fn cmd_auth_qr_login(
     api_hash: String,
     state: State<'_, TelegramState>,
 ) -> Result<String, String> {
+    if api_id <= 0 {
+        return Err("API ID must be a positive 32-bit integer.".to_string());
+    }
     if api_hash.trim().is_empty() {
         return Err("API Hash cannot be empty.".to_string());
     }
+    let api_hash = api_hash.trim().to_string();
 
     // Store API ID
     *state.api_id.lock().await = Some(api_id);

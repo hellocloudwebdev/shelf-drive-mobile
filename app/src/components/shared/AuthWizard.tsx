@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { auth } from '../../api/index';
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { Sun, Moon, ExternalLink, X, Heart } from "lucide-react";
 import { load } from '@tauri-apps/plugin-store';
 import { useTheme } from '../../context/ThemeContext';
@@ -16,6 +16,7 @@ import {
 
 import { useTranslation } from "react-i18next";
 import i18n from '../../i18n';
+import { parseTelegramApiId } from '../../services/telegramCredentials';
 
 function AuthThemeToggle() {
     const { theme, toggleTheme } = useTheme();
@@ -133,50 +134,61 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     }, []);
 
     const saveCredentials = async () => {
+        // Never remove the legacy value or continue as though credentials were
+        // saved unless the secure credential store accepted the new hash.
+        await auth.storeApiHash(apiHash.trim());
+        const store = await load('config.json');
+        await store.set('api_id', apiId.trim());
+        await store.save();
         try {
-            await auth.storeApiHash(apiHash);
-        } catch {
-            // Best-effort in browser testing
-        }
-        try {
-            const store = await load('config.json');
-            await store.set('api_id', apiId);
             await store.delete('api_hash');
             await store.save();
         } catch {
-            // Best-effort in browser testing
+            // The secure copy and API ID are already saved; retry legacy
+            // plaintext cleanup during the next startup migration.
         }
     };
 
     const handleSetupSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (loading) return;
 
-        if (apiId.includes(' ') || apiHash.includes(' ')) {
-            setError("API ID and API Hash cannot contain spaces. Please remove any spaces.");
+        try {
+            parseTelegramApiId(apiId);
+        } catch (validationError) {
+            setError(validationError instanceof Error ? validationError.message : String(validationError));
             return;
         }
-
-        if (!apiId || !apiHash) {
-            setError("Both API ID and Hash are required.");
+        if (!apiHash.trim()) {
+            setError("API Hash cannot be empty.");
             return;
         }
         setError(null);
-        await saveCredentials();
-        setStep("phone");
-        setLoginMethod(isMobile ? 'phone' : 'qr');
-        setQrUrl(null);
-        setQrPolling(false);
-        if (!isMobile) void handleQrLogin();
+        setLoading(true);
+        try {
+            try {
+                await saveCredentials();
+            } catch {
+                setError("Unable to save sign-in credentials securely. Check device storage and try again.");
+                return;
+            }
+            setStep("phone");
+            setLoginMethod(isMobile ? 'phone' : 'qr');
+            setQrUrl(null);
+            setQrPolling(false);
+            if (!isMobile) await handleQrLogin();
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleQrLogin = async () => {
         setError(null);
         setLoading(true);
         try {
-            const idInt = parseInt(apiId, 10);
-            if (isNaN(idInt)) throw new Error("API ID must be a number");
+            const idInt = parseTelegramApiId(apiId);
 
-            const url = await auth.qrLogin(idInt, apiHash);
+            const url = await auth.qrLogin(idInt, apiHash.trim());
 
             if (url === "__authorized__") {
                 onLogin();
@@ -252,8 +264,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
         setLoading(true);
         setError(null);
         try {
-            const idInt = parseInt(apiId, 10);
-            if (isNaN(idInt)) throw new Error("API ID must be a number");
+            const idInt = parseTelegramApiId(apiId);
 
             const cleanPhone = phone.replace(/[\s\-\(\)]/g, '').trim();
             if (!cleanPhone) {
@@ -262,7 +273,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                 return;
             }
 
-            const codeRequest = await auth.requestCode(cleanPhone, idInt, apiHash);
+            const codeRequest = await auth.requestCode(cleanPhone, idInt, apiHash.trim());
             applyCodeRequestResult(codeRequest);
         } catch (err: unknown) {
             handleAuthError(err);
@@ -381,6 +392,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     })();
 
     return (
+        <MotionConfig reducedMotion="user">
         <div className="auth-gradient relative flex h-full w-full items-center justify-center overflow-y-auto p-4 pt-[calc(1rem+env(safe-area-inset-top,24px))] text-app-text sm:p-6">
             <AuthThemeToggle />
 
@@ -430,6 +442,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                                     apiId={apiId}
                                     apiHash={apiHash}
                                     isMobile={isMobile}
+                                    loading={loading}
                                     onApiIdChange={setApiId}
                                     onApiHashChange={setApiHash}
                                     onSubmit={handleSetupSubmit}
@@ -486,6 +499,9 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
+                        role="alert"
+                        aria-live="assertive"
+                        aria-atomic="true"
                         className="mt-5 flex items-start gap-2 rounded-control border border-app-danger/20 bg-app-danger/10 p-3"
                     >
                         <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-2 shrink-0" />
@@ -629,5 +645,6 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             </AnimatePresence>
 
         </div>
+        </MotionConfig>
     );
 }
