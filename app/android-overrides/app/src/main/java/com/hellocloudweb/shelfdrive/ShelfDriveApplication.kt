@@ -10,7 +10,7 @@ import androidx.work.WorkManager
 class ShelfDriveApplication : Application(), Configuration.Provider {
   override val workManagerConfiguration: Configuration
     get() = Configuration.Builder()
-      .setJobSchedulerJobIdRange(10_000, 10_999)
+      .setJobSchedulerJobIdRange(10_000, 11_000)
       .build()
 
   override fun onCreate() {

@@ -65,7 +65,8 @@ class AndroidPlatformContractTest {
     val application = context.applicationContext as ShelfDriveApplication
     val configuration = application.workManagerConfiguration
     assertEquals(10_000, configuration.minJobSchedulerId)
-    assertEquals(10_999, configuration.maxJobSchedulerId)
+    assertEquals(11_000, configuration.maxJobSchedulerId)
+    assertTrue(configuration.maxJobSchedulerId - configuration.minJobSchedulerId >= 1_000)
     WorkManager.getInstance(context)
   }
 
