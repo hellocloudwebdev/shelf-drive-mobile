@@ -13,7 +13,7 @@
 
 // ── Tauri adapter (the only IPC transport) ────────────────────────────────
 
-import { tauriConvertFileSrc, tauriInvoke, tauriInvokeVoid, tauriListen } from "./tauri";
+import { tauriConvertFileSrc, tauriInvoke, tauriInvokeVoid, tauriInvokeWithTimeout, tauriListen } from "./tauri";
 export { tauriConvertFileSrc as convertFileSrc };
 export { tauriListen };
 
@@ -688,45 +688,73 @@ export const system = {
 
 // ── Domain: auth ──────────────────────────────────────────────────────────
 
+/** UI watchdogs; Rust commands enforce their own, slightly shorter deadlines. */
+export const AUTH_COMMAND_TIMEOUT_MS = {
+  credentialStorage: 20_000,
+  initialize: 95_000,
+  connectionCheck: 20_000,
+  requestCode: 95_000,
+  resendCode: 70_000,
+  signIn: 85_000,
+  checkPassword: 85_000,
+  qrLogin: 95_000,
+  qrPoll: 20_000,
+  cancelCode: 20_000,
+} as const;
+
+function invokeAuth<T>(
+  command: string,
+  args: Record<string, unknown> | undefined,
+  timeoutMs: number,
+  operation: string,
+): Promise<T> {
+  return tauriInvokeWithTimeout<T>(
+    command,
+    args,
+    timeoutMs,
+    `Timed out while ${operation}. Check your connection or proxy settings, then try again.`,
+  );
+}
+
 export const auth = {
   connect(apiId: number) {
-    return tauriInvokeVoid("cmd_connect", { apiId });
+    return invokeAuth<void>("cmd_connect", { apiId }, AUTH_COMMAND_TIMEOUT_MS.initialize, "initializing Telegram");
   },
   checkConnection() {
-    return tauriInvoke<boolean>("cmd_check_connection");
+    return invokeAuth<boolean>("cmd_check_connection", undefined, AUTH_COMMAND_TIMEOUT_MS.connectionCheck, "checking the Telegram connection");
   },
   loadApiHash() {
-    return tauriInvoke<string | null>("cmd_load_api_hash");
+    return invokeAuth<string | null>("cmd_load_api_hash", undefined, AUTH_COMMAND_TIMEOUT_MS.credentialStorage, "loading sign-in credentials");
   },
   storeApiHash(apiHash: string) {
-    return tauriInvokeVoid("cmd_store_api_hash", { apiHash });
+    return invokeAuth<void>("cmd_store_api_hash", { apiHash }, AUTH_COMMAND_TIMEOUT_MS.credentialStorage, "saving sign-in credentials");
   },
   clearApiHash() {
-    return tauriInvokeVoid("cmd_clear_api_hash");
+    return invokeAuth<void>("cmd_clear_api_hash", undefined, AUTH_COMMAND_TIMEOUT_MS.credentialStorage, "clearing sign-in credentials");
   },
   logout() {
     return tauriInvoke<boolean>("cmd_logout");
   },
   qrLogin(apiId: number, apiHash: string) {
-    return tauriInvoke<string>("cmd_auth_qr_login", { apiId, apiHash });
+    return invokeAuth<string>("cmd_auth_qr_login", { apiId, apiHash }, AUTH_COMMAND_TIMEOUT_MS.qrLogin, "requesting a QR login token");
   },
   qrPoll() {
-    return tauriInvoke<AuthStepResult>("cmd_auth_qr_poll");
+    return invokeAuth<AuthStepResult>("cmd_auth_qr_poll", undefined, AUTH_COMMAND_TIMEOUT_MS.qrPoll, "checking QR login status");
   },
   requestCode(phone: string, apiId: number, apiHash: string) {
-    return tauriInvoke<CodeRequestResult>("cmd_auth_request_code", { phone, apiId, apiHash });
+    return invokeAuth<CodeRequestResult>("cmd_auth_request_code", { phone, apiId, apiHash }, AUTH_COMMAND_TIMEOUT_MS.requestCode, "requesting a sign-in code");
   },
   signIn(code: string) {
-    return tauriInvoke<AuthStepResult>("cmd_auth_sign_in", { code });
+    return invokeAuth<AuthStepResult>("cmd_auth_sign_in", { code }, AUTH_COMMAND_TIMEOUT_MS.signIn, "verifying the sign-in code");
   },
   checkPassword(password: string) {
-    return tauriInvoke<AuthStepResult>("cmd_auth_check_password", { password });
+    return invokeAuth<AuthStepResult>("cmd_auth_check_password", { password }, AUTH_COMMAND_TIMEOUT_MS.checkPassword, "verifying the two-step password");
   },
   resendCode() {
-    return tauriInvoke<CodeRequestResult>("cmd_auth_resend_code");
+    return invokeAuth<CodeRequestResult>("cmd_auth_resend_code", undefined, AUTH_COMMAND_TIMEOUT_MS.resendCode, "resending the sign-in code");
   },
   cancelCode() {
-    return tauriInvokeVoid("cmd_auth_cancel_code");
+    return invokeAuth<void>("cmd_auth_cancel_code", undefined, AUTH_COMMAND_TIMEOUT_MS.cancelCode, "cancelling the sign-in code");
   },
 };
 

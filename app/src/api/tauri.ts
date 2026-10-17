@@ -18,6 +18,43 @@ export function tauriInvoke<T>(command: string, args?: Record<string, unknown>):
   return invoke<T>(command, args);
 }
 
+/**
+ * Add a UI-side watchdog for commands whose native implementations also have
+ * their own deadlines. This releases callers if the IPC response is lost; it
+ * does not cancel the native command.
+ */
+export function tauriInvokeWithTimeout<T>(
+  command: string,
+  args: Record<string, unknown> | undefined,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    Promise.resolve()
+      .then(() => tauriInvoke<T>(command, args))
+      .then(
+        value => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        },
+        error => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+  });
+}
+
 /** Invoke a Tauri command, discarding the result. */
 export function tauriInvokeVoid(command: string, args?: Record<string, unknown>): Promise<void> {
   return invoke<void>(command, args);

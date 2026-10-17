@@ -7,8 +7,9 @@ use grammers_session::types::UpdateState;
 use grammers_session::types::{PeerAuth, PeerInfo, UpdatesState};
 use grammers_session::Session;
 use grammers_tl_types as tl;
+use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::Manager;
@@ -22,6 +23,60 @@ use crate::models::{AuthCodeDelivery, AuthCodeRequestResult, AuthCodeRequestStat
 use crate::TelegramState;
 use grammers_client::client::PasswordToken;
 use grammers_mtsender::InvocationError;
+
+const PHONE_CODE_REQUEST_DEADLINE: Duration = Duration::from_secs(90);
+
+#[derive(Debug, PartialEq, Eq)]
+enum AuthCommandDeadlineError {
+    Operation(String),
+    TimedOut,
+}
+
+impl AuthCommandDeadlineError {
+    fn into_string(self, timeout_message: &str) -> String {
+        match self {
+            Self::Operation(error) => error,
+            Self::TimedOut => timeout_message.to_string(),
+        }
+    }
+}
+
+async fn with_auth_deadline<T, F>(
+    deadline: Duration,
+    future: F,
+) -> Result<T, AuthCommandDeadlineError>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    match timeout(deadline, future).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(AuthCommandDeadlineError::Operation(error)),
+        Err(_) => Err(AuthCommandDeadlineError::TimedOut),
+    }
+}
+
+fn invalidate_auth_attempt_generation(counter: &AtomicU64, attempt_id: u64) -> bool {
+    counter
+        .compare_exchange(
+            attempt_id,
+            attempt_id.wrapping_add(1),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        )
+        .is_ok()
+}
+
+fn clear_timed_out_phone_attempt(state: &TelegramState, attempt_id: u64) {
+    if !invalidate_auth_attempt_generation(state.auth_attempt_counter.as_ref(), attempt_id) {
+        return;
+    }
+    if let Ok(mut login) = state.phone_login.try_lock() {
+        *login = None;
+    }
+    if let Ok(mut password_token) = state.password_token.try_lock() {
+        *password_token = None;
+    }
+}
 
 async fn open_client_session(root: &std::path::Path) -> Result<Arc<SqliteSession>, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -764,7 +819,11 @@ async fn store_sent_code(
         tl::enums::auth::SentCode::Code(code) => {
             let delivery = describe_sent_code(&code);
             let resend_after = delivery.resend_after_seconds.unwrap_or(60).max(0) as u64;
-            *state.phone_login.lock().await = Some(PhoneLoginState {
+            let mut active_login = state.phone_login.lock().await;
+            if state.auth_attempt_counter.load(Ordering::SeqCst) != attempt_id {
+                return Err("This login request was replaced by a newer attempt.".to_string());
+            }
+            *active_login = Some(PhoneLoginState {
                 attempt_id,
                 phone,
                 phone_code_hash: code.phone_code_hash,
@@ -776,7 +835,12 @@ async fn store_sent_code(
         }
         tl::enums::auth::SentCode::Success(success) => match success.authorization {
             tl::enums::auth::Authorization::Authorization(authorization) => {
-                *state.phone_login.lock().await = None;
+                let mut active_login = state.phone_login.lock().await;
+                if state.auth_attempt_counter.load(Ordering::SeqCst) != attempt_id {
+                    return Err("This login request was replaced by a newer attempt.".to_string());
+                }
+                *active_login = None;
+                drop(active_login);
                 complete_raw_login(client, state, authorization, captured).await?;
                 Ok(AuthCodeRequestResult {
                     status: AuthCodeRequestStatus::Authorized,
@@ -795,7 +859,11 @@ async fn store_sent_code(
             ),
         },
         tl::enums::auth::SentCode::PaymentRequired(_) => {
-            *state.phone_login.lock().await = None;
+            let mut active_login = state.phone_login.lock().await;
+            if state.auth_attempt_counter.load(Ordering::SeqCst) != attempt_id {
+                return Err("This login request was replaced by a newer attempt.".to_string());
+            }
+            *active_login = None;
             Ok(AuthCodeRequestResult {
                 status: AuthCodeRequestStatus::QrRecommended,
                 delivery: AuthCodeDelivery::Unsupported,
@@ -828,85 +896,97 @@ pub async fn cmd_auth_request_code(
 
     let phone = normalize_phone_number(&phone)?;
     let attempt_id = state.auth_attempt_counter.fetch_add(1, Ordering::SeqCst) + 1;
-    *state.phone_login.lock().await = None;
-    *state.password_token.lock().await = None;
+    match with_auth_deadline(PHONE_CODE_REQUEST_DEADLINE, async {
+        *state.phone_login.lock().await = None;
+        *state.password_token.lock().await = None;
 
-    // Store API ID
-    *state.api_id.lock().await = Some(api_id);
+        // Store API ID
+        *state.api_id.lock().await = Some(api_id);
 
-    ensure_client_initialized(&app_handle, &state, api_id).await?;
-    let (client_handle, captured) = authentication_client(&state).await?;
+        ensure_client_initialized(&app_handle, &state, api_id).await?;
+        let (client_handle, captured) = authentication_client(&state).await?;
 
-    // Clean phone number: keep digits and leading +
-    let clean_phone: String = phone
-        .chars()
-        .filter(|c| c.is_ascii_digit() || *c == '+')
-        .collect();
-    let clean_phone = if !clean_phone.starts_with('+') {
-        format!("+{}", clean_phone)
-    } else {
-        clean_phone
-    };
-    if clean_phone.len() < 5 {
-        return Err(
-            "Please enter a valid phone number with country code (e.g. +1234567890)".to_string(),
-        );
-    }
-
-    log::info!(
-        "Requesting login code for {}",
-        redact_phone_number(&clean_phone)
-    );
-
-    let request = tl::functions::auth::SendCode {
-        phone_number: clean_phone.clone(),
-        api_id,
-        api_hash,
-        settings: tl::types::CodeSettings {
-            allow_flashcall: false,
-            current_number: false,
-            allow_app_hash: false,
-            allow_missed_call: false,
-            allow_firebase: false,
-            unknown_number: false,
-            logout_tokens: None,
-            token: None,
-            app_sandbox: None,
+        // Clean phone number: keep digits and leading +
+        let clean_phone: String = phone
+            .chars()
+            .filter(|c| c.is_ascii_digit() || *c == '+')
+            .collect();
+        let clean_phone = if !clean_phone.starts_with('+') {
+            format!("+{}", clean_phone)
+        } else {
+            clean_phone
+        };
+        if clean_phone.len() < 5 {
+            return Err(
+                "Please enter a valid phone number with country code (e.g. +1234567890)"
+                    .to_string(),
+            );
         }
-        .into(),
-    };
 
-    // Hint initial DC from country code to avoid unnecessary 303 migration roundtrips
-    let initial_dc = if clean_phone.starts_with("+91")
-        || clean_phone.starts_with("+62")
-        || clean_phone.starts_with("+60")
-        || clean_phone.starts_with("+65")
-        || clean_phone.starts_with("+63")
-        || clean_phone.starts_with("+84")
-        || clean_phone.starts_with("+66")
-    {
-        Some(5)
-    } else if clean_phone.starts_with("+1") {
-        Some(1)
-    } else if clean_phone.starts_with("+44")
-        || clean_phone.starts_with("+49")
-        || clean_phone.starts_with("+33")
-    {
-        Some(4)
-    } else {
-        None
-    };
+        log::info!(
+            "Requesting login code for {}",
+            redact_phone_number(&clean_phone)
+        );
 
-    let sent_code = invoke_send_code(&client_handle, &state, &request, initial_dc).await?;
-    store_sent_code(
-        &client_handle,
-        &state,
-        attempt_id,
-        clean_phone,
-        sent_code,
-        &captured,
-    )
+        let request = tl::functions::auth::SendCode {
+            phone_number: clean_phone.clone(),
+            api_id,
+            api_hash,
+            settings: tl::types::CodeSettings {
+                allow_flashcall: false,
+                current_number: false,
+                allow_app_hash: false,
+                allow_missed_call: false,
+                allow_firebase: false,
+                unknown_number: false,
+                logout_tokens: None,
+                token: None,
+                app_sandbox: None,
+            }
+            .into(),
+        };
+
+        // Hint initial DC from country code to avoid unnecessary 303 migration roundtrips
+        let initial_dc = if clean_phone.starts_with("+91")
+            || clean_phone.starts_with("+62")
+            || clean_phone.starts_with("+60")
+            || clean_phone.starts_with("+65")
+            || clean_phone.starts_with("+63")
+            || clean_phone.starts_with("+84")
+            || clean_phone.starts_with("+66")
+        {
+            Some(5)
+        } else if clean_phone.starts_with("+1") {
+            Some(1)
+        } else if clean_phone.starts_with("+44")
+            || clean_phone.starts_with("+49")
+            || clean_phone.starts_with("+33")
+        {
+            Some(4)
+        } else {
+            None
+        };
+
+        let sent_code = invoke_send_code(&client_handle, &state, &request, initial_dc).await?;
+        store_sent_code(
+            &client_handle,
+            &state,
+            attempt_id,
+            clean_phone,
+            sent_code,
+            &captured,
+        )
+        .await
+    })
     .await
+    {
+        Ok(result) => result,
+        Err(AuthCommandDeadlineError::Operation(error)) => Err(error),
+        Err(AuthCommandDeadlineError::TimedOut) => {
+            clear_timed_out_phone_attempt(&state, attempt_id);
+            Err("Telegram did not respond while setting up or requesting a code. Check your connection or proxy settings and try again.".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -916,6 +996,12 @@ pub async fn cmd_auth_resend_code(
     let (client, captured) = authentication_client(&state).await?;
     let login = {
         let mut guard = state.phone_login.lock().await;
+        if guard.as_ref().is_some_and(|login| {
+            state.auth_attempt_counter.load(Ordering::SeqCst) != login.attempt_id
+        }) {
+            *guard = None;
+            return Err("No active phone login. Start again with your phone number.".to_string());
+        }
         let login = guard
             .as_mut()
             .ok_or("No active phone login. Start again with your phone number.")?;
@@ -1219,16 +1305,30 @@ pub async fn cmd_auth_qr_login(
     }
     let api_hash = api_hash.trim().to_string();
 
-    // Store API ID
-    *state.api_id.lock().await = Some(api_id);
-
-    ensure_client_initialized(&app_handle, &state, api_id).await?;
-    let (client, captured) = authentication_client(&state).await?;
-
     // Switching authentication methods invalidates any outstanding phone-code flow.
     state.auth_attempt_counter.fetch_add(1, Ordering::SeqCst);
-    let previous_phone_login = state.phone_login.lock().await.take();
-    *state.password_token.lock().await = None;
+    let previous_phone_login = timeout(Duration::from_secs(2), state.phone_login.lock())
+        .await
+        .map_err(|_| "Timed out while resetting the previous sign-in attempt.".to_string())?
+        .take();
+    timeout(Duration::from_secs(2), async {
+        *state.password_token.lock().await = None;
+    })
+    .await
+    .map_err(|_| "Timed out while resetting the previous sign-in attempt.".to_string())?;
+
+    let (client, captured) = with_auth_deadline(Duration::from_secs(45), async {
+        *state.api_id.lock().await = Some(api_id);
+        ensure_client_initialized(&app_handle, &state, api_id).await?;
+        authentication_client(&state).await
+    })
+    .await
+    .map_err(|error| {
+        error.into_string(
+            "Timed out while preparing Telegram QR login. Check your connection and try again.",
+        )
+    })?;
+
     if let Some(login) = previous_phone_login {
         let cancel = tl::functions::auth::CancelCode {
             phone_number: login.phone,
@@ -1239,14 +1339,20 @@ pub async fn cmd_auth_qr_login(
 
     log::info!("Requesting QR login token...");
 
-    let result = client
-        .invoke(&tl::functions::auth::ExportLoginToken {
+    let result = timeout(
+        Duration::from_secs(30),
+        client.invoke(&tl::functions::auth::ExportLoginToken {
             api_id,
             api_hash: api_hash.clone(),
             except_ids: vec![],
-        })
-        .await
-        .map_err(|e| format!("ExportLoginToken failed: {}", e))?;
+        }),
+    )
+    .await
+    .map_err(|_| {
+        "Telegram did not respond while requesting a QR login token. Check your connection."
+            .to_string()
+    })?
+    .map_err(|e| format!("ExportLoginToken failed: {}", e))?;
 
     match result {
         tl::enums::auth::LoginToken::Token(t) => {
@@ -1288,42 +1394,48 @@ pub async fn cmd_auth_qr_login(
 /// accepts the token via auth.acceptLoginToken.
 #[tauri::command]
 pub async fn cmd_auth_qr_poll(state: State<'_, TelegramState>) -> Result<AuthResult, String> {
-    let (client, captured) = authentication_client(&state).await?;
+    with_auth_deadline(Duration::from_secs(15), async {
+        let (client, captured) = authentication_client(&state).await?;
 
-    // Check if the session is now authorized (user scanned QR on phone)
-    match client.is_authorized().await {
-        Ok(true) => {
-            log::info!("QR login: session authorized!");
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            let user = client.get_me().await.map_err(map_auth_error)?;
-            *state.phone_login.lock().await = None;
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            captured.complete_verified(&authenticated_peer(&user), None)?;
-            #[cfg(any(target_os = "android", target_os = "ios"))]
-            let _ = &captured;
-            Ok(AuthResult {
-                success: true,
-                next_step: Some("dashboard".to_string()),
-                error: None,
-            })
+        // Check if the session is now authorized (user scanned the QR on phone)
+        match client.is_authorized().await {
+            Ok(true) => {
+                log::info!("QR login: session authorized!");
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                let user = client.get_me().await.map_err(map_auth_error)?;
+                *state.phone_login.lock().await = None;
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                captured.complete_verified(&authenticated_peer(&user), None)?;
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                let _ = &captured;
+                Ok(AuthResult {
+                    success: true,
+                    next_step: Some("dashboard".to_string()),
+                    error: None,
+                })
+            }
+            Ok(false) => {
+                // Not yet scanned or accepted
+                Ok(AuthResult {
+                    success: false,
+                    next_step: Some("waiting".to_string()),
+                    error: None,
+                })
+            }
+            Err(error) => {
+                log::warn!("QR poll auth check failed: {}", error);
+                Ok(AuthResult {
+                    success: false,
+                    next_step: Some("waiting".to_string()),
+                    error: None,
+                })
+            }
         }
-        Ok(false) => {
-            // Not yet scanned or accepted
-            Ok(AuthResult {
-                success: false,
-                next_step: Some("waiting".to_string()),
-                error: None,
-            })
-        }
-        Err(e) => {
-            log::warn!("QR poll auth check failed: {}", e);
-            Ok(AuthResult {
-                success: false,
-                next_step: Some("waiting".to_string()),
-                error: None,
-            })
-        }
-    }
+    })
+    .await
+    .map_err(|error| {
+        error.into_string("Telegram did not respond while checking QR login. Please try again.")
+    })
 }
 
 #[cfg(test)]
@@ -1364,6 +1476,26 @@ mod tests {
         let redacted = redact_phone_number("+14155550132");
         assert_eq!(redacted, "+1••••32");
         assert!(!redacted.contains("415555"));
+    }
+
+    #[tokio::test]
+    async fn auth_command_deadline_rejects_a_pending_operation() {
+        let result = with_auth_deadline(
+            Duration::from_millis(1),
+            std::future::pending::<Result<(), String>>(),
+        )
+        .await;
+
+        assert_eq!(result, Err(AuthCommandDeadlineError::TimedOut));
+    }
+
+    #[test]
+    fn timeout_invalidates_only_its_own_auth_attempt_generation() {
+        let counter = AtomicU64::new(7);
+        assert!(invalidate_auth_attempt_generation(&counter, 7));
+        assert_eq!(counter.load(Ordering::SeqCst), 8);
+        assert!(!invalidate_auth_attempt_generation(&counter, 7));
+        assert_eq!(counter.load(Ordering::SeqCst), 8);
     }
 
     #[test]

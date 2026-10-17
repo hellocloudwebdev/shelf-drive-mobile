@@ -64,6 +64,11 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     const [qrUrl, setQrUrl] = useState<string | null>(null);
     const [qrPolling, setQrPolling] = useState(false);
     const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const qrPollGenerationRef = useRef(0);
+    const qrPollInFlightRef = useRef(false);
+    const authRequestIdRef = useRef(0);
+
+    const isCurrentAuthRequest = (requestId: number) => authRequestIdRef.current === requestId;
 
 
     useEffect(() => {
@@ -163,32 +168,38 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             setError("API Hash cannot be empty.");
             return;
         }
+        const requestId = ++authRequestIdRef.current;
         setError(null);
         setLoading(true);
         try {
             try {
                 await saveCredentials();
             } catch {
-                setError("Unable to save sign-in credentials securely. Check device storage and try again.");
+                if (isCurrentAuthRequest(requestId)) {
+                    setError("Unable to save sign-in credentials securely. Check device storage and try again.");
+                }
                 return;
             }
+            if (!isCurrentAuthRequest(requestId)) return;
             setStep("phone");
             setLoginMethod(isMobile ? 'phone' : 'qr');
             setQrUrl(null);
             setQrPolling(false);
             if (!isMobile) await handleQrLogin();
         } finally {
-            setLoading(false);
+            if (isCurrentAuthRequest(requestId)) setLoading(false);
         }
     };
 
     const handleQrLogin = async () => {
+        const requestId = ++authRequestIdRef.current;
         setError(null);
         setLoading(true);
         try {
             const idInt = parseTelegramApiId(apiId);
 
             const url = await auth.qrLogin(idInt, apiHash.trim());
+            if (!isCurrentAuthRequest(requestId)) return;
 
             if (url === "__authorized__") {
                 onLogin();
@@ -198,9 +209,11 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             setQrUrl(url);
             setQrPolling(true);
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : String(err));
+            if (isCurrentAuthRequest(requestId)) {
+                setError(err instanceof Error ? err.message : String(err));
+            }
         } finally {
-            setLoading(false);
+            if (isCurrentAuthRequest(requestId)) setLoading(false);
         }
     };
 
@@ -218,16 +231,22 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
 
     useEffect(() => {
         if (!qrPolling) {
+            qrPollGenerationRef.current += 1;
             if (qrPollRef.current) {
                 clearInterval(qrPollRef.current);
                 qrPollRef.current = null;
             }
+            qrPollInFlightRef.current = false;
             return;
         }
 
-        qrPollRef.current = setInterval(async () => {
+        const generation = ++qrPollGenerationRef.current;
+        const poll = async () => {
+            if (qrPollInFlightRef.current) return;
+            qrPollInFlightRef.current = true;
             try {
                 const pollResult = await auth.qrPoll();
+                if (qrPollGenerationRef.current !== generation) return;
                 if (pollResult.success) {
                     setQrPolling(false);
                     if (pollResult.next_step === "password") {
@@ -238,13 +257,23 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                 }
             } catch {
                 // Telegram may briefly reject a poll while rotating the QR token.
+            } finally {
+                if (qrPollGenerationRef.current === generation) {
+                    qrPollInFlightRef.current = false;
+                }
             }
-        }, 3000);
+        };
+
+        qrPollRef.current = setInterval(() => { void poll(); }, 3000);
 
         return () => {
             if (qrPollRef.current) {
                 clearInterval(qrPollRef.current);
                 qrPollRef.current = null;
+            }
+            if (qrPollGenerationRef.current === generation) {
+                qrPollGenerationRef.current += 1;
+                qrPollInFlightRef.current = false;
             }
         };
     }, [qrPolling, apiId, apiHash]);
@@ -261,6 +290,8 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
 
     const handlePhoneSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (loading) return;
+        const requestId = ++authRequestIdRef.current;
         setLoading(true);
         setError(null);
         try {
@@ -274,20 +305,24 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             }
 
             const codeRequest = await auth.requestCode(cleanPhone, idInt, apiHash.trim());
+            if (!isCurrentAuthRequest(requestId)) return;
             applyCodeRequestResult(codeRequest);
         } catch (err: unknown) {
-            handleAuthError(err);
+            if (isCurrentAuthRequest(requestId)) handleAuthError(err);
         } finally {
-            setLoading(false);
+            if (isCurrentAuthRequest(requestId)) setLoading(false);
         }
     };
 
     const handleCodeSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (loading) return;
+        const requestId = ++authRequestIdRef.current;
         setLoading(true);
         setError(null);
         try {
             const signInResult = await auth.signIn(code);
+            if (!isCurrentAuthRequest(requestId)) return;
             if (signInResult.success) {
                 onLogin();
             } else if (signInResult.next_step === "password") {
@@ -296,58 +331,65 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                 setError("Unknown error");
             }
         } catch (err: unknown) {
-            handleAuthError(err);
+            if (isCurrentAuthRequest(requestId)) handleAuthError(err);
         } finally {
-            setLoading(false);
+            if (isCurrentAuthRequest(requestId)) setLoading(false);
         }
     };
 
     const handlePasswordSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (loading) return;
+        const requestId = ++authRequestIdRef.current;
         setLoading(true);
         setError(null);
         try {
             const passwordResult = await auth.checkPassword(password);
+            if (!isCurrentAuthRequest(requestId)) return;
             if (passwordResult.success) {
                 onLogin();
             } else {
                 setError("Password verification failed.");
             }
         } catch (err: unknown) {
-            handleAuthError(err);
+            if (isCurrentAuthRequest(requestId)) handleAuthError(err);
         } finally {
-            setLoading(false);
+            if (isCurrentAuthRequest(requestId)) setLoading(false);
         }
     };
 
     const handleResendCode = async () => {
         if (resendWait > 0 || loading) return;
+        const requestId = ++authRequestIdRef.current;
         setLoading(true);
         setError(null);
         try {
             const codeRequest = await auth.resendCode();
+            if (!isCurrentAuthRequest(requestId)) return;
             applyCodeRequestResult(codeRequest);
         } catch (err: unknown) {
-            handleAuthError(err);
+            if (isCurrentAuthRequest(requestId)) handleAuthError(err);
         } finally {
-            setLoading(false);
+            if (isCurrentAuthRequest(requestId)) setLoading(false);
         }
     };
 
-    const handleChangePhone = async () => {
-        try {
-            await auth.cancelCode();
-        } catch {
-            // Cancellation is best-effort; local backend state is always cleared.
-        }
+    const handleChangePhone = () => {
+        authRequestIdRef.current += 1;
+        setLoading(false);
         setCode("");
         setCodeDelivery(null);
         setResendWait(0);
         setError(null);
         setStep("phone");
+        void auth.cancelCode().catch(() => {
+            // Cancellation is best-effort; local UI state is already cleared.
+        });
     };
 
     const handleUseQrInstead = () => {
+        authRequestIdRef.current += 1;
+        setLoading(false);
         setCode("");
         setCodeDelivery(null);
         setResendWait(0);
@@ -459,11 +501,11 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                                     qrUrl={qrUrl}
                                     qrPolling={qrPolling}
                                     onPhoneChange={setPhone}
-                                    onSelectPhone={() => { setLoginMethod("phone"); setQrUrl(null); setQrPolling(false); setError(null); }}
+                                    onSelectPhone={() => { authRequestIdRef.current += 1; setLoading(false); setLoginMethod("phone"); setQrUrl(null); setQrPolling(false); setError(null); }}
                                     onSelectQr={() => { setLoginMethod("qr"); setError(null); void handleQrLogin(); }}
                                     onPhoneSubmit={handlePhoneSubmit}
                                     onQrLogin={() => { void handleQrLogin(); }}
-                                    onBack={() => { setStep("setup"); if (loginMethod === "qr") setQrPolling(false); }}
+                                    onBack={() => { authRequestIdRef.current += 1; setLoading(false); setStep("setup"); if (loginMethod === "qr") setQrPolling(false); }}
                                 />
                             )}
                             {step === "code" && (
