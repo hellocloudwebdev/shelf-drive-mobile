@@ -286,7 +286,10 @@ pub async fn ensure_client_initialized(
     *state.runner_shutdown.lock().unwrap() = Some(shutdown_tx);
 
     // Spawn the network runner with shutdown support
-    let SenderPool { runner, .. } = pool;
+    let SenderPool {
+        runner, updates, ..
+    } = pool;
+    *state.updates.lock().await = Some(updates);
     tauri::async_runtime::spawn(async move {
         tokio::select! {
             // Normal runner operation
@@ -437,6 +440,8 @@ pub async fn cmd_logout(
     *state.phone_login.lock().await = None;
     *state.password_token.lock().await = None;
     *state.api_id.lock().await = None;
+    *state.qr_login.lock().await = None;
+    *state.updates.lock().await = None;
     *state.session.lock().await = None;
     crate::commands::utils::clear_peer_cache(&state.peer_cache).await;
     state.active_file_loads.write().await.clear();
@@ -632,6 +637,14 @@ fn map_auth_error(error: InvocationError) -> String {
     map_error(error)
 }
 
+fn require_current_auth_attempt(counter: &AtomicU64, attempt_id: u64) -> Result<(), String> {
+    if counter.load(Ordering::SeqCst) == attempt_id {
+        Ok(())
+    } else {
+        Err("This sign-in attempt was cancelled or replaced. Start again.".to_string())
+    }
+}
+
 async fn current_client(state: &TelegramState) -> Result<Client, String> {
     state
         .client
@@ -680,29 +693,48 @@ fn authenticated_peer(user: &grammers_client::peer::User) -> PeerInfo {
     peer
 }
 
+// Always start on the session's home DC. Guessing from a country prefix can
+// create the code on a different auth key while sign-in/resend still use home.
 async fn invoke_send_code(
     client: &Client,
     state: &TelegramState,
     request: &tl::functions::auth::SendCode,
-    initial_dc: Option<i32>,
 ) -> Result<tl::enums::auth::SentCode, String> {
+    invoke_send_code_with(
+        || client.invoke(request),
+        |dc_id| async move {
+            let session = state
+                .session
+                .lock()
+                .await
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| "Telegram session is not initialized.".to_string())?;
+            session
+                .set_home_dc_id(dc_id)
+                .await
+                .map_err(|error| error.to_string())
+        },
+    )
+    .await
+}
+
+async fn invoke_send_code_with<I, IF, M, MF>(
+    mut invoke: I,
+    mut migrate: M,
+) -> Result<tl::enums::auth::SentCode, String>
+where
+    I: FnMut() -> IF,
+    IF: Future<Output = Result<tl::enums::auth::SentCode, InvocationError>>,
+    M: FnMut(i32) -> MF,
+    MF: Future<Output = Result<(), String>>,
+{
     let mut transient_attempts = 0u8;
-    let mut target_dc = initial_dc;
     let mut migrations = 0u8;
-
     loop {
-        let invoke_future = async {
-            if let Some(dc) = target_dc {
-                client.invoke_in_dc(dc, request).await
-            } else {
-                client.invoke(request).await
-            }
-        };
-
-        let response = timeout(Duration::from_secs(60), invoke_future)
+        let response = timeout(Duration::from_secs(60), invoke())
             .await
             .map_err(|_| "Telegram did not respond while requesting a code. Check your connection or proxy settings.".to_string())?;
-
         match response {
             Ok(sent_code) => return Ok(sent_code),
             Err(InvocationError::Rpc(error)) if error.code == 303 && migrations < 3 => {
@@ -710,18 +742,11 @@ async fn invoke_send_code(
                 let dc_id = error
                     .value
                     .and_then(|value| i32::try_from(value).ok())
+                    .filter(|id| (1..=5).contains(id))
                     .ok_or_else(|| {
                         "Telegram requested an invalid data-center migration.".to_string()
                     })?;
-                let session = state
-                    .session
-                    .lock()
-                    .await
-                    .as_ref()
-                    .cloned()
-                    .ok_or_else(|| "Telegram session is not initialized.".to_string())?;
-                let _ = session.set_home_dc_id(dc_id).await;
-                target_dc = Some(dc_id);
+                migrate(dc_id).await?;
                 log::info!("Telegram login moved to data center {}", dc_id);
             }
             Err(error)
@@ -742,7 +767,9 @@ async fn complete_raw_login(
     state: &TelegramState,
     authorization: tl::types::auth::Authorization,
     captured: &CapturedAuthentication,
+    attempt_id: u64,
 ) -> Result<(), String> {
+    require_current_auth_attempt(&state.auth_attempt_counter, attempt_id)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let _ = state;
     #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -774,9 +801,6 @@ async fn complete_raw_login(
             is_self: Some(true),
         },
     };
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    let _ = session.cache_peer(peer).await;
-
     let updates = if let Ok(Ok(tl::enums::updates::State::State(update))) = timeout(
         Duration::from_secs(15),
         client.invoke(&tl::functions::updates::GetState {}),
@@ -793,6 +817,12 @@ async fn complete_raw_login(
     } else {
         None
     };
+    require_current_auth_attempt(&state.auth_attempt_counter, attempt_id)?;
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    session
+        .cache_peer(peer)
+        .await
+        .map_err(|error| error.to_string())?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     captured.complete_verified(&peer, updates)?;
     #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -841,7 +871,7 @@ async fn store_sent_code(
                 }
                 *active_login = None;
                 drop(active_login);
-                complete_raw_login(client, state, authorization, captured).await?;
+                complete_raw_login(client, state, authorization, captured, attempt_id).await?;
                 Ok(AuthCodeRequestResult {
                     status: AuthCodeRequestStatus::Authorized,
                     delivery: AuthCodeDelivery::TelegramApp,
@@ -946,28 +976,7 @@ pub async fn cmd_auth_request_code(
             .into(),
         };
 
-        // Hint initial DC from country code to avoid unnecessary 303 migration roundtrips
-        let initial_dc = if clean_phone.starts_with("+91")
-            || clean_phone.starts_with("+62")
-            || clean_phone.starts_with("+60")
-            || clean_phone.starts_with("+65")
-            || clean_phone.starts_with("+63")
-            || clean_phone.starts_with("+84")
-            || clean_phone.starts_with("+66")
-        {
-            Some(5)
-        } else if clean_phone.starts_with("+1") {
-            Some(1)
-        } else if clean_phone.starts_with("+44")
-            || clean_phone.starts_with("+49")
-            || clean_phone.starts_with("+33")
-        {
-            Some(4)
-        } else {
-            None
-        };
-
-        let sent_code = invoke_send_code(&client_handle, &state, &request, initial_dc).await?;
+        let sent_code = invoke_send_code(&client_handle, &state, &request).await?;
         store_sent_code(
             &client_handle,
             &state,
@@ -1067,6 +1076,7 @@ pub async fn cmd_auth_resend_code(
 pub async fn cmd_auth_cancel_code(state: State<'_, TelegramState>) -> Result<bool, String> {
     state.auth_attempt_counter.fetch_add(1, Ordering::SeqCst);
     *state.password_token.lock().await = None;
+    *state.qr_login.lock().await = None;
     let login = state.phone_login.lock().await.take();
 
     let Some(login) = login else {
@@ -1111,6 +1121,7 @@ pub async fn cmd_auth_sign_in(
         .await
         .clone()
         .ok_or("No active phone login. Start again with your phone number.")?;
+    require_current_auth_attempt(&state.auth_attempt_counter, login.attempt_id)?;
 
     let request = tl::functions::auth::SignIn {
         phone_number: login.phone,
@@ -1119,11 +1130,16 @@ pub async fn cmd_auth_sign_in(
         email_verification: None,
     };
 
-    match timeout(Duration::from_secs(30), client.invoke(&request)).await {
+    let response = timeout(Duration::from_secs(30), client.invoke(&request)).await;
+    require_current_auth_attempt(&state.auth_attempt_counter, login.attempt_id)?;
+    match response {
         Err(_) => Err("Telegram did not respond while verifying the code. Please try again.".to_string()),
         Ok(Ok(tl::enums::auth::Authorization::Authorization(auth))) => {
-            *state.phone_login.lock().await = None;
-            complete_raw_login(&client, &state, auth, &captured).await?;
+            let mut active = state.phone_login.lock().await;
+            require_current_auth_attempt(&state.auth_attempt_counter, login.attempt_id)?;
+            *active = None;
+            drop(active);
+            complete_raw_login(&client, &state, auth, &captured, login.attempt_id).await?;
             log::info!("Successfully logged in with a phone code.");
             Ok(AuthResult {
                 success: true,
@@ -1143,7 +1159,9 @@ pub async fn cmd_auth_sign_in(
             .map_err(|_| "Telegram did not respond while requesting two-step verification.".to_string())?
             .map_err(map_auth_error)?
             .into();
-            *state.password_token.lock().await = Some(PasswordToken::new(password));
+            let mut token = state.password_token.lock().await;
+            require_current_auth_attempt(&state.auth_attempt_counter, login.attempt_id)?;
+            *token = Some((login.attempt_id, PasswordToken::new(password)));
 
             Ok(AuthResult {
                 success: false,
@@ -1197,7 +1215,13 @@ pub async fn cmd_auth_check_password(
             .await
             .as_ref()
             .map(|login| login.attempt_id);
-        if active_attempt != Some(attempt_id) {
+        let qr_attempt = state
+            .qr_login
+            .lock()
+            .await
+            .as_ref()
+            .map(|login| login.attempt_id);
+        if active_attempt != Some(attempt_id) && qr_attempt != Some(attempt_id) {
             return false;
         }
         match refresh_password_token(client).await {
@@ -1209,8 +1233,20 @@ pub async fn cmd_auth_check_password(
                         .await
                         .as_ref()
                         .map(|login| login.attempt_id);
-                    if active_attempt == Some(attempt_id) {
-                        *state.password_token.lock().await = Some(token);
+                    let qr_attempt = state
+                        .qr_login
+                        .lock()
+                        .await
+                        .as_ref()
+                        .map(|login| login.attempt_id);
+                    if active_attempt == Some(attempt_id) || qr_attempt == Some(attempt_id) {
+                        let mut challenge = state.password_token.lock().await;
+                        if require_current_auth_attempt(&state.auth_attempt_counter, attempt_id)
+                            .is_err()
+                        {
+                            return false;
+                        }
+                        *challenge = Some((attempt_id, token));
                         return true;
                     }
                 }
@@ -1224,19 +1260,29 @@ pub async fn cmd_auth_check_password(
     }
 
     let (client, captured) = authentication_client(&state).await?;
-    let attempt_id = state
+    let phone_attempt = state
         .phone_login
         .lock()
         .await
         .as_ref()
-        .map(|login| login.attempt_id)
-        .ok_or("No active two-step verification. Request a new sign-in code.")?;
-    let pw_token = state
-        .password_token
+        .map(|login| login.attempt_id);
+    let qr_attempt = state
+        .qr_login
         .lock()
         .await
-        .take()
-        .ok_or("No password session found")?;
+        .as_ref()
+        .map(|login| login.attempt_id);
+    let attempt_id = phone_attempt
+        .or(qr_attempt)
+        .ok_or("No active two-step verification. Start sign-in again.")?;
+    let pw_token = {
+        let mut challenge = state.password_token.lock().await;
+        require_current_auth_attempt(&state.auth_attempt_counter, attempt_id)?;
+        if challenge.as_ref().map(|(id, _)| *id) != Some(attempt_id) {
+            return Err("No password session found for this sign-in attempt.".into());
+        }
+        challenge.take().unwrap().1
+    };
 
     match timeout(
         Duration::from_secs(30),
@@ -1264,7 +1310,24 @@ pub async fn cmd_auth_check_password(
                 );
             }
             log::info!("2FA Success.");
+            let active_phone = state
+                .phone_login
+                .lock()
+                .await
+                .as_ref()
+                .map(|login| login.attempt_id);
+            let active_qr = state
+                .qr_login
+                .lock()
+                .await
+                .as_ref()
+                .map(|login| login.attempt_id);
+            if active_phone != Some(attempt_id) && active_qr != Some(attempt_id) {
+                return Err("This sign-in attempt was cancelled or replaced. Start again.".into());
+            }
             *state.phone_login.lock().await = None;
+            *state.qr_login.lock().await = None;
+            *state.password_token.lock().await = None;
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             captured.complete_verified(&authenticated_peer(&user), None)?;
             #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -1288,8 +1351,84 @@ pub async fn cmd_auth_check_password(
     }
 }
 
-/// QR Login -- Step 1: Export a login token and return the `tg://login?token=...` URL.
-/// The frontend renders this as a QR code for the user to scan with their phone.
+fn is_login_token_update(update: &tl::enums::Update) -> bool {
+    matches!(update, tl::enums::Update::LoginToken)
+}
+
+fn updates_contain_login_token(update: &grammers_session::updates::UpdatesLike) -> bool {
+    use grammers_session::updates::UpdatesLike;
+    let contains = |items: &[tl::enums::Update]| items.iter().any(is_login_token_update);
+    match update {
+        UpdatesLike::Updates(tl::enums::Updates::Updates(value)) => contains(&value.updates),
+        UpdatesLike::Updates(tl::enums::Updates::Combined(value)) => contains(&value.updates),
+        UpdatesLike::Updates(tl::enums::Updates::UpdateShort(value)) => {
+            is_login_token_update(&value.update)
+        }
+        _ => false,
+    }
+}
+
+async fn resolve_login_token_migration(
+    client: &Client,
+    state: &TelegramState,
+    attempt_id: u64,
+    token: tl::enums::auth::LoginToken,
+) -> Result<tl::enums::auth::LoginToken, InvocationError> {
+    resolve_login_token_migration_with(token, |migration| async move {
+        require_current_auth_attempt(&state.auth_attempt_counter, attempt_id)
+            .map_err(|error| InvocationError::from(std::io::Error::other(error)))?;
+        let session = state
+            .session
+            .lock()
+            .await
+            .as_ref()
+            .cloned()
+            .ok_or(InvocationError::InvalidDc)?;
+        session
+            .set_home_dc_id(migration.dc_id)
+            .await
+            .map_err(|error| InvocationError::from(std::io::Error::other(error.to_string())))?;
+        client
+            .invoke_in_dc(
+                migration.dc_id,
+                &tl::functions::auth::ImportLoginToken {
+                    token: migration.token,
+                },
+            )
+            .await
+    })
+    .await
+}
+
+async fn resolve_login_token_migration_with<I, IF>(
+    mut token: tl::enums::auth::LoginToken,
+    mut import: I,
+) -> Result<tl::enums::auth::LoginToken, InvocationError>
+where
+    I: FnMut(tl::types::auth::LoginTokenMigrateTo) -> IF,
+    IF: Future<Output = Result<tl::enums::auth::LoginToken, InvocationError>>,
+{
+    for _ in 0..3 {
+        let tl::enums::auth::LoginToken::MigrateTo(migration) = token else {
+            return Ok(token);
+        };
+        token = import(migration).await?;
+    }
+    Ok(token)
+}
+
+fn qr_expiry(expires: i32) -> Instant {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default();
+    Instant::now() + Duration::from_secs((i64::from(expires) - now).max(0) as u64)
+}
+
+fn qr_expired_at(expires_at: Instant, now: Instant) -> bool {
+    now >= expires_at
+}
+
 #[tauri::command]
 pub async fn cmd_auth_qr_login(
     app_handle: tauri::AppHandle,
@@ -1304,9 +1443,9 @@ pub async fn cmd_auth_qr_login(
         return Err("API Hash cannot be empty.".to_string());
     }
     let api_hash = api_hash.trim().to_string();
-
-    // Switching authentication methods invalidates any outstanding phone-code flow.
-    state.auth_attempt_counter.fetch_add(1, Ordering::SeqCst);
+    let attempt_id = state.auth_attempt_counter.fetch_add(1, Ordering::SeqCst) + 1;
+    with_auth_deadline(Duration::from_secs(90), async {
+    *state.qr_login.lock().await = None;
     let previous_phone_login = timeout(Duration::from_secs(2), state.phone_login.lock())
         .await
         .map_err(|_| "Timed out while resetting the previous sign-in attempt.".to_string())?
@@ -1323,12 +1462,9 @@ pub async fn cmd_auth_qr_login(
         authentication_client(&state).await
     })
     .await
-    .map_err(|error| {
-        error.into_string(
-            "Timed out while preparing Telegram QR login. Check your connection and try again.",
-        )
-    })?;
-
+    .map_err(|error| error.into_string(
+        "Timed out while preparing Telegram QR login. Check your connection and try again.",
+    ))?;
     if let Some(login) = previous_phone_login {
         let cancel = tl::functions::auth::CancelCode {
             phone_number: login.phone,
@@ -1336,8 +1472,10 @@ pub async fn cmd_auth_qr_login(
         };
         let _ = timeout(Duration::from_secs(10), client.invoke(&cancel)).await;
     }
-
-    log::info!("Requesting QR login token...");
+    // Discard queued events from a prior authentication attempt before installing this QR challenge.
+    if let Some(receiver) = state.updates.lock().await.as_mut() {
+        while receiver.try_recv().is_ok() {}
+    }
 
     let result = timeout(
         Duration::from_secs(30),
@@ -1348,87 +1486,192 @@ pub async fn cmd_auth_qr_login(
         }),
     )
     .await
-    .map_err(|_| {
-        "Telegram did not respond while requesting a QR login token. Check your connection."
-            .to_string()
-    })?
-    .map_err(|e| format!("ExportLoginToken failed: {}", e))?;
-
+    .map_err(|_| "Telegram did not respond while requesting a QR login token. Check your connection.".to_string())?
+    .map_err(|error| format!("ExportLoginToken failed: {}", error))?;
+    let result = resolve_login_token_migration(&client, &state, attempt_id, result)
+        .await
+        .map_err(|error| format!("QR login token migration failed: {}", error))?;
+    require_current_auth_attempt(&state.auth_attempt_counter, attempt_id)?;
     match result {
-        tl::enums::auth::LoginToken::Token(t) => {
-            let encoded = URL_SAFE_NO_PAD.encode(&t.token);
-            let url = format!("tg://login?token={}", encoded);
-            log::info!("QR login URL generated, expires at {}", t.expires);
+        tl::enums::auth::LoginToken::Token(token) => {
+            let url = format!("tg://login?token={}", URL_SAFE_NO_PAD.encode(&token.token));
+            let mut active = state.qr_login.lock().await;
+            require_current_auth_attempt(&state.auth_attempt_counter, attempt_id)?;
+            *active = Some(crate::commands::QrLoginState {
+                attempt_id,
+                expires_at: qr_expiry(token.expires),
+                api_hash,
+                accepted: false,
+            });
             Ok(url)
         }
         tl::enums::auth::LoginToken::Success(success) => {
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             match success.authorization {
                 tl::enums::auth::Authorization::Authorization(authorization) => {
-                    complete_raw_login(&client, &state, authorization, &captured).await?;
+                    complete_raw_login(&client, &state, authorization, &captured, attempt_id).await?;
                 }
                 _ => return Err("Telegram did not confirm an existing account".into()),
             }
-            #[cfg(any(target_os = "android", target_os = "ios"))]
-            let _ = (&captured, success);
-            // Already authorized (e.g. from a previous session)
-            log::info!("QR login: already authorized");
+            *state.qr_login.lock().await = None;
             Ok("__authorized__".to_string())
         }
-        tl::enums::auth::LoginToken::MigrateTo(m) => {
-            log::info!("QR login: need to migrate to DC {}", m.dc_id);
-            let encoded = URL_SAFE_NO_PAD.encode(&m.token);
-            let url = format!("tg://login?token={}", encoded);
-            Ok(url)
-        }
+        tl::enums::auth::LoginToken::MigrateTo(_) => Err("Telegram requested too many QR login data-center migrations.".into()),
     }
+    }).await.map_err(|error| error.into_string(
+        "Telegram did not respond while preparing or completing QR login. Check your connection and try again."
+    ))
 }
 
-/// QR Login -- Step 2: Poll for scan completion.
-/// Checks if the session became authorized after the user scanned the QR code.
-///
-/// IMPORTANT: We must NOT call auth.exportLoginToken here for polling.
-/// Each call to exportLoginToken generates a NEW token and invalidates the
-/// previous one, causing the scanned QR code to fail with "Invalid code".
-/// Instead, we check is_authorized() which succeeds once the phone app
-/// accepts the token via auth.acceptLoginToken.
 #[tauri::command]
 pub async fn cmd_auth_qr_poll(state: State<'_, TelegramState>) -> Result<AuthResult, String> {
-    with_auth_deadline(Duration::from_secs(15), async {
+    with_auth_deadline(Duration::from_secs(70), async {
         let (client, captured) = authentication_client(&state).await?;
-
-        // Check if the session is now authorized (user scanned the QR on phone)
-        match client.is_authorized().await {
-            Ok(true) => {
-                log::info!("QR login: session authorized!");
-                #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                let user = client.get_me().await.map_err(map_auth_error)?;
-                *state.phone_login.lock().await = None;
-                #[cfg(not(any(target_os = "android", target_os = "ios")))]
-                captured.complete_verified(&authenticated_peer(&user), None)?;
-                #[cfg(any(target_os = "android", target_os = "ios"))]
-                let _ = &captured;
+        let qr = state
+            .qr_login
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| "No active QR login. Start a new QR sign-in attempt.".to_string())?;
+        require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+        let found = {
+            let mut updates = state.updates.lock().await;
+            let receiver = updates.as_mut().ok_or_else(|| {
+                "Telegram update stream is unavailable; reconnect and try QR login again."
+                    .to_string()
+            })?;
+            let mut found = false;
+            loop {
+                match receiver.try_recv() {
+                    Ok(update) => found |= updates_contain_login_token(&update),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+                }
+            }
+            found
+        };
+        if !found && !qr.accepted {
+            if qr_expired_at(qr.expires_at, Instant::now()) {
+                let mut active = state.qr_login.lock().await;
+                require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+                *active = None;
+                return Ok(AuthResult {
+                    success: false,
+                    next_step: Some("expired".into()),
+                    error: None,
+                });
+            }
+            return Ok(AuthResult {
+                success: false,
+                next_step: Some("waiting".into()),
+                error: None,
+            });
+        }
+        {
+            let mut active = state.qr_login.lock().await;
+            require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+            if let Some(active) = active.as_mut() {
+                active.accepted = true;
+            }
+        }
+        require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+        let api_id = state.api_id.lock().await.unwrap_or_default();
+        let exported = timeout(
+            Duration::from_secs(20),
+            client.invoke(&tl::functions::auth::ExportLoginToken {
+                api_id,
+                api_hash: qr.api_hash.clone(),
+                except_ids: vec![],
+            }),
+        )
+        .await
+        .map_err(|_| "Telegram did not respond while completing QR login.".to_string())?;
+        let exported = match exported {
+            Ok(token) => token,
+            Err(error) if error.is("SESSION_PASSWORD_NEEDED") => {
+                let password: tl::types::account::Password = timeout(
+                    Duration::from_secs(30),
+                    client.invoke(&tl::functions::account::GetPassword {}),
+                )
+                .await
+                .map_err(|_| {
+                    "Telegram did not respond while requesting two-step verification.".to_string()
+                })?
+                .map_err(map_auth_error)?
+                .into();
+                require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+                let mut challenge = state.password_token.lock().await;
+                require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+                *challenge = Some((qr.attempt_id, PasswordToken::new(password)));
+                return Ok(AuthResult {
+                    success: false,
+                    next_step: Some("password".into()),
+                    error: None,
+                });
+            }
+            Err(error) => return Err(map_auth_error(error)),
+        };
+        let completed =
+            match resolve_login_token_migration(&client, &state, qr.attempt_id, exported).await {
+                Ok(result) => result,
+                Err(error) if error.is("SESSION_PASSWORD_NEEDED") => {
+                    let password: tl::types::account::Password = timeout(
+                        Duration::from_secs(30),
+                        client.invoke(&tl::functions::account::GetPassword {}),
+                    )
+                    .await
+                    .map_err(|_| {
+                        "Telegram did not respond while requesting two-step verification."
+                            .to_string()
+                    })?
+                    .map_err(map_auth_error)?
+                    .into();
+                    require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+                    let mut challenge = state.password_token.lock().await;
+                    require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+                    *challenge = Some((qr.attempt_id, PasswordToken::new(password)));
+                    return Ok(AuthResult {
+                        success: false,
+                        next_step: Some("password".into()),
+                        error: None,
+                    });
+                }
+                Err(error) => return Err(map_auth_error(error)),
+            };
+        match completed {
+            tl::enums::auth::LoginToken::Success(success) => {
+                require_current_auth_attempt(&state.auth_attempt_counter, qr.attempt_id)?;
+                match success.authorization {
+                    tl::enums::auth::Authorization::Authorization(authorization) => {
+                        complete_raw_login(
+                            &client,
+                            &state,
+                            authorization,
+                            &captured,
+                            qr.attempt_id,
+                        )
+                        .await?;
+                    }
+                    _ => return Err("Telegram did not confirm this QR login.".into()),
+                }
+                *state.qr_login.lock().await = None;
+                *state.password_token.lock().await = None;
                 Ok(AuthResult {
                     success: true,
-                    next_step: Some("dashboard".to_string()),
+                    next_step: Some("dashboard".into()),
                     error: None,
                 })
             }
-            Ok(false) => {
-                // Not yet scanned or accepted
+            // A second-export token means the displayed QR is no longer valid; the UI restarts QR setup.
+            tl::enums::auth::LoginToken::Token(_) => {
+                *state.qr_login.lock().await = None;
                 Ok(AuthResult {
                     success: false,
-                    next_step: Some("waiting".to_string()),
+                    next_step: Some("expired".into()),
                     error: None,
                 })
             }
-            Err(error) => {
-                log::warn!("QR poll auth check failed: {}", error);
-                Ok(AuthResult {
-                    success: false,
-                    next_step: Some("waiting".to_string()),
-                    error: None,
-                })
+            tl::enums::auth::LoginToken::MigrateTo(_) => {
+                Err("Telegram requested too many QR login data-center migrations.".into())
             }
         }
     })
@@ -1496,6 +1739,161 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 8);
         assert!(!invalidate_auth_attempt_generation(&counter, 7));
         assert_eq!(counter.load(Ordering::SeqCst), 8);
+    }
+
+    fn rpc_error(code: i32, name: &str) -> InvocationError {
+        InvocationError::Rpc(grammers_mtsender::RpcError::from(tl::types::RpcError {
+            error_code: code,
+            error_message: name.to_string(),
+        }))
+    }
+
+    #[test]
+    fn qr_expiry_and_login_update_detection_are_deterministic() {
+        let now = Instant::now();
+        assert!(!qr_expired_at(now + Duration::from_secs(1), now));
+        assert!(qr_expired_at(now, now));
+        assert!(qr_expired_at(now - Duration::from_secs(1), now));
+        assert!(is_login_token_update(&tl::enums::Update::LoginToken));
+        assert!(!is_login_token_update(&tl::enums::Update::FolderPeers(
+            tl::types::UpdateFolderPeers {
+                folder_peers: vec![],
+                pts: 1,
+                pts_count: 1
+            },
+        )));
+    }
+
+    #[test]
+    fn qr_acceptance_is_detected_inside_short_update_envelopes() {
+        use grammers_session::updates::UpdatesLike;
+        let envelope =
+            UpdatesLike::Updates(tl::enums::Updates::UpdateShort(tl::types::UpdateShort {
+                update: tl::enums::Update::LoginToken,
+                date: 1,
+            }));
+        assert!(updates_contain_login_token(&envelope));
+        assert!(!updates_contain_login_token(&UpdatesLike::ConnectionClosed));
+    }
+
+    #[tokio::test]
+    async fn qr_migration_imports_the_opaque_token_on_the_requested_dc() {
+        let calls = std::cell::RefCell::new(Vec::new());
+        let migration =
+            tl::enums::auth::LoginToken::MigrateTo(tl::types::auth::LoginTokenMigrateTo {
+                dc_id: 5,
+                token: vec![1, 2, 3],
+            });
+        let result = resolve_login_token_migration_with(migration, |request| {
+            calls.borrow_mut().push((request.dc_id, request.token));
+            std::future::ready(Ok(tl::enums::auth::LoginToken::Token(
+                tl::types::auth::LoginToken {
+                    expires: 100,
+                    token: vec![4, 5, 6],
+                },
+            )))
+        })
+        .await
+        .unwrap();
+        assert_eq!(*calls.borrow(), vec![(5, vec![1, 2, 3])]);
+        assert!(matches!(result, tl::enums::auth::LoginToken::Token(_)));
+    }
+
+    #[tokio::test]
+    async fn qr_migration_loops_are_bounded_and_rpc_failures_are_preserved() {
+        let migrate = || {
+            tl::enums::auth::LoginToken::MigrateTo(tl::types::auth::LoginTokenMigrateTo {
+                dc_id: 5,
+                token: vec![1],
+            })
+        };
+        let calls = std::cell::Cell::new(0);
+        let result = resolve_login_token_migration_with(migrate(), |_| {
+            calls.set(calls.get() + 1);
+            std::future::ready(Ok(migrate()))
+        })
+        .await
+        .unwrap();
+        assert_eq!(calls.get(), 3);
+        assert!(matches!(result, tl::enums::auth::LoginToken::MigrateTo(_)));
+        let result = resolve_login_token_migration_with(migrate(), |_| {
+            std::future::ready(Err(rpc_error(401, "SESSION_PASSWORD_NEEDED")))
+        })
+        .await;
+        assert!(result.unwrap_err().is("SESSION_PASSWORD_NEEDED"));
+    }
+
+    #[test]
+    fn cancelled_or_replaced_code_verification_cannot_commit() {
+        let counter = AtomicU64::new(9);
+        assert!(require_current_auth_attempt(&counter, 9).is_ok());
+        counter.fetch_add(1, Ordering::SeqCst);
+        assert!(require_current_auth_attempt(&counter, 9).is_err());
+        assert!(require_current_auth_attempt(&counter, 10).is_ok());
+    }
+
+    #[tokio::test]
+    async fn phone_code_starts_at_home_and_follows_server_migration() {
+        use std::cell::RefCell;
+        let home = RefCell::new(2);
+        let calls = RefCell::new(Vec::new());
+        let replies = RefCell::new(std::collections::VecDeque::from([
+            Err(rpc_error(303, "PHONE_MIGRATE_5")),
+            Ok(tl::enums::auth::SentCode::Code(sent_code(
+                tl::enums::auth::SentCodeType::Sms(tl::types::auth::SentCodeTypeSms { length: 5 }),
+            ))),
+        ]));
+        let result = invoke_send_code_with(
+            || {
+                calls.borrow_mut().push(*home.borrow());
+                std::future::ready(replies.borrow_mut().pop_front().unwrap())
+            },
+            |dc| {
+                *home.borrow_mut() = dc;
+                std::future::ready(Ok(()))
+            },
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(*calls.borrow(), vec![2, 5]);
+        // Subsequent ordinary client.invoke(SignIn/ResendCode) uses this same DC.
+        assert_eq!(*home.borrow(), 5);
+    }
+
+    #[tokio::test]
+    async fn phone_code_never_retries_after_a_failed_session_migration() {
+        let calls = std::cell::Cell::new(0);
+        let result = invoke_send_code_with(
+            || {
+                calls.set(calls.get() + 1);
+                std::future::ready(Err(rpc_error(303, "PHONE_MIGRATE_5")))
+            },
+            |_| std::future::ready(Err("session write failed".to_string())),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "session write failed");
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn phone_code_rejects_invalid_migration_and_bounds_restart_retries() {
+        let result = invoke_send_code_with(
+            || std::future::ready(Err(rpc_error(303, "PHONE_MIGRATE_0"))),
+            |_| std::future::ready(Ok(())),
+        )
+        .await;
+        assert!(result.unwrap_err().contains("invalid data-center"));
+        let calls = std::cell::Cell::new(0);
+        let result = invoke_send_code_with(
+            || {
+                calls.set(calls.get() + 1);
+                std::future::ready(Err(rpc_error(500, "AUTH_RESTART")))
+            },
+            |_| std::future::ready(Ok(())),
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(calls.get(), 2);
     }
 
     #[test]

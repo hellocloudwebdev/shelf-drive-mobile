@@ -1,3 +1,13 @@
+## [4.4.7] - 2026-10-18
+### Telegram login reliability
+- Initialize Grammers/libsql before the app opens SQLite databases, preventing a native SQLITE_MISUSE panic during sign-in.
+- Keep phone-code requests and subsequent verification on the session’s Telegram data center, following server-directed migrations instead of country-prefix guesses.
+- Complete QR login through Telegram login-token updates, with bounded data-center migration, token-expiry handling, and two-step verification support.
+- Reject cancelled or replaced authentication attempts and prevent overlapping or stale QR polling from changing the current sign-in screen.
+### Regression coverage
+- Add an isolated database startup-order regression test and expand frontend/backend phone, QR, cancellation, migration, and expiry tests.
+- Add an opt-in Android Telegram test-account flow; credentials are supplied through instrumentation arguments, never bundled with the application.
+
 ## [4.4.6] - 2026-10-17
 
 ### Phone sign-in and reliability

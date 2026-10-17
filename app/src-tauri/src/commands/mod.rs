@@ -19,6 +19,14 @@ pub struct PhoneLoginState {
     pub request_in_flight: bool,
 }
 
+#[derive(Clone)]
+pub struct QrLoginState {
+    pub attempt_id: u64,
+    pub expires_at: Instant,
+    pub api_hash: String,
+    pub accepted: bool,
+}
+
 /// Tracks the lifecycle of the Telegram connection
 ///
 /// IMPORTANT: The `runner_shutdown` field is critical for preventing stack overflow.
@@ -29,7 +37,10 @@ pub struct TelegramState {
     pub client: Arc<Mutex<Option<Client>>>,
     pub session: Arc<Mutex<Option<Arc<SqliteSession>>>>,
     pub phone_login: Arc<Mutex<Option<PhoneLoginState>>>,
-    pub password_token: Arc<Mutex<Option<PasswordToken>>>,
+    pub qr_login: Arc<Mutex<Option<QrLoginState>>>,
+    pub updates:
+        Arc<Mutex<Option<tokio::sync::mpsc::Receiver<grammers_session::updates::UpdatesLike>>>>,
+    pub password_token: Arc<Mutex<Option<(u64, PasswordToken)>>>,
     pub api_id: Arc<Mutex<Option<i32>>>,
     pub auth_attempt_counter: Arc<std::sync::atomic::AtomicU64>,
     /// Send to this channel to request runner shutdown.

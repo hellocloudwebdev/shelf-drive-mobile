@@ -1019,6 +1019,8 @@ mod streaming_runtime_tests {
             client: Arc::new(Mutex::new(None)),
             session: Arc::new(Mutex::new(None)),
             phone_login: Arc::new(Mutex::new(None)),
+            qr_login: Arc::new(Mutex::new(None)),
+            updates: Arc::new(Mutex::new(None)),
             password_token: Arc::new(Mutex::new(None)),
             api_id: Arc::new(Mutex::new(None)),
             auth_attempt_counter: Arc::new(AtomicU64::new(0)),

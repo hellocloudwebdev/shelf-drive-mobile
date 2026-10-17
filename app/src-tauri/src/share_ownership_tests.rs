@@ -50,6 +50,8 @@ fn disconnected() -> Arc<TelegramState> {
         client: Arc::new(tokio::sync::Mutex::new(None)),
         session: Arc::new(tokio::sync::Mutex::new(None)),
         phone_login: Arc::new(tokio::sync::Mutex::new(None)),
+        qr_login: Arc::new(tokio::sync::Mutex::new(None)),
+        updates: Arc::new(tokio::sync::Mutex::new(None)),
         password_token: Arc::new(tokio::sync::Mutex::new(None)),
         api_id: Arc::new(tokio::sync::Mutex::new(None)),
         auth_attempt_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),

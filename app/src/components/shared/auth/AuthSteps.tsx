@@ -235,6 +235,9 @@ export function AuthMethodStep({
               <div className="h-7 w-7 animate-spin rounded-full border-2 border-app-border border-t-app-accent" />
             </div>
           )}
+          {!loading && !qrUrl && (
+            <button type="button" onClick={onQrLogin} disabled={loading} className="quiet-control auth-secondary-action px-2 disabled:opacity-45">{i18n.t("auth.refresh_qr")}</button>
+          )}
           {qrUrl && (
             <>
               <div className="rounded-container bg-white p-3 shadow-[var(--shadow-raised)]">
@@ -249,7 +252,7 @@ export function AuthMethodStep({
                   <div className="h-3 w-3 animate-spin rounded-full border-2 border-app-border border-t-app-accent" /> {i18n.t("auth.waiting_for_scan")}
                 </div>
               )}
-              <button type="button" onClick={onQrLogin} className="quiet-control auth-secondary-action px-2">{i18n.t("auth.refresh_qr")}</button>
+              <button type="button" onClick={onQrLogin} disabled={loading} className="quiet-control auth-secondary-action px-2 disabled:opacity-45">{i18n.t("auth.refresh_qr")}</button>
             </>
           )}
           <button type="button" onClick={onBack} className="quiet-control auth-secondary-action w-full">{i18n.t("auth.back_to_config")}</button>
@@ -347,12 +350,13 @@ export function AuthCodeStep({
 interface AuthPasswordStepProps {
   password: string;
   loading: boolean;
+  backLabel?: string;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
   onBack: () => void;
 }
 
-export function AuthPasswordStep({ password, loading, onPasswordChange, onSubmit, onBack }: AuthPasswordStepProps) {
+export function AuthPasswordStep({ password, loading, backLabel, onPasswordChange, onSubmit, onBack }: AuthPasswordStepProps) {
   return (
     <motion.form key="password" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} onSubmit={onSubmit} className="space-y-5">
       <div className="space-y-2">
@@ -367,7 +371,7 @@ export function AuthPasswordStep({ password, loading, onPasswordChange, onSubmit
       </div>
       <div className="flex flex-col gap-3">
         <button type="submit" disabled={loading || !password} className="quiet-control auth-primary-action disabled:opacity-45">{loading ? 'Verifying...' : 'Unlock'}</button>
-        <button type="button" onClick={onBack} className="quiet-control auth-secondary-action w-full">{i18n.t("auth.back_to_code")}</button>
+        <button type="button" onClick={onBack} className="quiet-control auth-secondary-action w-full">{backLabel ?? i18n.t("auth.back_to_code")}</button>
       </div>
     </motion.form>
   );

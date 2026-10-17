@@ -10,6 +10,7 @@ pub mod desktop_preferences;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod desktop_tray;
 pub mod installation;
+mod libsql_init;
 pub mod linux_startup;
 pub mod models;
 #[cfg(not(target_os = "android"))]
@@ -970,6 +971,10 @@ pub fn run() {
 
     let app = builder
         .setup(move |app| {
+            crate::libsql_init::preinitialize_grammers_sqlite().map_err(|error| {
+                log::error!("Failed to preinitialize Grammers SQLite: {error}");
+                error
+            })?;
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
                 let preferences = desktop_preferences::DesktopPreferencesState::load(app.handle())
@@ -1081,6 +1086,8 @@ pub fn run() {
                 client: Arc::new(Mutex::new(None)),
                 session: Arc::new(Mutex::new(None)),
                 phone_login: Arc::new(Mutex::new(None)),
+                qr_login: Arc::new(Mutex::new(None)),
+                updates: Arc::new(Mutex::new(None)),
                 password_token: Arc::new(Mutex::new(None)),
                 api_id: Arc::new(Mutex::new(None)),
                 auth_attempt_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),

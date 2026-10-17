@@ -185,6 +185,29 @@ describe('AuthWizard phone authentication', () => {
     expect((screen.getByRole('button', { name: /Continue/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('allows a phone-code request to be retried after the watchdog expires', async () => {
+    await reachPhoneStep();
+    let requestCount = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_auth_request_code') {
+        requestCount += 1;
+        return requestCount === 1 ? new Promise(() => {}) : defaultInvoke(command);
+      }
+      return defaultInvoke(command);
+    });
+    vi.useFakeTimers();
+
+    fireEvent.change(screen.getByLabelText('Phone Number'), { target: { value: '+15551234567' } });
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTH_COMMAND_TIMEOUT_MS.requestCode); });
+    expect(screen.getByRole('alert').textContent).toMatch(/timed out while requesting a sign-in code/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    await flushMicrotasks();
+    expect(screen.getByText('Code sent by SMS')).toBeTruthy();
+    expect(requestCount).toBe(2);
+  });
+
   it('ignores a late phone-code response after returning to configuration', async () => {
     await reachPhoneStep();
     let resolveRequest: (value: unknown) => void = () => {};
@@ -255,12 +278,83 @@ describe('AuthWizard phone authentication', () => {
     expect((screen.getByRole('button', { name: 'Unlock' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('allows code and 2FA submissions to be retried after their IPC watchdogs expire', async () => {
+    const onLogin = await reachPhoneStep();
+    await requestSmsCode();
+    let signInCalls = 0;
+    let passwordCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_auth_sign_in') {
+        signInCalls += 1;
+        return signInCalls === 1
+          ? new Promise(() => {})
+          : { success: false, next_step: 'password' };
+      }
+      if (command === 'cmd_auth_check_password') {
+        passwordCalls += 1;
+        return passwordCalls === 1 ? new Promise(() => {}) : { success: true };
+      }
+      return defaultInvoke(command);
+    });
+    vi.useFakeTimers();
+
+    fireEvent.change(screen.getByLabelText('Telegram code'), { target: { value: '12345' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await flushMicrotasks();
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTH_COMMAND_TIMEOUT_MS.signIn); });
+    expect(screen.getByRole('alert').textContent).toMatch(/timed out while verifying the sign-in code/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await flushMicrotasks();
+    const password = screen.getByLabelText(/cloud password/i);
+    fireEvent.change(password, { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await flushMicrotasks();
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTH_COMMAND_TIMEOUT_MS.checkPassword); });
+    expect(screen.getByRole('alert').textContent).toMatch(/timed out while verifying the two-step password/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await flushMicrotasks();
+    expect(onLogin).toHaveBeenCalledOnce();
+    expect(signInCalls).toBe(2);
+    expect(passwordCalls).toBe(2);
+  });
+
+  it('ignores a late 2FA response after the user backs out to the code step', async () => {
+    const onLogin = await reachPhoneStep();
+    await requestSmsCode();
+    let resolvePassword: (value: unknown) => void = () => {};
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_auth_sign_in') return { success: false, next_step: 'password' };
+      if (command === 'cmd_auth_check_password') return new Promise(resolve => {
+        resolvePassword = resolve;
+      });
+      return defaultInvoke(command);
+    });
+
+    fireEvent.change(screen.getByLabelText('Telegram code'), { target: { value: '12345' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    const password = await screen.findByLabelText(/cloud password/i);
+    fireEvent.change(password, { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
+      'cmd_auth_check_password', { password: 'correct-password' },
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Code Entry' }));
+
+    expect(screen.getByLabelText('Telegram code')).toBeTruthy();
+    await act(async () => resolvePassword({ success: true }));
+
+    expect(onLogin).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Telegram code')).toBeTruthy();
+  });
+
   it('completes QR login after polling and opens the password step when requested', async () => {
     const onLogin = await reachPhoneStep();
     await requestSmsCode();
     invokeMock.mockImplementation((command: string) => {
       if (command === 'cmd_auth_qr_login') return 'tg://login?token=qr-test';
-      if (command === 'cmd_auth_qr_poll') return { success: true, next_step: 'password' };
+      if (command === 'cmd_auth_qr_poll') return { success: false, next_step: 'password' };
       if (command === 'cmd_auth_check_password') return { success: true };
       return defaultInvoke(command);
     });
@@ -283,4 +377,96 @@ describe('AuthWizard phone authentication', () => {
     expect(onLogin).toHaveBeenCalledOnce();
     expect(invokeMock.mock.calls.map(([command]) => command)).toContain('cmd_auth_qr_poll');
   });
+
+  it('surfaces QR poll timeouts and lets the user refresh the QR token', async () => {
+    await reachPhoneStep();
+    await requestSmsCode();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_auth_qr_login') return 'tg://login?token=qr-refresh';
+      if (command === 'cmd_auth_qr_poll') return new Promise(() => {});
+      return defaultInvoke(command);
+    });
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use QR instead' }));
+    await flushMicrotasks();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000 + AUTH_COMMAND_TIMEOUT_MS.qrPoll); });
+
+    expect(screen.getByRole('alert').textContent).toMatch(/timed out while checking QR login status/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh QR Code' }));
+    await flushMicrotasks();
+    expect(screen.getByText('Scan with your Telegram app')).toBeTruthy();
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'cmd_auth_qr_login')).toHaveLength(3);
+  });
+
+  it('allows QR token creation to be retried after its watchdog expires', async () => {
+    let qrLoginCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_auth_qr_login') {
+        qrLoginCalls += 1;
+        return qrLoginCalls === 1 ? new Promise(() => {}) : 'tg://login?token=qr-retry';
+      }
+      return defaultInvoke(command);
+    });
+    vi.useFakeTimers();
+    render(<AuthWizard onLogin={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('API ID'), { target: { value: '12345' } });
+    fireEvent.change(screen.getByLabelText('API Hash'), { target: { value: 'abcdef' } });
+    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    await flushMicrotasks();
+    expect(qrLoginCalls).toBe(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(AUTH_COMMAND_TIMEOUT_MS.qrLogin); });
+    expect(screen.getByRole('alert').textContent).toMatch(/timed out while requesting a QR login token/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh QR Code' }));
+    await flushMicrotasks();
+
+    expect(qrLoginCalls).toBe(2);
+    expect(screen.getByText('Scan with your Telegram app')).toBeTruthy();
+  });
+
+  it('returns QR-based 2FA back to configuration instead of an empty code step', async () => {
+    await reachPhoneStep();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_auth_qr_login') return 'tg://login?token=qr-2fa';
+      if (command === 'cmd_auth_qr_poll') return { success: false, next_step: 'password' };
+      return defaultInvoke(command);
+    });
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Phone Number' }));
+    fireEvent.click(screen.getByRole('button', { name: 'QR Code' }));
+    await flushMicrotasks();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByLabelText(/cloud password/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Configuration' }));
+
+    expect(screen.getByLabelText('API ID')).toBeTruthy();
+    expect(screen.queryByLabelText('Telegram code')).toBeNull();
+  });
+  it('refreshes an expired QR with a numeric API ID without treating waiting as authorized', async () => {
+    const onLogin = await reachPhoneStep();
+    await requestSmsCode();
+    let pollCalls = 0;
+    let qrCalls = 0;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_auth_qr_login') return `tg://login?token=expiry-${++qrCalls}`;
+      if (command === 'cmd_auth_qr_poll') {
+        pollCalls += 1;
+        return { success: false, next_step: pollCalls === 1 ? 'expired' : 'waiting' };
+      }
+      return defaultInvoke(command);
+    });
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Use QR instead' }));
+    await flushMicrotasks();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    await flushMicrotasks();
+    expect(qrCalls).toBeGreaterThanOrEqual(2);
+    const lastQrCall = invokeMock.mock.calls.filter(([command]) => command === 'cmd_auth_qr_login').at(-1);
+    expect(lastQrCall?.[1]).toMatchObject({ apiId: 12345 });
+    expect(onLogin).not.toHaveBeenCalled();
+    expect(screen.getByText('Scan with your Telegram app')).toBeTruthy();
+  });
+
 });

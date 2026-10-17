@@ -698,7 +698,7 @@ export const AUTH_COMMAND_TIMEOUT_MS = {
   signIn: 85_000,
   checkPassword: 85_000,
   qrLogin: 95_000,
-  qrPoll: 20_000,
+  qrPoll: 75_000,
   cancelCode: 20_000,
 } as const;
 

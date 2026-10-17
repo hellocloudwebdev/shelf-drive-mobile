@@ -67,6 +67,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     const qrPollGenerationRef = useRef(0);
     const qrPollInFlightRef = useRef(false);
     const authRequestIdRef = useRef(0);
+    const passwordBackStepRef = useRef<AuthStep>("code");
 
     const isCurrentAuthRequest = (requestId: number) => authRequestIdRef.current === requestId;
 
@@ -194,6 +195,8 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     const handleQrLogin = async () => {
         const requestId = ++authRequestIdRef.current;
         setError(null);
+        setQrPolling(false);
+        setQrUrl(null);
         setLoading(true);
         try {
             const idInt = parseTelegramApiId(apiId);
@@ -247,16 +250,33 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             try {
                 const pollResult = await auth.qrPoll();
                 if (qrPollGenerationRef.current !== generation) return;
+                if (pollResult.next_step === "password") {
+                    setQrPolling(false);
+                    passwordBackStepRef.current = "setup";
+                    setStep("password");
+                    return;
+                }
+                if (pollResult.next_step === "expired") {
+                    const refreshed = await auth.qrLogin(parseTelegramApiId(apiId), apiHash);
+                    if (qrPollGenerationRef.current !== generation) return;
+                    if (refreshed === "__authorized__") {
+                        setQrPolling(false);
+                        setError(null);
+                        onLogin();
+                    } else {
+                        setQrUrl(refreshed);
+                    }
+                    return;
+                }
                 if (pollResult.success) {
                     setQrPolling(false);
-                    if (pollResult.next_step === "password") {
-                        setStep("password");
-                    } else {
-                        onLogin();
-                    }
+                    setError(null);
+                    onLogin();
                 }
-            } catch {
-                // Telegram may briefly reject a poll while rotating the QR token.
+            } catch (err: unknown) {
+                if (qrPollGenerationRef.current === generation) {
+                    setError(err instanceof Error ? err.message : String(err));
+                }
             } finally {
                 if (qrPollGenerationRef.current === generation) {
                     qrPollInFlightRef.current = false;
@@ -326,6 +346,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
             if (signInResult.success) {
                 onLogin();
             } else if (signInResult.next_step === "password") {
+                passwordBackStepRef.current = "code";
                 setStep("password");
             } else {
                 setError("Unknown error");
@@ -385,6 +406,22 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
         void auth.cancelCode().catch(() => {
             // Cancellation is best-effort; local UI state is already cleared.
         });
+    };
+
+    const handlePasswordBack = () => {
+        authRequestIdRef.current += 1;
+        setLoading(false);
+        setPassword("");
+        setError(null);
+        const returnStep = passwordBackStepRef.current;
+        setStep(returnStep);
+        if (returnStep === "setup") {
+            setQrUrl(null);
+            setQrPolling(false);
+            setLoginMethod(isMobile ? "phone" : "qr");
+            // Backing out of QR 2FA must invalidate the native attempt and password token.
+            void auth.cancelCode().catch(() => {});
+        }
     };
 
     const handleUseQrInstead = () => {
@@ -530,7 +567,8 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                                     loading={loading}
                                     onPasswordChange={setPassword}
                                     onSubmit={handlePasswordSubmit}
-                                    onBack={() => { setStep("code"); setPassword(""); setError(null); }}
+                                    backLabel={i18n.t(passwordBackStepRef.current === "setup" ? "auth.back_to_config" : "auth.back_to_code")}
+                                    onBack={handlePasswordBack}
                                 />
                             )}
                         </>
