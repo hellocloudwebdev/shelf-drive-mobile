@@ -1,3 +1,16 @@
+## [4.4.6] - 2026-10-17
+
+### Phone sign-in and reliability
+
+- Fixed phone login getting stuck at “Verifying…” with native deadlines, frontend watchdogs, and stale-attempt guards so stalled requests return to a retryable state.
+- Carries forward the v4.4.5 audit fixes for account-scoped actions, Android transfer constraints, and release assurance; crash reporting remains enabled by default with a Settings opt-out.
+
+### Dependency security
+
+- Upgraded both app and Windows updater ZIP dependencies to 9.0.4 through a minimal local updater patch, removing all older ZIP copies without exceptions for RUSTSEC-2026-0367, RUSTSEC-2026-0368, or RUSTSEC-2026-0369.
+- Fixed Android’s shared transfer-ID validation build path.
+- Corrected standalone Android packaging to derive its version tag from app metadata while keeping tagged releases strictly validated.
+
 ## [4.4.5] - 2026-10-17
 
 ### Reliability, privacy, and Android transfers

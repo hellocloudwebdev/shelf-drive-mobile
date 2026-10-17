@@ -54,8 +54,13 @@ node scripts/verify-aab-signer.cjs "$aab" "$ANDROID_SIGNING_CERT_SHA256"
 version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 version_code="$(sed -n 's/^tauri.android.versionCode=//p' src-tauri/gen/android/app/tauri.properties | head -n 1)"
 test -n "$version_code"
+if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+  release_tag="${GITHUB_REF_NAME:?GITHUB_REF_NAME must be set for tag builds}"
+else
+  release_tag="v${version}"
+fi
 node scripts/verify-android-release-version.cjs \
-  --tag "${GITHUB_REF_NAME:-v${version}}" \
+  --tag "$release_tag" \
   --generated-properties src-tauri/gen/android/app/tauri.properties
 
 mkdir -p "$release_dir"
@@ -75,7 +80,7 @@ node scripts/create-android-release-manifest.cjs \
   --version "$version" \
   --version-code "$version_code" \
   --repository "${GITHUB_REPOSITORY:-hellocloudwebdev/shelf-drive-mobile}" \
-  --tag "${GITHUB_REF_NAME:-v${version}}" \
+  --tag "$release_tag" \
   --output "$release_dir/android-update.json"
 
 if [[ -n "${TAURI_PRIVATE_KEY_PATH:-}" ]]; then

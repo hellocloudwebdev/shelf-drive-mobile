@@ -45,6 +45,14 @@ describe('Android release versioning', () => {
     expect(() => readChangelogVersion('# Changelog\n\nNo release headings')).toThrow();
   });
 
+  it('requires an exact version tag when a tagged release is supplied', () => {
+    const appRoot = process.cwd();
+    const packageVersion = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8')).version as string;
+    expect(verifyReleaseVersions({ appRoot, tag: `v${packageVersion}` }).version).toBe(packageVersion);
+    expect(() => verifyReleaseVersions({ appRoot, tag: 'main' }))
+      .toThrow(`release tag main must equal v${packageVersion}`);
+  });
+
   describe('previous-update-manifest monotonicity', () => {
     // The repository's real app root supplies the genuine package/tauri/Cargo
     // versions; only the previous manifest is a fixture.

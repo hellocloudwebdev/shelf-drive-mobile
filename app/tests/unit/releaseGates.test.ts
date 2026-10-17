@@ -49,6 +49,7 @@ describe('release safety gates', () => {
   it('keeps Android verification independent from the desktop-only release', () => {
     const android = workflow('android.yml');
     const release = workflow('release.yml');
+    const androidPackaging = repositoryFile('app', 'scripts', 'package-android-release.sh');
 
     expect(android).toMatch(/on:\s*\n\s+workflow_call:/);
     expect(android).toContain('  workflow_dispatch:');
@@ -60,8 +61,12 @@ describe('release safety gates', () => {
     expect(android).toContain('Require protected signing for production');
     expect(android).toContain('ANDROID_SIGNING_CERT_SHA256');
     expect(android).toContain('bash scripts/package-android-release.sh');
-    expect(repositoryFile('app', 'scripts', 'package-android-release.sh'))
-      .toContain('node scripts/verify-aab-signer.cjs "$aab" "$ANDROID_SIGNING_CERT_SHA256"');
+    expect(androidPackaging).toContain('node scripts/verify-aab-signer.cjs "$aab" "$ANDROID_SIGNING_CERT_SHA256"');
+    expect(androidPackaging).toContain('if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]');
+    expect(androidPackaging).toContain('release_tag="${GITHUB_REF_NAME:?GITHUB_REF_NAME must be set for tag builds}"');
+    expect(androidPackaging).toContain('release_tag="v${version}"');
+    expect(androidPackaging.match(/--tag "\$release_tag"/g)).toHaveLength(2);
+    expect(androidPackaging).not.toContain('${GITHUB_REF_NAME:-v${version}}');
     expect(android).toContain("'system-images;android-24;google_apis;x86_64'");
     expect(android).toContain("ANDROID_EMULATOR_API: '24'");
     expect(android).toContain(':app:assembleArm64Release');
