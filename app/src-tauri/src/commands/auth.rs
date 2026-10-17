@@ -980,7 +980,7 @@ pub async fn cmd_auth_request_code(
     })
     .await
     {
-        Ok(result) => result,
+        Ok(result) => Ok(result),
         Err(AuthCommandDeadlineError::Operation(error)) => Err(error),
         Err(AuthCommandDeadlineError::TimedOut) => {
             clear_timed_out_phone_attempt(&state, attempt_id);

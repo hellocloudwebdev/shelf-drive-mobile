@@ -11,6 +11,7 @@ use crate::commands::download_destination::{
 use crate::commands::{self, fs::DownloadFileRequest, TelegramState};
 use crate::crypto::state::CryptoState;
 use crate::db::DbConnection;
+use crate::transfer_ids::validate_transfer_id;
 use crate::vpn_optimizer::NetworkConfig;
 pub(crate) use crate::workspace::operation_account;
 use crate::workspace::AccountGuard;
@@ -187,18 +188,6 @@ pub struct TransferEnqueueRequest {
     pub temp_zip_path: Option<String>,
     pub total_bytes: Option<u64>,
     pub initial_status: Option<TransferStatus>,
-}
-
-pub(crate) fn validate_transfer_id(id: &str) -> Result<(), String> {
-    if id.trim().is_empty()
-        || id.len() > 128
-        || !id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-    {
-        return Err("Transfer ID is missing or invalid".to_string());
-    }
-    Ok(())
 }
 
 impl TransferEnqueueRequest {
@@ -1898,23 +1887,6 @@ mod tests {
         let mut mismatch = request("mismatch");
         mismatch.direction = TransferDirection::Download;
         assert!(mismatch.validate().is_err());
-    }
-
-    #[test]
-    fn rejects_path_syntax_in_transfer_ids() {
-        for id in [
-            "../outside",
-            "nested/file",
-            r"nested\file",
-            ".",
-            "C:outside",
-        ] {
-            assert!(
-                validate_transfer_id(id).is_err(),
-                "accepted unsafe ID: {id}"
-            );
-        }
-        assert!(validate_transfer_id("upload-7c63_a1").is_ok());
     }
 
     #[tokio::test]

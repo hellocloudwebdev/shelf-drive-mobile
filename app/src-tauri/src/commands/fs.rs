@@ -5948,7 +5948,7 @@ pub async fn cmd_upload_from_url(
     db_pool: State<'_, DbConnection>,
     owner_id: Option<String>,
 ) -> Result<String, String> {
-    crate::transfer_engine::validate_transfer_id(&transfer_id)?;
+    crate::transfer_ids::validate_transfer_id(&transfer_id)?;
     let account = capture_transfer_account(&app_handle, &transfer_id, owner_id.as_deref()).await?;
     crate::workspace::with_operation_account(
         &account,

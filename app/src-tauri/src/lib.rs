@@ -63,6 +63,7 @@ pub mod socks5_bridge;
 pub mod temp_artifacts;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod transfer_engine;
+pub(crate) mod transfer_ids;
 pub mod vpn_optimizer;
 
 use tauri::{Emitter, Manager};
