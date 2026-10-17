@@ -210,6 +210,18 @@ fn map_download_chunk<E: std::fmt::Display>(
     result.map_err(|error| format!("Download error: {error}"))
 }
 
+fn zip_entry_name(
+    name: Result<std::borrow::Cow<'_, str>, zip::result::ZipError>,
+    index: usize,
+) -> Result<String, String> {
+    name.map(|name| name.into_owned()).map_err(|error| {
+        format!(
+            "Failed to read ZIP entry name at index {}: {}",
+            index, error
+        )
+    })
+}
+
 // ── ZIP helpers ─────────────────────────────────────────────────────────
 
 async fn download_to_memory(
@@ -266,7 +278,7 @@ async fn list_zip_contents(
             .by_index(i)
             .map_err(|e| format!("Failed to read ZIP entry at index {}: {}", i, e))?;
         entries.push(ArchiveEntry {
-            filename: file.name().to_string(),
+            filename: zip_entry_name(file.name(), i)?,
             size: file.size(),
             compressed_size: file.compressed_size(),
             is_dir: file.is_dir(),
@@ -296,13 +308,13 @@ async fn extract_zip_entry(
         if file.is_dir() {
             return Err("Cannot extract a directory entry".to_string());
         }
+        let entry_name = zip_entry_name(file.name(), entry_index)?;
         validate_archive_entries(&[ArchiveEntry {
-            filename: file.name().to_string(),
+            filename: entry_name.clone(),
             size: file.size(),
             compressed_size: file.compressed_size(),
             is_dir: false,
         }])?;
-        let entry_name = file.name().to_string();
         let entry_size = file.size();
         let safe_name = sanitise_entry_name(&entry_name, entry_index);
         let temp_path = std::env::temp_dir().join(format!(
@@ -740,7 +752,7 @@ fn validate_archive_entries(entries: &[ArchiveEntry]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        map_download_chunk, validate_archive_entries, AccountGuard, ArchiveEntry,
+        map_download_chunk, validate_archive_entries, zip_entry_name, AccountGuard, ArchiveEntry,
         MAX_ARCHIVE_ENTRIES, MAX_ARCHIVE_ENTRY_BYTES,
     };
     use grammers_session::{storages::SqliteSession, types::PeerInfo, Session};
@@ -760,6 +772,19 @@ mod tests {
         assert!(validate_archive_entries(&[entry(MAX_ARCHIVE_ENTRY_BYTES + 1, 1)]).is_err());
         assert!(validate_archive_entries(&[entry(2_000, 1)]).is_err());
         assert!(validate_archive_entries(&[entry(1_000, 1)]).is_ok());
+    }
+
+    #[test]
+    fn zip_entry_name_errors_are_propagated() {
+        let zip_error = zip::result::ZipError::FileNotFound;
+        let error = zip_entry_name(Err(zip_error), 7).unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "Failed to read ZIP entry name at index 7: {}",
+                zip::result::ZipError::FileNotFound
+            )
+        );
     }
 
     #[test]

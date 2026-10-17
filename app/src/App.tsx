@@ -29,7 +29,7 @@ const MobileDashboard = React.lazy(() => import("./components/mobile/MobileDashb
 
 import { Toaster } from "sonner";
 import { useTheme } from "./context/ThemeContext";
-import { CrashReportingConsent } from "./components/shared/CrashReportingConsent";
+import { DeferredCrashReportingConsent as CrashReportingConsent } from "./components/shared/DeferredCrashReportingConsent";
 import { configureCrashTelemetry } from "./services/crashTelemetry";
 import { TelegramCooldownBanner } from "./components/shared/TelegramCooldownBanner";
 const WhatsNewDialog = React.lazy(() => import("./components/shared/WhatsNewDialog").then(m => ({ default: m.WhatsNewDialog })));

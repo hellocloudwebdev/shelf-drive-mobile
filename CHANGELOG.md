@@ -10,6 +10,8 @@
 - Upgraded both app and Windows updater ZIP dependencies to 9.0.4 through a minimal local updater patch, removing all older ZIP copies without exceptions for RUSTSEC-2026-0367, RUSTSEC-2026-0368, or RUSTSEC-2026-0369.
 - Fixed Android’s shared transfer-ID validation build path.
 - Corrected standalone Android packaging to derive its version tag from app metadata while keeping tagged releases strictly validated.
+- Adapted archive listing and extraction to ZIP 9’s fallible filename API, preserving explicit errors for malformed names and the existing extraction confinement checks.
+- Deferred optional consent-dialog presentation to keep startup loading within existing performance limits; crash reporting configuration and its enabled-by-default policy are unchanged.
 
 ## [4.4.5] - 2026-10-17
 

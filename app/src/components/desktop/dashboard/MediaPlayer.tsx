@@ -40,6 +40,7 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
     const containerRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const sourceFolder = file.folder_id === undefined ? activeFolderId : file.folder_id;
+    const folderIdParam = sourceFolder !== null ? sourceFolder.toString() : 'home';
     const playback = useDesktopPlayback(file, sourceFolder, ownerId, restart, onPlayFile);
 
     const toggleFullscreen = useCallback(async () => {
@@ -86,13 +87,12 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
         let cancelled = false;
         setStreamInfo(null);
         if (localPath) return;
-        mediaApi.getStreamInfo(file.id, sourceFolder !== null ? sourceFolder.toString() : 'home').then(info => {
+        mediaApi.getStreamInfo(file.id, folderIdParam).then(info => {
             if (!cancelled) setStreamInfo(info);
         }).catch(() => {});
         return () => { cancelled = true; };
-    }, [file.id, localPath, sourceFolder]);
+    }, [file.id, localPath, folderIdParam]);
 
-    const folderIdParam = sourceFolder !== null ? sourceFolder.toString() : 'home';
     const streamCredential = streamInfo?.operation_token
         ? `&credential=${encodeURIComponent(streamInfo.operation_token)}`
         : '';
@@ -135,19 +135,12 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
                 toggleFullscreen();
             }
 
-            if (key === 'm') {
+            if (key === 'm' || e.key === ' ') {
                 e.preventDefault();
                 const media = containerRef.current?.querySelector('video, audio') as HTMLMediaElement | null;
                 if (media) {
-                    media.muted = !media.muted;
-                }
-            }
-
-            if (e.key === ' ') {
-                e.preventDefault();
-                const media = containerRef.current?.querySelector('video, audio') as HTMLMediaElement | null;
-                if (media) {
-                    media.paused ? media.play().catch(() => {}) : media.pause();
+                    if (key === 'm') media.muted = !media.muted;
+                    else media.paused ? media.play().catch(() => {}) : media.pause();
                 }
             }
         };
