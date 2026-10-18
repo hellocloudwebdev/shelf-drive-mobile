@@ -16,6 +16,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.BeforeClass
+import org.junit.After
 import org.junit.runner.RunWith
 
 /**
@@ -24,6 +26,27 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class UploadLifecycleInstrumentationTest {
+  companion object {
+    private lateinit var scenario: ActivityScenario<MainActivity>
+
+    @JvmStatic
+    @BeforeClass
+    fun launchNativeRuntimeOnce() {
+      // Tauri exits the process when its last Activity is destroyed. Closing an
+      // ActivityScenario after each case kills the instrumentation runner too;
+      // this is not an upload/background failure. Keep one Activity for this
+      // suite and let the test runner own process cleanup. Deliberate Activity
+      // destruction/process-death coverage must run in a separate process.
+      scenario = ActivityScenario.launch(MainActivity::class.java)
+    }
+  }
+
+  @After
+  fun resetServiceAndBackgroundActivity() {
+    UploadForegroundService.stopService(context)
+    scenario.moveToState(Lifecycle.State.CREATED)
+  }
+
   private val context = ApplicationProvider.getApplicationContext<Context>()
   private val notificationManager = context.getSystemService(NotificationManager::class.java)
   private val serviceIntent = Intent(context, UploadForegroundService::class.java)
@@ -74,7 +97,8 @@ class UploadLifecycleInstrumentationTest {
     assertTrue("This test needs Android O+ foreground-service support", Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
     ensureNotificationPermission()
     UploadForegroundService.stopService(context)
-    ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+    scenario.moveToState(Lifecycle.State.RESUMED)
+    run {
       try {
         scenario.onActivity { activity ->
           assertTrue(activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
@@ -111,7 +135,8 @@ class UploadLifecycleInstrumentationTest {
     ensureNotificationPermission()
     UploadForegroundService.stopService(context)
 
-    ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+    scenario.moveToState(Lifecycle.State.RESUMED)
+    run {
       try {
         scenario.onActivity { activity ->
           assertTrue("Activity must be resumed before starting the transfer", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))

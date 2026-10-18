@@ -1,3 +1,18 @@
+## [4.4.8] - 2026-10-18
+
+### Android upload recovery
+- Keep uploads retryable after a transient network failure when Android still reports an available connection, instead of leaving them stuck at “waiting for network” until restart.
+- Preserve staged upload data for retry and retain waiting-for-network behavior while Android reports the connection unavailable.
+- Include the Android pause/resume scheduling-race fix from the previous main-branch update.
+
+### Regression coverage
+- Add a regression test covering transient upload failure, manual retry, and successful completion.
+- Keep a shared Activity alive during native lifecycle instrumentation so Tauri process shutdown does not terminate the test runner; return instrumentation results before emulator cleanup.
+
+### Verification limits
+- No authenticated Telegram upload has been performed for this release.
+- The reported unexplained spontaneous app exit has not been confirmed fixed.
+
 ## [4.4.7] - 2026-10-18
 ### Telegram login reliability
 - Initialize Grammers/libsql before the app opens SQLite databases, preventing a native SQLITE_MISUSE panic during sign-in.

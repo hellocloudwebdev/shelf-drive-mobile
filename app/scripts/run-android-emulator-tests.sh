@@ -158,8 +158,11 @@ adb_retry logcat -c
 set +e
 (
   cd "$APP_ROOT/src-tauri/gen/android"
+  # Destroying Tauri's last Activity exits the target/runner process. Let the
+  # runner return its results before external emulator cleanup kills that process.
   timeout --kill-after=30s 15m ./gradlew :app:connectedUniversalDebugAndroidTest \
     --no-daemon \
+    -Pandroid.testInstrumentationRunnerArguments.waitForActivitiesToComplete=false \
     -x :app:rustBuildArm64Debug \
     -x :app:rustBuildArmDebug \
     -x :app:rustBuildUniversalDebug \

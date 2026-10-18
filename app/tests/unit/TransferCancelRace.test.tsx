@@ -204,4 +204,26 @@ describe('late cancellation after successful backend completion', () => {
     await act(async () => { backend.resolve(undefined); await backend.promise; });
     await waitFor(() => expect(result.current.uploadQueue[0]?.status).toBe('success'));
   });
+
+  it('keeps a transient failure retryable when Android still considers the network available', async () => {
+    const retry = deferred<void>();
+    const upload = vi.fn()
+      .mockRejectedValueOnce(new Error('network connection reset'))
+      .mockReturnValueOnce(retry.promise);
+    mocks.invoke.mockImplementation((command: string) => command === 'cmd_upload_file'
+      ? upload() : Promise.resolve(undefined));
+    const { result } = renderHook(() => useFileUpload(42, makeStore(), true, 'waiting', 'account-a'));
+    await act(async () => {
+      result.current.setUploadQueue([{
+        id: 'upload-network-retry', ownerId: 'account-a', path: '/tmp/example.txt', folderId: 42,
+        status: 'pending', androidStaged: true, protection: { mode: 'standard' },
+      }]);
+    });
+    await waitFor(() => expect(result.current.uploadQueue[0]?.status).toBe('error'));
+    expect(upload).toHaveBeenCalledTimes(1);
+    act(() => { void result.current.retryItem('upload-network-retry'); });
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    await act(async () => { retry.resolve(undefined); await retry.promise; });
+    await waitFor(() => expect(result.current.uploadQueue[0]?.status).toBe('success'));
+  });
 });

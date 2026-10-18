@@ -462,8 +462,11 @@ export function useFileUpload(
                     keepTemporaryFileForResume = true;
                     setUploadQueue(q => q.map(i => i.id === item.id ? {
                         ...i,
-                        status: 'waiting_for_network',
-                        error: 'Waiting for a stable network connection',
+                        // If Android's transfer gate is still open, no gate
+                        // transition will promote this waiting item back to pending.
+                        // Keep it retryable instead of leaving it stuck until restart.
+                        status: androidNetworkAvailableRef.current ? 'error' : 'waiting_for_network',
+                        error: androidNetworkAvailableRef.current ? errMsg : 'Waiting for a stable network connection',
                     } : i));
                 } else {
                     keepTemporaryFileForResume = Boolean(item.tempZipPath || item.androidStaged);
