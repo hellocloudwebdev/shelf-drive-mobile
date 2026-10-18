@@ -5,6 +5,9 @@
 - Preserve staged upload data for retry and retain waiting-for-network behavior while Android reports the connection unavailable.
 - Include the Android pause/resume scheduling-race fix from the previous main-branch update.
 
+### Breaking change: Android support baseline
+- Drop support for Android 7–11 (API 24–30). Version 4.4.8 requires Android 12 / API 31 or later; the supported range is Android 12–16 (API 31–36), with `minSdk` 31 and `targetSdk` 36.
+
 ### Regression coverage
 - Add a regression test covering transient upload failure, manual retry, and successful completion.
 - Keep a shared Activity alive during native lifecycle instrumentation so Tauri process shutdown does not terminate the test runner; return instrumentation results before emulator cleanup.

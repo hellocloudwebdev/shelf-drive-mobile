@@ -20,7 +20,7 @@ res/                                  Android resource tree — drop-in for
   mipmap-anydpi-v26/ic_launcher_round.xml
   mipmap-*/ic_launcher_foreground.png   folder logo on transparency, 108dp
                                         canvas, logo inside the 66dp safe zone
-  mipmap-*/ic_launcher.png              legacy icon, full artwork (API < 26)
+  mipmap-*/ic_launcher.png              legacy full-artwork raster fallback
   mipmap-*/ic_launcher_round.png        legacy circular variant
 source/clean_icon.svg                 canonical artwork (unmodified)
 source/extracted_artwork_1269x1240.png  the PNG embedded in that SVG (its true
@@ -50,7 +50,7 @@ verification/separation_proof.png     foreground over checkerboard (proves the
   logo sits well inside the 66dp safe circle — no mask can crop it.
 - Monochrome: folder silhouette with tab and two slot gaps echoing the layered
   sheets; alpha-only, tinted by the system.
-- Legacy mipmaps keep the original full artwork for API 24-25.
+- Legacy mipmaps retain the original full-artwork raster fallback; their presence does not extend the app's minimum supported Android version (Android 12 / API 31).
 
 ## Install
 

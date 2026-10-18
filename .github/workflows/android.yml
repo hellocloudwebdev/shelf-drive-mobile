@@ -51,7 +51,7 @@ jobs:
             'emulator' \
             'system-images;android-36;google_apis;x86_64' \
             'system-images;android-36;google-tv;x86_64' \
-            'system-images;android-24;google_apis;x86_64' \
+            'system-images;android-31;google_apis;x86_64' \
             "ndk;${NDK_VERSION}"
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
@@ -182,8 +182,8 @@ jobs:
       - name: Run minimum-supported Android instrumentation tests
         working-directory: app
         env:
-          ANDROID_EMULATOR_API: '24'
-          ANDROID_AVD_HOME: ${{ runner.temp }}/telegram-drive-phone-api24-avd
+          ANDROID_EMULATOR_API: '31'
+          ANDROID_AVD_HOME: ${{ runner.temp }}/telegram-drive-phone-api31-avd
         run: bash scripts/run-android-emulator-tests.sh phone
 
       - name: Run Google TV instrumentation tests
@@ -203,8 +203,8 @@ jobs:
             app/src-tauri/gen/android/app/build/outputs/androidTest-results/
             ${{ runner.temp }}/telegram-drive-phone-avd/*.txt
             ${{ runner.temp }}/telegram-drive-phone-avd/*.log
-            ${{ runner.temp }}/telegram-drive-phone-api24-avd/*.txt
-            ${{ runner.temp }}/telegram-drive-phone-api24-avd/*.log
+            ${{ runner.temp }}/telegram-drive-phone-api31-avd/*.txt
+            ${{ runner.temp }}/telegram-drive-phone-api31-avd/*.log
             ${{ runner.temp }}/telegram-drive-google-tv-avd/*.txt
             ${{ runner.temp }}/telegram-drive-google-tv-avd/*.log
           if-no-files-found: warn

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Android-7.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 7.0+">
+  <img src="https://img.shields.io/badge/Android-12%E2%80%9316-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 12–16 (API 31–36)">
   <img src="https://img.shields.io/badge/Google%20TV-supported-4FC3F7?style=flat-square&logo=googletv&logoColor=white" alt="Google TV">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19">
   <img src="https://img.shields.io/badge/Rust-stable-DEA584?style=flat-square&logo=rust&logoColor=black" alt="Rust">
@@ -76,6 +76,8 @@
 <br>
 
 > **Repository scope:** this repository builds the **Android (phones, tablets, Android TV / Google TV)** application. The Windows, macOS, and Linux desktop applications live in the sibling repository [`hellocloudwebdev/shelf-drive`](https://github.com/hellocloudwebdev/shelf-drive). The application core (`app/src`, `app/src-tauri/src`, tests, and dependency manifests) is intentionally shared between the two repositories and kept in sync — see [Docs/SHARED_CORE_SYNC.md](./Docs/SHARED_CORE_SYNC.md).
+
+**Android compatibility:** Android 12–16 (API 31–36); `minSdk` 31 and `targetSdk` 36. Version 4.4.8 is a breaking support change and no longer supports Android 7–11.
 
 ---
 
@@ -178,7 +180,7 @@ Shelf Drive for Android is distributed as a **signed, sideloaded APK** — not t
 
 | Platform | Download | Notes |
 |:---|:---|:---|
-| **Android** | [Latest release](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest) | Android 7.0+ (API 24); universal APK also runs on tablets |
+| **Android** | [Latest release](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest) | Android 12–16 (API 31–36); minimum API 31 (`minSdk` 31), target API 36; universal APK also runs on tablets |
 | **Android TV / Google TV** | Same APK | Spatial navigation with remote control support |
 
 ### Sideload Install

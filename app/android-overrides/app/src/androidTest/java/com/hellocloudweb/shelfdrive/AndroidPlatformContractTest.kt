@@ -28,6 +28,26 @@ class AndroidPlatformContractTest {
   private val packageManager = context.packageManager
 
   @Test
+  fun installedPackageUsesAndroid12MinimumAndAndroid16Target() {
+    val applicationInfo = packageManager.getApplicationInfo(context.packageName, 0)
+    assertEquals(31, applicationInfo.minSdkVersion)
+    assertEquals(36, applicationInfo.targetSdkVersion)
+  }
+
+  @Test
+  fun jacksonObjectMapperReadsAndWritesJsonWithoutCompatibilityTransforms() {
+    // Exercise Tauri's shipped Jackson implementation on both supported endpoints.
+    val mapperClass = Class.forName("com.fasterxml.jackson.databind.ObjectMapper")
+    val mapper = mapperClass.getDeclaredConstructor().newInstance()
+    val json = mapperClass.getMethod("writeValueAsString", Any::class.java)
+      .invoke(mapper, mapOf("device" to "phone", "count" to 3)) as String
+    val restored = mapperClass.getMethod("readValue", String::class.java, Class::class.java)
+      .invoke(mapper, json, Map::class.java) as Map<*, *>
+    assertEquals("phone", restored["device"])
+    assertEquals(3, restored["count"])
+  }
+
+  @Test
   fun packageSupportsPhoneAndTelevisionLaunchers() {
     val phoneIntent = Intent(Intent.ACTION_MAIN)
       .addCategory(Intent.CATEGORY_LAUNCHER)

@@ -4,6 +4,8 @@
 
 Consolidated code-audit results for the repository's `main` snapshot at audit time, commit `0962360990bb3499a852804de13ff41cab204271`. The input covered selected React/API, Rust service/command, crypto/sync/transfer, Android integration, and CI/release/documentation paths. This is a synthesis of those reviews, not an independent re-audit; findings below retain their supplied line evidence.
 
+> **Historical snapshot:** This audit records the code and configuration at the cited commit, when Android API 24 was the configured minimum. Since v4.4.8, the current support baseline is Android 12–16 (API 31–36), with `minSdk` 31 and `targetSdk` 36. References below to Android 7–9/API 24-era behavior describe that audited snapshot only; they neither promise current support for those versions nor establish that a finding has since been fixed.
+
 ## Executive summary
 
 The consolidated reviews report **46 numbered code/configuration/documentation findings**: 4 high-severity, 32 medium-severity, and 10 low-severity. Separately, one **medium-priority dependency-security item** covers 12 `npm audit` advisories in development/build/test dependencies (7 high, 4 moderate, 1 low; fixes are available); those package advisory counts are not included in the 46 numbered findings. The most consequential findings include vault locking that does not revoke keys already copied into in-flight decrypt operations, stale deletion preconditions in sync and scheduled cleanup, and SSRF controls bypassable through a configured proxy or NAT64 translation. Other findings span account/session boundaries, Android sharing and publication, file moves/cache identity, upload cancellation, search, settings, playback, and desktop/mobile workflows.
@@ -178,8 +180,8 @@ All reported defects are **static/source findings**: the supplied results do not
 
 - **Severity / confidence:** Low / High
 - **Type:** Static/source finding; no Android runtime or injected I/O-failure test.
-- **Evidence:** In `app/android-overrides/app/src/main/java/com/hellocloudweb/shelfdrive/MainActivity.kt:676-701`, the API<29 branch deletes its public target only after a size mismatch. A stream-copy exception reaches the outer catch at `:819-828`, which cleans only `insertedUri` (null on this branch) and returns false without deleting the partial target. API 24+ is supported (`app/android-overrides/app/build.gradle.kts:62-67`) and legacy storage permission is declared through API 28 (`AndroidManifest.xml:9-10`).
-- **Impact:** An interrupted Android 7–9 download can leave an incomplete file in public Downloads even though the operation reports failure; future downloads may choose a suffixed name.
+- **Evidence:** In `app/android-overrides/app/src/main/java/com/hellocloudweb/shelfdrive/MainActivity.kt:676-701`, the API<29 branch deletes its public target only after a size mismatch. A stream-copy exception reaches the outer catch at `:819-828`, which cleans only `insertedUri` (null on this branch) and returns false without deleting the partial target. At the audited commit, API 24+ was configured as supported (`app/android-overrides/app/build.gradle.kts:62-67`) and legacy storage permission is declared through API 28 (`AndroidManifest.xml:9-10`).
+- **Historical impact (audited snapshot only):** On the then-configured API 24+ range, an interrupted Android 7–9 download could leave an incomplete file in public Downloads even though the operation reported failure; future downloads could choose a suffixed name. This is not a claim about current Android 12–16 behavior or a statement that the finding is fixed.
 - **Fix steps:** Track the legacy target beyond the branch and delete it on every post-creation failure. Publish/scan only after exact byte-count verification. Add an output-copy failure regression test.
 
 ### 22. Upload cancellation can be lost before registration and ignored during publication

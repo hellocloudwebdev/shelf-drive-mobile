@@ -5,8 +5,9 @@ Telegram Drive is distributed as a signed sideloaded Android application, not th
 ## Fixed application identity
 
 - Package name: `com.hellocloudweb.shelfdrive`
-- Minimum Android version: Android 7.0 / API 24
-- Target SDK: API 36
+- Supported Android versions: Android 12–16 / API 31–36
+- Minimum SDK (`minSdk`): API 31 (Android 12)
+- Target SDK (`targetSdk`): API 36 (Android 16)
 - Release keystore: `${XDG_CONFIG_HOME:-$HOME/.config}/telegram-drive/signing/telegram-drive-release.keystore`
 - Key alias: `telegram-drive`
 - Keystore file SHA-256 as of 2026-08-23: `b937e396837de9600325774564d45ee1502f55fbc2a6684476829be19742506c`
@@ -64,7 +65,7 @@ Do not add Google Mobile Ads or an AdMob application ID to the television packag
 
 ## Phone, tablet, and television acceptance
 
-Use at least one API 24–28 phone-class device, one API 35 phone/tablet, and one API 35 Android TV or Google TV device/emulator. Verify:
+Use at least one API 31 phone-class device, one API 36 phone/tablet, and one API 36 Android TV or Google TV device/emulator. Verify:
 
 - cold sign-in and session restoration;
 - D-pad focus, Select/Enter activation, Back navigation, Leanback launcher banner, and landscape layout on TV;

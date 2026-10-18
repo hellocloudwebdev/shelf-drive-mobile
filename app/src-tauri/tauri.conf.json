@@ -57,7 +57,7 @@
       "entitlements": "entitlements.plist"
     },
     "android": {
-      "minSdkVersion": 24
+      "minSdkVersion": 31
     }
   }
 }

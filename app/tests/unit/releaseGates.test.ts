@@ -67,8 +67,8 @@ describe('release safety gates', () => {
     expect(androidPackaging).toContain('release_tag="v${version}"');
     expect(androidPackaging.match(/--tag "\$release_tag"/g)).toHaveLength(2);
     expect(androidPackaging).not.toContain('${GITHUB_REF_NAME:-v${version}}');
-    expect(android).toContain("'system-images;android-24;google_apis;x86_64'");
-    expect(android).toContain("ANDROID_EMULATOR_API: '24'");
+    expect(android).toContain("'system-images;android-31;google_apis;x86_64'");
+    expect(android).toContain("ANDROID_EMULATOR_API: '31'");
     expect(android).toContain(':app:assembleArm64Release');
     expect(android).toContain('-x :app:rustBuildArm64Release');
     expect(android).toContain("if: env.HAS_ANDROID_SIGNING_KEY == 'true'");

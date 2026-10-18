@@ -2,6 +2,8 @@
 
 **Date:** 2026-10-02 · **App version audited:** 4.0.0 · **Scope:** read-only audit; no source, config, backend, crypto, IPC, updater, signing, or release changes were made. The only file this audit added is this report.
 
+> **Historical snapshot:** API levels, `minSdk` values, and CI test matrices below record the v4.0.0 configuration observed on 2026-10-02. They are not current compatibility statements. Since v4.4.8, the app's supported range is Android 12–16 (API 31–36), `minSdk` 31 and `targetSdk` 36. This note does not claim any other historical audit finding is fixed.
+
 ---
 
 ## 0. Executive summary
