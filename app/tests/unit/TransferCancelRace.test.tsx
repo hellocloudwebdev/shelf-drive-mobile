@@ -158,4 +158,50 @@ describe('late cancellation after successful backend completion', () => {
     await waitFor(() => expect(result.current.downloadQueue[0]?.status).toBe('success'));
     expect(result.current.downloadQueue[0]?.progress).toBe(100);
   });
+
+  it('restarts a rapidly resumed upload only after its cancelled invocation releases the slot', async () => {
+    const first = deferred<void>();
+    const second = deferred<void>();
+    const upload = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    mocks.invoke.mockImplementation((command: string) => command === 'cmd_upload_file'
+      ? upload() : Promise.resolve(undefined));
+    const store = makeStore();
+    const { result } = renderHook(() => useFileUpload(42, store, true, 'waiting', 'account-a'));
+    await act(async () => {
+      result.current.setUploadQueue([{
+        id: 'upload-resume', ownerId: 'account-a', path: '/tmp/example.txt', folderId: 42,
+        status: 'pending', androidStaged: true, protection: { mode: 'standard' },
+      }]);
+    });
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    act(() => result.current.pauseItem('upload-resume'));
+    act(() => result.current.resumeItem('upload-resume'));
+    expect(result.current.uploadQueue[0]?.status).toBe('pending');
+    expect(upload).toHaveBeenCalledTimes(1);
+    await act(async () => { first.reject(new Error('Transfer cancelled')); await Promise.resolve(); });
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(mocks.invoke).not.toHaveBeenCalledWith('cmd_delete_android_staged_upload', expect.anything());
+    await act(async () => { second.resolve(undefined); await second.promise; });
+    await waitFor(() => expect(result.current.uploadQueue[0]?.status).toBe('success'));
+  });
+
+  it('restores a paused Android upload and uploads it after explicit resume', async () => {
+    const backend = deferred<void>();
+    mocks.invoke.mockImplementation((command: string) => command === 'cmd_upload_file'
+      ? backend.promise : Promise.resolve(undefined));
+    const store = makeStore();
+    vi.mocked(store.get).mockResolvedValue([{
+      id: 'restored-upload', ownerId: 'account-a', path: '/private/staged/example.txt', folderId: 42,
+      status: 'paused', androidStaged: true, protection: { mode: 'standard' }, progress: 50,
+    }]);
+    const { result } = renderHook(() => useFileUpload(42, store, true, 'waiting', 'account-a'));
+    await waitFor(() => expect(result.current.uploadQueue[0]?.status).toBe('paused'));
+    expect(mocks.invoke).not.toHaveBeenCalledWith('cmd_upload_file', expect.anything());
+    act(() => result.current.resumeItem('restored-upload'));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('cmd_upload_file', expect.objectContaining({
+      path: '/private/staged/example.txt', transferId: 'restored-upload',
+    })));
+    await act(async () => { backend.resolve(undefined); await backend.promise; });
+    await waitFor(() => expect(result.current.uploadQueue[0]?.status).toBe('success'));
+  });
 });

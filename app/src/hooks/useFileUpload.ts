@@ -322,7 +322,14 @@ export function useFileUpload(
                 await processItem(current);
             })().finally(() => {
                 startingItemsRef.current.delete(item.id);
-                if (!isCurrent() && ownerRef.current === item.ownerId) setUploadQueue(queue => [...queue]);
+                // processItem releases its concurrency slot before this start
+                // guard is cleared. A fast resume can render in that gap and
+                // skip the pending item, so schedule again after both release.
+                if (ownerRef.current === item.ownerId) {
+                    setUploadQueue(queue => queue.some(candidate => candidate.id === item.id && candidate.status === 'pending')
+                        ? [...queue]
+                        : queue);
+                }
             });
         }
     }, [uploadQueue, settings.maxConcurrentUploads, androidNetworkAvailable, initialized, store, ownerId]);
