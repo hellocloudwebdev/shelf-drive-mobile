@@ -181,6 +181,10 @@ fn current_version_code() -> Result<u64, String> {
 
 #[tauri::command]
 pub async fn cmd_check_android_update() -> Result<Option<AndroidUpdateManifest>, String> {
+    // Side-by-side test candidates must never consume the production update channel.
+    if env!("CARGO_PKG_VERSION").contains("-test.") {
+        return Ok(None);
+    }
     #[cfg(target_os = "android")]
     {
         let manifest = fetch_verified_manifest().await?;
@@ -232,6 +236,9 @@ fn launch_installer(path: &std::path::Path) -> Result<AndroidInstallResult, Stri
 pub async fn cmd_download_and_install_android_update(
     app: tauri::AppHandle,
 ) -> Result<AndroidInstallResult, String> {
+    if env!("CARGO_PKG_VERSION").contains("-test.") {
+        return Err("Production updates are disabled in diagnostic test builds".into());
+    }
     #[cfg(target_os = "android")]
     {
         use futures::StreamExt;
