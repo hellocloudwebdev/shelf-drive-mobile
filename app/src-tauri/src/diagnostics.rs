@@ -7,6 +7,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "android")]
+use tauri::Manager;
+
 const FILE_NAME: &str = "app-diagnostics.log";
 const ROTATED_FILE_NAME: &str = "app-diagnostics.log.1";
 const MAX_FILE_BYTES: usize = 512 * 1024;
