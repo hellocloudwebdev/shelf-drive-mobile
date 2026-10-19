@@ -12,9 +12,7 @@ use tauri::Manager;
 
 const FILE_NAME: &str = "app-diagnostics.log";
 const ROTATED_FILE_NAME: &str = "app-diagnostics.log.1";
-const MAX_FILE_BYTES: usize = 512 * 1024;
 const MAX_RECORD_BYTES: usize = 4096;
-const MAX_EARLY_RECORDS: usize = 64;
 const MAX_FRONTEND_FRAMES: usize = 16;
 const MAX_FRONTEND_FRAME_BYTES: usize = 128;
 const FRONTEND_EVENTS: &[&str] = &[
@@ -77,25 +75,9 @@ fn json_line(
     line
 }
 
-fn append_bounded(directory: &Path, line: &str, sync: bool) -> std::io::Result<()> {
+fn append_persistent(directory: &Path, line: &str, sync: bool) -> std::io::Result<()> {
     fs::create_dir_all(directory)?;
     let current = directory.join(FILE_NAME);
-    let rotated = directory.join(ROTATED_FILE_NAME);
-    let current_len = fs::metadata(&current)
-        .map(|m| m.len() as usize)
-        .unwrap_or(0);
-    if current_len.saturating_add(line.len()) > MAX_FILE_BYTES {
-        let _ = fs::remove_file(&rotated);
-        if current.exists() {
-            if current_len <= MAX_FILE_BYTES {
-                fs::rename(&current, &rotated)?;
-            } else {
-                // Do not preserve an oversized pre-existing file as the rotated copy.
-                fs::remove_file(&current)?;
-            }
-        }
-    }
-    // A single bounded record is guaranteed smaller than the per-file limit.
     let mut file = OpenOptions::new().create(true).append(true).open(current)?;
     file.write_all(line.as_bytes())?;
     file.flush()?;
@@ -108,11 +90,8 @@ fn append_bounded(directory: &Path, line: &str, sync: bool) -> std::io::Result<(
 fn append_line(line: String) {
     if let Ok(mut state) = store().lock() {
         if let Some(directory) = state.directory.as_deref() {
-            let _ = append_bounded(directory, &line, false);
+            let _ = append_persistent(directory, &line, false);
         } else {
-            if state.early.len() == MAX_EARLY_RECORDS {
-                state.early.pop_front();
-            }
             state.early.push_back(line);
         }
     }
@@ -126,7 +105,7 @@ pub fn initialize(directory: PathBuf) -> std::io::Result<()> {
         .map_err(|_| std::io::Error::other("diagnostics lock poisoned"))?;
     state.directory = Some(directory.clone());
     while let Some(line) = state.early.pop_front() {
-        append_bounded(&directory, &line, false)?;
+        append_persistent(&directory, &line, false)?;
     }
     Ok(())
 }
@@ -259,11 +238,8 @@ pub fn install_panic_hook() {
         // Avoid a panic-hook deadlock if panicking code already holds this mutex.
         if let Ok(mut state) = store().try_lock() {
             if let Some(directory) = state.directory.as_deref() {
-                let _ = append_bounded(directory, &line, true);
+                let _ = append_persistent(directory, &line, true);
             } else {
-                if state.early.len() == MAX_EARLY_RECORDS {
-                    state.early.pop_front();
-                }
                 state.early.push_back(line);
             }
         }
@@ -294,7 +270,8 @@ pub fn cmd_get_app_logs(app: tauri::AppHandle) -> Result<String, String> {
         match android_app_log(&app) {
             Ok(contents) if !contents.trim().is_empty() => {
                 result.push_str("--- Android app diagnostics ---\n");
-                result.push_str(&tail_by_bytes(&contents, 512 * 1024));
+                // Diagnostic-test build: retain and export the complete app-only history.
+                result.push_str(&contents);
                 result.push('\n');
             }
             Ok(_) => {}
@@ -378,18 +355,6 @@ pub fn cmd_save_app_logs(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[cfg(target_os = "android")]
-fn tail_by_bytes(text: &str, max_bytes: usize) -> String {
-    if text.len() <= max_bytes {
-        return text.to_owned();
-    }
-    let mut start = text.len() - max_bytes;
-    while !text.is_char_boundary(start) {
-        start += 1;
-    }
-    text[start..].to_owned()
-}
-
-#[cfg(target_os = "android")]
 fn save_android_diagnostics(path: &Path) -> Result<(), String> {
     let context = ndk_context::android_context();
     let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }
@@ -444,20 +409,17 @@ mod tests {
     }
 
     #[test]
-    fn rotates_into_two_bounded_files() {
+    fn retains_history_beyond_previous_rotation_cap() {
         let directory = temp_dir();
         let line = format!("{}\n", "x".repeat(4090));
-        for _ in 0..270 {
-            append_bounded(&directory, &line, false).unwrap();
+        for _ in 0..600 {
+            append_persistent(&directory, &line, false).unwrap();
         }
-        assert!(fs::metadata(directory.join(FILE_NAME)).unwrap().len() <= MAX_FILE_BYTES as u64);
-        assert!(
-            fs::metadata(directory.join(ROTATED_FILE_NAME))
-                .unwrap()
-                .len()
-                <= MAX_FILE_BYTES as u64
+        assert_eq!(
+            fs::metadata(directory.join(FILE_NAME)).unwrap().len(),
+            (600 * line.len()) as u64
         );
-        assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         let _ = fs::remove_dir_all(directory);
     }
 

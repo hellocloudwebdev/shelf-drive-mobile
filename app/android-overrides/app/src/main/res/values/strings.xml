@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Shelf Drive</string>
-    <string name="main_activity_title">Shelf Drive</string>
+    <string name="app_name">Shelf Drive TEST</string>
+    <string name="main_activity_title">Shelf Drive TEST</string>
     <string name="media_player_title">Shelf Drive player</string>
     <string name="media_player_content_description">Media player</string>
     <string name="media_private_title">Private media</string>

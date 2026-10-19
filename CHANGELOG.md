@@ -1,3 +1,11 @@
+## [4.4.10-test.1] - Diagnostic test candidate
+
+- Separate side-by-side Android test application (`com.hellocloudweb.shelfdrive.diagnostictest`), not a production update.
+- No app-imposed native trace byte/count/age limits or app-event history rotation. Android availability and device capacity still apply.
+- App-only package, process and UID filtering; no system-wide logcat or other-app logs.
+- Logs remain private locally; public report inclusion requires review and fresh consent. Native traces can contain secrets.
+- Unbounded retention may fill storage; whole-log review/export may exhaust memory. Remove the test app when done.
+
 ## [4.4.9] - 2026-10-19
 
 ### App-only diagnostics

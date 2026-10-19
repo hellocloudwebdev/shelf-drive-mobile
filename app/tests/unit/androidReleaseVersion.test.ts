@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const { parseVersion, readChangelogVersion, verifyReleaseVersions } = require('../../scripts/verify-android-release-version.cjs') as {
@@ -14,6 +14,20 @@ const { parseVersion, readChangelogVersion, verifyReleaseVersions } = require('.
 };
 
 const temporaryDirectories: string[] = [];
+
+// The diagnostic candidate deliberately cannot pass the production stable-release gate.
+// Exercise that gate's independent invariants with a stable-version fixture instead.
+let appRoot: string;
+beforeEach(() => {
+  appRoot = mkdtempSync(join(tmpdir(), 'android-stable-version-'));
+  temporaryDirectories.push(appRoot);
+  mkdirSync(join(appRoot, 'src-tauri'));
+  const candidate = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')).version as string;
+  const stable = candidate.split('-')[0];
+  writeFileSync(join(appRoot, 'package.json'), JSON.stringify({ version: stable }));
+  writeFileSync(join(appRoot, 'src-tauri', 'tauri.conf.json'), JSON.stringify({ version: stable }));
+  writeFileSync(join(appRoot, 'src-tauri', 'Cargo.toml'), `[package]\nversion = "${stable}"\n`);
+});
 
 function writePreviousManifest(manifest: { packageName?: string; versionCode?: number; version?: string }): string {
   const directory = mkdtempSync(join(tmpdir(), 'android-previous-manifest-'));
@@ -46,18 +60,17 @@ describe('Android release versioning', () => {
   });
 
   it('requires an exact version tag when a tagged release is supplied', () => {
-    const appRoot = process.cwd();
     const packageVersion = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8')).version as string;
     expect(verifyReleaseVersions({ appRoot, tag: `v${packageVersion}` }).version).toBe(packageVersion);
     expect(() => verifyReleaseVersions({ appRoot, tag: 'main' }))
       .toThrow(`release tag main must equal v${packageVersion}`);
   });
 
-  describe('previous-update-manifest monotonicity', () => {
-    // The repository's real app root supplies the genuine package/tauri/Cargo
-    // versions; only the previous manifest is a fixture.
-    const appRoot = process.cwd();
+  it('rejects the diagnostic prerelease through the production release gate', () => {
+    expect(() => verifyReleaseVersions({ appRoot: process.cwd() })).toThrow(/plain semantic versioning/);
+  });
 
+  describe('previous-update-manifest monotonicity', () => {
     it('accepts a previous release with a lower Android versionCode', () => {
       const previousManifest = writePreviousManifest({
         packageName: 'com.hellocloudweb.shelfdrive',
@@ -67,7 +80,7 @@ describe('Android release versioning', () => {
     });
 
     it('rejects a release that does not advance past the previous versionCode', () => {
-      const packageVersion = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')).version as string;
+      const packageVersion = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8')).version as string;
       const currentCode = parseVersion(packageVersion).versionCode;
       // Equal or higher previous versionCodes mean the new release does not
       // advance the installed base; both must be rejected.

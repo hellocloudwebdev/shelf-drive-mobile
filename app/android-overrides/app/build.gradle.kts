@@ -61,7 +61,7 @@ android {
     }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.hellocloudweb.shelfdrive"
+        applicationId = "com.hellocloudweb.shelfdrive.diagnostictest"
         minSdk = 31
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
