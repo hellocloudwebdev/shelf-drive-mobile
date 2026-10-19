@@ -7,6 +7,8 @@ import { configureCrashTelemetry, reportCrash } from '../../src/services/crashTe
 const mocks = vi.hoisted(() => ({
   getAppLogs: vi.fn(), saveAppLogs: vi.fn(), recordAppDiagnostic: vi.fn(), submitCrashReport: vi.fn(), copy: vi.fn(), open: vi.fn(),
 }));
+const nativeTraceOne = 'ANDROID_NATIVE_EXIT_TRACE\nprotobuf/base64: Cg1uYXRpdmUtZnJhbWUK\nprivate path=/data/user/0/app/cache/item; memory=customer-secret';
+const nativeTraceTwo = 'ANDROID_NATIVE_EXIT_TRACE\nprotobuf/base64: Cg1uZXctdHJhY2U=\nprivate path=/data/user/0/app/files/new-item; memory=second-secret';
 vi.mock('../../src/api/index', () => ({ system: mocks }));
 vi.mock('../../src/utils', () => ({ copyToClipboard: mocks.copy }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: mocks.open }));
@@ -38,6 +40,19 @@ describe('app-only diagnostics', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save / Download logs' }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'Save / Download logs' }));
     await waitFor(() => expect(mocks.saveAppLogs).toHaveBeenCalledOnce());
+  });
+
+  it('offers standalone review without copying, saving, or uploading a sensitive native trace', async () => {
+    mocks.getAppLogs.mockResolvedValueOnce(nativeTraceOne);
+    render(<AppDiagnosticsPanel />);
+    expect(screen.getByText(/encoded android native crash tombstones are unsanitized/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Review logs' }));
+    await screen.findByText((_content, element) => element?.tagName === 'PRE' && element.textContent === nativeTraceOne);
+    expect(mocks.getAppLogs).toHaveBeenCalledOnce();
+    expect(mocks.copy).not.toHaveBeenCalled();
+    expect(mocks.saveAppLogs).not.toHaveBeenCalled();
+    expect(mocks.submitCrashReport).not.toHaveBeenCalled();
+    expect(mocks.open).not.toHaveBeenCalled();
   });
 
   it('does not read or attach logs in a report without consent', async () => {
@@ -91,6 +106,35 @@ describe('app-only diagnostics', () => {
     expect(mocks.getAppLogs).toHaveBeenCalledTimes(2);
   });
 
+  it('requires fresh consent for the exact native-sensitive snapshot reviewed for each report', async () => {
+    mocks.getAppLogs.mockResolvedValueOnce(nativeTraceOne).mockResolvedValueOnce(nativeTraceTwo);
+    render(<AppDiagnosticsPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Report a crash' }));
+    const reviewButton = screen.getByRole('button', { name: 'Review logs for this report' });
+    fireEvent.click(reviewButton);
+    await screen.findByText((_content, element) => element?.tagName === 'PRE' && element.textContent === nativeTraceOne);
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+
+    fireEvent.click(reviewButton);
+    expect(checkbox.checked).toBe(false);
+    expect(checkbox.disabled).toBe(true);
+    await screen.findByText((_content, element) => element?.tagName === 'PRE' && element.textContent === nativeTraceTwo);
+    expect(checkbox.checked).toBe(false);
+    expect(checkbox.disabled).toBe(false);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy report & open GitHub' }));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledWith(CRASH_ISSUE_URL));
+    const report = mocks.copy.mock.calls[0][0] as string;
+    expect(report).toContain(nativeTraceTwo);
+    expect(report).not.toContain(nativeTraceOne);
+    expect(mocks.getAppLogs).toHaveBeenCalledTimes(2);
+  });
+
   it('cancel does not open GitHub or copy a report', () => {
     render(<AppDiagnosticsPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Report a crash' }));
@@ -114,6 +158,17 @@ describe('app-only diagnostics', () => {
     expect(report).toContain('newest-entry');
     expect(report).not.toContain('oldest-entry');
     expect(report).toContain('attach the complete file');
+  });
+
+  it('omits an entire oversized native base64 section from clipboard excerpts', () => {
+    const encodedTrace = 'Cw==' + 'A'.repeat(90_000);
+    const logs = 'ordinary-history-entry\n=== Sensitive app-native crash traces ===\n' + encodedTrace;
+    const report = buildCrashIssueReport('4.4.8', logs);
+    expect(report.length).toBeLessThan(50_000);
+    expect(report).toContain('Native tombstone data omitted from clipboard excerpt. Use Save / Download logs, decode and inspect before manually attaching the complete file.');
+    expect(report).toContain('ordinary-history-entry');
+    expect(report).not.toContain(encodedTrace);
+    expect(report).not.toContain('=== Sensitive app-native crash traces ===');
   });
 
   it('strips messages, URLs, source paths, and non-error user values from crash shape', () => {

@@ -15,6 +15,8 @@ const ROTATED_FILE_NAME: &str = "app-diagnostics.log.1";
 const MAX_FILE_BYTES: usize = 512 * 1024;
 const MAX_RECORD_BYTES: usize = 4096;
 const MAX_EARLY_RECORDS: usize = 64;
+#[cfg(any(target_os = "android", test))]
+const MAX_ANDROID_LOG_BYTES: usize = 1100 * 1024;
 const MAX_FRONTEND_FRAMES: usize = 16;
 const MAX_FRONTEND_FRAME_BYTES: usize = 128;
 const FRONTEND_EVENTS: &[&str] = &[
@@ -294,7 +296,9 @@ pub fn cmd_get_app_logs(app: tauri::AppHandle) -> Result<String, String> {
         match android_app_log(&app) {
             Ok(contents) if !contents.trim().is_empty() => {
                 result.push_str("--- Android app diagnostics ---\n");
-                result.push_str(&tail_by_bytes(&contents, 512 * 1024));
+                // Two 256 KiB history files + three 128 KiB traces encoded as base64,
+                // with room for bounded exit metadata. Do not cut valid tombstones in half.
+                result.push_str(&tail_by_bytes(&contents, MAX_ANDROID_LOG_BYTES));
                 result.push('\n');
             }
             Ok(_) => {}
@@ -377,7 +381,7 @@ pub fn cmd_save_app_logs(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", test))]
 fn tail_by_bytes(text: &str, max_bytes: usize) -> String {
     if text.len() <= max_bytes {
         return text.to_owned();
@@ -485,5 +489,16 @@ mod tests {
         );
         assert!(!line.contains("payload"));
         assert!(!line.contains("secret"));
+    }
+
+    #[test]
+    fn android_export_preserves_bounded_native_traces_and_history() {
+        let base64_per_trace = (128 * 1024_usize).div_ceil(3) * 4;
+        let history_and_trace_data = "a".repeat(2 * 256 * 1024 + 3 * base64_per_trace);
+        // Bounded summaries, trace metadata and warning text have ample reserved space.
+        let contents = format!("{history_and_trace_data}{}", "m".repeat(16 * 1024));
+        assert!(contents.len() < MAX_ANDROID_LOG_BYTES);
+        assert_eq!(tail_by_bytes(&contents, MAX_ANDROID_LOG_BYTES), contents);
+        assert_eq!(tail_by_bytes("a€z", 3), "z");
     }
 }

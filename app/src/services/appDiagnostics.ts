@@ -33,8 +33,20 @@ export function buildCrashIssueReport(version: string, logs?: string): string {
   // Logs go only to the local clipboard after per-report consent, never a URL.
   if (logs === undefined) return summary;
   const maxLogChars = 48_000;
-  const excerpt = logs.length > maxLogChars
-    ? `[Older log entries omitted to fit a GitHub issue. Use Save / Download logs to attach the complete file.]\n${logs.slice(-maxLogChars)}`
-    : logs;
+  let excerpt = logs;
+  if (logs.length > maxLogChars) {
+    const nativeSectionMarker = '\n=== Sensitive app-native crash traces ===\n';
+    const nativeSectionStart = logs.indexOf(nativeSectionMarker);
+    let ordinaryLogs = logs;
+    excerpt = '';
+    if (nativeSectionStart >= 0) {
+      // Never tail-slice a protobuf/base64 tombstone: that would create a misleading partial trace.
+      ordinaryLogs = logs.slice(0, nativeSectionStart);
+      excerpt = 'Native tombstone data omitted from clipboard excerpt. Use Save / Download logs, decode and inspect before manually attaching the complete file.\n';
+    }
+    excerpt += ordinaryLogs.length > maxLogChars
+      ? `[Older log entries omitted to fit a GitHub issue. Use Save / Download logs to attach the complete file.]\n${ordinaryLogs.slice(-maxLogChars)}`
+      : ordinaryLogs;
+  }
   return `${summary}\n### App-only diagnostic log (shared with my consent)\n\n${excerpt}\n`;
 }

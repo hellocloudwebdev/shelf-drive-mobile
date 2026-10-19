@@ -1,3 +1,13 @@
+## [4.4.10] - 2026-10-20
+
+### Added
+- Add best-effort local, app-only Android native exit-trace capture on API 31+, with strict UID/process/native-crash guards, bounded local retention (three traces, 128 KiB each, seven days), and explicit incomplete markers for oversized data.
+- Add reviewed, opt-in per-report raw trace attachment; warn that native tombstones are unsanitized and may contain sensitive data. Clipboard excerpts omit oversized native payload sections.
+
+### Changed
+- Clarify local diagnostic and raw-trace privacy, export, and non-upload behavior.
+- Keep production application identity, updater configuration, and release signing behavior unchanged.
+
 ## [4.4.9] - 2026-10-19
 
 ### App-only diagnostics

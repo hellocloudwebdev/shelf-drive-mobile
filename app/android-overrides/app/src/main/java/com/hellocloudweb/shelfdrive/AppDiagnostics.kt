@@ -1,6 +1,7 @@
 package com.hellocloudweb.shelfdrive
 
 import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import android.os.Process
@@ -11,11 +12,11 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Collections
 import java.util.IdentityHashMap
+import java.util.Base64
 
 /**
- * App-private, local-only diagnostics. We intentionally do not read ApplicationExitInfo trace streams:
- * Android traces can contain arbitrary native memory, paths, and other sensitive process data. Native
- * crash/ANR reporting is therefore limited to the platform's structured exit-reason summary fields.
+ * App-private, local-only diagnostics. Native tombstones are raw sensitive binary, not sanitized
+ * events: keep them outside backup and expose them only through explicit local review/export.
  */
 internal object AppDiagnostics {
   private const val DIRECTORY = "app_diagnostics"
@@ -27,6 +28,9 @@ internal object AppDiagnostics {
   private const val EXIT_SUMMARY_LIMIT = 10
   private val lock = Any()
   @Volatile private var installed = false
+  private val traceLock = Any()
+  private var traceStore: NativeExitTraceStore? = null
+  @Volatile private var captureScheduled = false
 
   fun initialize(context: Context) {
     val appContext = context.applicationContext
@@ -57,6 +61,18 @@ internal object AppDiagnostics {
       }
     }
     recordEvent(appContext, "app_start")
+    // Platform trace IO must never delay Application.onCreate or transfer startup.
+    synchronized(lock) {
+      if (!captureScheduled) {
+        captureScheduled = true
+        try {
+          Thread({
+            try { captureNativeTraces(appContext, recentExits(appContext)) }
+            catch (_: Throwable) { /* Best effort only; no error payload is retained. */ }
+          }, "app-native-exit-capture").apply { isDaemon = true }.start()
+        } catch (_: Throwable) { captureScheduled = false }
+      }
+    }
   }
 
   fun recordEvent(context: Context, event: String) {
@@ -83,10 +99,41 @@ internal object AppDiagnostics {
         }
       parts.joinToString(separator = "")
     }
-    val exits = recentExitSummaries(appContext)
+    val exits = recentExits(appContext)
+    val statuses = captureNativeTraces(appContext, exits)
+    val traces = synchronized(traceLock) {
+      try { nativeTraceStore(appContext).snapshot(System.currentTimeMillis()) }
+      catch (_: Exception) { emptyList() }
+    }
     return buildString {
       append(history)
-      exits.forEach { append(it.toString()).append('\n') }
+      exits.forEach { info ->
+        append(JSONObject().apply {
+          put("type", "process_exit")
+          put("reasonCode", info.reason)
+          put("status", info.status)
+          put("importance", info.importance)
+          put("timestamp", info.timestamp)
+          put("pid", info.pid)
+          statuses[exitKey(info)]?.let { put("nativeTrace", it) }
+        }.toString()).append('\n')
+      }
+      if (traces.isNotEmpty()) {
+        append("\n=== Sensitive app-native crash traces ===\n")
+        append("Raw Android tombstone protobuf, base64 encoded; NOT sanitized. May contain memory, paths, identifiers, or secrets. Decode and inspect before sharing. Truncated traces are incomplete protobuf prefixes.\n")
+        traces.forEach { trace ->
+          append(JSONObject().apply {
+            put("type", "native_exit_trace")
+            put("timestamp", trace.timestamp)
+            put("pid", trace.pid)
+            put("encoding", "base64")
+            put("format", "android_tombstone_protobuf")
+            put("truncated", trace.truncated)
+            put("capturedBytes", trace.bytes.size)
+            put("data", Base64.getEncoder().encodeToString(trace.bytes))
+          }.toString()).append('\n')
+        }
+      }
     }
   }
 
@@ -168,7 +215,7 @@ internal object AppDiagnostics {
   }
 
   @Suppress("DEPRECATION")
-  private fun recentExitSummaries(context: Context): List<JSONObject> {
+  private fun recentExits(context: Context): List<ApplicationExitInfo> {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptyList()
     return try {
       val manager = context.getSystemService(ActivityManager::class.java) ?: return emptyList()
@@ -176,25 +223,14 @@ internal object AppDiagnostics {
         .orEmpty()
         .asSequence()
         .filter { info ->
-          // Android 14+ exposes realUid; verify it. On Android 11-13 the API query is already scoped
-          // to this exact package, but the platform has no public UID accessor for an additional check.
-          Build.VERSION.SDK_INT < 34 || info.realUid == Process.myUid()
+          // Both UID accessors have been public since API 30, including Android 12 and 13.
+          info.realUid == Process.myUid() && info.packageUid == Process.myUid()
         }
         .filter { info ->
           val process = info.processName
           process == context.packageName || process.startsWith(context.packageName + ":")
         }
         .take(EXIT_SUMMARY_LIMIT)
-        .map { info ->
-          JSONObject().apply {
-            put("type", "process_exit")
-            put("reasonCode", info.reason)
-            put("status", info.status)
-            put("importance", info.importance)
-            put("timestamp", info.timestamp)
-            put("pid", info.pid)
-          }
-        }
         .toList()
     } catch (_: RuntimeException) {
       emptyList()
@@ -202,6 +238,31 @@ internal object AppDiagnostics {
       emptyList()
     }
   }
+
+  private fun nativeTraceStore(context: Context): NativeExitTraceStore =
+    traceStore ?: NativeExitTraceStore(File(context.noBackupFilesDir, "native_exit_traces"))
+      .also { traceStore = it }
+
+  private fun exitKey(info: ApplicationExitInfo): String =
+    "${info.timestamp}:${info.pid}:${info.processName}"
+
+  private fun captureNativeTraces(context: Context, exits: List<ApplicationExitInfo>): Map<String, String> =
+    synchronized(traceLock) {
+      try {
+        val store = nativeTraceStore(context)
+        val now = System.currentTimeMillis()
+        // snapshot prunes expired traces even when Android returns no exit records.
+        store.snapshot(now)
+        exits.filter { info ->
+          NativeExitTracePolicy.canCapture(Build.VERSION.SDK_INT, context.packageName,
+            info.processName, info.realUid, info.packageUid, Process.myUid(), info.reason)
+        }.sortedByDescending { it.timestamp }.associate { info ->
+          exitKey(info) to store.capture(info.timestamp, info.pid, info.processName, now) {
+            info.traceInputStream
+          }
+        }
+      } catch (_: Exception) { emptyMap() }
+    }
 
   private fun diagnosticsDirectory(context: Context): File = File(context.filesDir, DIRECTORY)
 

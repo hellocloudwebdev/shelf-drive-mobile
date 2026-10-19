@@ -27,8 +27,20 @@ export function AppDiagnosticsPanel() {
     reviewSequence.current += 1;
     setIncludeLogs(false);
     setReviewedLogs(null);
+    setPreview(null);
     setError(null);
     setReportOpen(true);
+  };
+  const reviewLogs = () => {
+    const reviewId = ++reviewSequence.current;
+    setIncludeLogs(false);
+    setReviewedLogs(null);
+    setPreview(null);
+    void run(async () => {
+      const logs = await system.getAppLogs();
+      if (reviewId !== reviewSequence.current) return;
+      setPreview(logs);
+    });
   };
   const reviewLogAttachment = () => {
     const reviewId = ++reviewSequence.current;
@@ -62,9 +74,10 @@ export function AppDiagnosticsPanel() {
   return <section aria-label="App diagnostic logs" className="space-y-3 p-4 text-start">
     <div><h3 className="text-sm font-semibold text-app-text">App diagnostic logs</h3>
       <p className="mt-1 text-xs leading-5 text-app-text-secondary">Saved automatically on this device with bounded rotation. Only Shelf Drive events are captured, never system-wide logcat or other apps. Older entries are removed as space is needed.</p>
-      <p className="mt-1 text-xs leading-5 text-app-text-secondary">Logs and the support snapshot may reveal device or technical details. Review before sharing. Saving creates a file outside private app storage; copying places it on your clipboard.</p>
+      <p className="mt-1 text-xs leading-5 text-app-text-secondary">Encoded Android native crash tombstones are unsanitized and can contain sensitive memory contents, paths, identifiers, or other data. They stay local until you explicitly copy, save, or choose to include a reviewed snapshot in a report. Decode and inspect them before any public sharing. Oversized traces are marked incomplete. Saving creates a file outside private app storage; copying places it on your clipboard.</p>
     </div>
     <div className="flex flex-wrap gap-2">
+      <button type="button" disabled={busy} className={buttonClass} onClick={reviewLogs}>Review logs</button>
       <button type="button" disabled={busy} className={buttonClass} onClick={() => void run(async () => { await copyToClipboard(await system.getAppLogs()); toast.success('App logs copied.'); })}>Copy logs</button>
       <button type="button" disabled={busy} className={buttonClass} onClick={() => void run(async () => { const destination = await system.saveAppLogs(); if (destination) toast.success(`Logs saved: ${destination}`); })}>Save / Download logs</button>
       <button type="button" disabled={busy} className={buttonClass} onClick={beginReport}>Report a crash</button>
@@ -75,7 +88,7 @@ export function AppDiagnosticsPanel() {
       <button type="button" disabled={busy} className={buttonClass} onClick={reviewLogAttachment}>Review logs for this report</button>
       <label className="flex items-start gap-2 text-xs leading-5 text-app-text">
         <input type="checkbox" checked={includeLogs} disabled={busy || reviewedLogs === null} onChange={event => setIncludeLogs(event.target.checked)} className="mt-1" />
-        I consent to include the reviewed app log in this report and share it publicly if I submit the GitHub issue.
+        I consent to include the reviewed app log, including any native crash traces, in this report and share it publicly if I submit the GitHub issue.
       </label>
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy} className={buttonClass} onClick={prepareReport}>Copy report &amp; open GitHub</button>

@@ -143,6 +143,9 @@ jobs:
       - name: Compile Android JVM and instrumentation tests
         working-directory: app/src-tauri/gen/android
         run: ./gradlew :app:testUniversalReleaseUnitTest :app:compileUniversalDebugAndroidTestKotlin
+      - name: Run bounded native exit trace JVM policy and storage checks
+        working-directory: app
+        run: bash scripts/test-native-exit-traces.sh
 
       - name: Verify JNI methods survived R8
         working-directory: app

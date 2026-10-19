@@ -1,7 +1,7 @@
 name: Android candidate validation
 on:
   push:
-    branches: ['release-candidate/4.4.9-diagnostics']
+    branches: ['release-candidate/4.4.10-native-traces']
 permissions:
   contents: read
 concurrency:
@@ -14,7 +14,7 @@ jobs:
       - name: Require the authorized candidate branch
         env:
           CANDIDATE_REF: ${{ github.ref }}
-        run: test "$CANDIDATE_REF" = 'refs/heads/release-candidate/4.4.9-diagnostics'
+        run: test "$CANDIDATE_REF" = 'refs/heads/release-candidate/4.4.10-native-traces'
   dependency-assurance:
     needs: candidate-scope
     uses: ./.github/workflows/dependency-assurance.yml
@@ -127,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           version="$(node -p "require('./app/package.json').version")"
-          test "$version" = '4.4.9'
+          test "$version" = '4.4.10'
           node - "$version" <<'NODE'
           const fs = require('node:fs');
           const version = process.argv[2];
@@ -144,7 +144,7 @@ jobs:
             if (!stat.isFile() || stat.size === 0) throw new Error(`Invalid asset: ${name}`);
           }
           const manifest = JSON.parse(fs.readFileSync('candidate-assets/android-update.json', 'utf8'));
-          if (manifest.version !== version || manifest.versionCode !== 4004009 || manifest.filename !== `ShelfDrive_${version}.apk`
+          if (manifest.version !== version || manifest.versionCode !== 4004010 || manifest.filename !== `ShelfDrive_${version}.apk`
             || manifest.packageName !== 'com.hellocloudweb.shelfdrive'
             || manifest.url !== `https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/download/v${version}/ShelfDrive_${version}.apk`) {
             throw new Error('Candidate update manifest mismatch');

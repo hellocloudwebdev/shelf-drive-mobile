@@ -5,11 +5,12 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(__dirname, '..', '..', '..');
 const candidate = readFileSync(resolve(root, '.github/workflows/android-candidate.yml'), 'utf8');
 const quality = readFileSync(resolve(root, '.github/workflows/quality-assurance.yml'), 'utf8');
+const android = readFileSync(resolve(root, '.github/workflows/android.yml'), 'utf8');
 
 describe('validation-only Android candidate workflow', () => {
   it('is limited to the authorized candidate branch without release or tag writes', () => {
-    expect(candidate).toContain("branches: ['release-candidate/4.4.9-diagnostics']");
-    expect(candidate).toContain("run: test \"$CANDIDATE_REF\" = 'refs/heads/release-candidate/4.4.9-diagnostics'");
+    expect(candidate).toContain("branches: ['release-candidate/4.4.10-native-traces']");
+    expect(candidate).toContain("run: test \"$CANDIDATE_REF\" = 'refs/heads/release-candidate/4.4.10-native-traces'");
     expect(candidate).not.toContain('contents: write');
     for (const publication of ['createRelease', 'updateRelease', 'gh release create', 'gh release upload', 'git tag', 'tags:']) {
       expect(candidate).not.toContain(publication);
@@ -31,6 +32,8 @@ describe('validation-only Android candidate workflow', () => {
     expect(candidate).toContain('cargo clippy --lib --all-targets -- -D warnings');
     expect(candidate).toContain('--previous-manifest "$previous_manifest"');
     expect(candidate).toContain('args=(--tag "v${version}" --changelog ../CHANGELOG.md)');
+    expect(android).toContain('Run bounded native exit trace JVM policy and storage checks');
+    expect(android).toContain('bash scripts/test-native-exit-traces.sh');
   });
 
   it('retains universal-only assets, signed update metadata, SBOMs, attestations and verified checksums', () => {
