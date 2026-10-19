@@ -1,3 +1,18 @@
+## [4.4.9] - 2026-10-19
+
+### App-only diagnostics
+- Add bounded, rotating local app logs and Settings actions to review, copy, and save/download diagnostics.
+- Add a crash-report action that requires fresh consent for the reviewed log snapshot, copies the report locally, and opens GitHub for the user to paste and submit. Logs are not uploaded automatically or placed in URLs.
+- Exclude raw native crash dumps, arbitrary exception messages, panic payloads, and other applications' logs from the local diagnostics export.
+
+### Android downloads
+- Distribute only the universal APK and Android App Bundle (AAB), retaining all four native ABIs inside the universal packages.
+- Preserve release signing, update-manifest signatures, checksums, SBOMs, provenance, attestations, and Android 12–16 (API 31–36) release gates.
+
+### Verification limits
+- No authenticated Telegram upload has been performed for this release; real Telegram upload success is not claimed.
+- No physical-device crash reproduction has been performed, and the unexplained spontaneous app exit is not claimed fixed.
+
 ## [4.4.8] - 2026-10-18
 
 ### Android upload recovery

@@ -15,6 +15,7 @@ class ShelfDriveApplication : Application(), Configuration.Provider {
 
   override fun onCreate() {
     super.onCreate()
+    AppDiagnostics.initialize(this)
     WorkManager.initialize(this, workManagerConfiguration)
   }
 }

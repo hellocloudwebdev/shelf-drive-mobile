@@ -5,6 +5,7 @@ import { open } from '@tauri-apps/plugin-shell';
 import { toast } from 'sonner';
 import type { TFunction } from 'i18next';
 import { EncryptionSettingsSection } from '../../../shared/EncryptionSettingsSection';
+import { AppDiagnosticsPanel } from '../../../shared/AppDiagnosticsPanel';
 import { ThemesTab } from '../ThemesTab';
 import { useConfirm } from '../../../../context/ConfirmContext';
 import type { Settings } from '../../../../types/settings';
@@ -260,6 +261,7 @@ export function AboutSettingsTab({ appVersion, diagnosticsLoading, t, onCopyDiag
         <img src="/logo.svg" className="h-16 w-16 drop-shadow-lg" alt="Shelf Drive Logo" />
         <div className="text-center"><h3 className="text-base font-bold text-telegram-text">{i18n.t("common.app_title")}</h3><p className="mt-0.5 text-xs text-telegram-subtext">v{appVersion}</p></div>
         <div className="h-px w-12 bg-telegram-border" />
+        <AppDiagnosticsPanel />
         <button onClick={onCopyDiagnostics} disabled={diagnosticsLoading} className="flex items-center gap-1.5 rounded-lg border border-telegram-border bg-telegram-hover px-3 py-1.5 text-xs font-medium text-telegram-subtext transition hover:bg-telegram-border/30 hover:text-telegram-text disabled:opacity-50">
           {diagnosticsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Clipboard className="h-3 w-3" />}
           {t('settings.copy_diagnostics')}

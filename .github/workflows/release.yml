@@ -201,6 +201,17 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          shopt -s nullglob
+          apk_assets=(android-release/*.apk)
+          aab_assets=(android-release/*.aab)
+          if (( ${#apk_assets[@]} != 1 )) || [[ "${apk_assets[0]}" != "android-release/ShelfDrive_${version}.apk" ]]; then
+            echo "Android release must contain exactly one version-matched universal APK." >&2
+            exit 1
+          fi
+          if (( ${#aab_assets[@]} != 1 )) || [[ "${aab_assets[0]}" != "android-release/ShelfDrive_${version}.aab" ]]; then
+            echo "Android release must contain exactly one version-matched universal AAB." >&2
+            exit 1
+          fi
           test -f "android-release/ShelfDrive_${version}.apk"
           test -f "android-release/ShelfDrive_${version}.aab"
           test -s "android-release/android-update.json"

@@ -35,6 +35,7 @@ import { createOwnedShareLinks } from '../../services/shareLinks';
 import { sourceFolder } from '../../services/fileIdentity';
 import { formatBytes, isMediaFile, isPdfFile, isImageFile, isVideoFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
 import { LazyFeatureBoundary } from '../shared/LazyFeatureBoundary';
+import { AppDiagnosticsPanel } from '../shared/AppDiagnosticsPanel';
 import { TelegramFile, TelegramFolder, type SmartView, type QueueItem, type DownloadItem } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import { version as appVersion } from '../../../package.json';
@@ -1766,6 +1767,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             </SettingsSection>
 
             <SettingsSection title="Advanced">
+              <AppDiagnosticsPanel />
               <SettingsRow
                 icon={<LifeBuoy className="h-4.5 w-4.5" aria-hidden="true" />}
                 title="Support snapshot"

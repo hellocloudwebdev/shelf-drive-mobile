@@ -56,9 +56,16 @@ function runGradle(requireReleaseSigning: string | undefined): { status: number 
 
 describe('Android release-signing property mapping', () => {
   it('delivers the signing property through the workflow on every release build step', () => {
-    // Both gradle-invoking steps (the universal APK/AAB build and the
-    // ABI-specific APK builds) must feed the gate.
-    expect(deliveredNames.length).toBeGreaterThanOrEqual(2);
+    // Only the universal APK/AAB build distributes packages. Require its own
+    // environment to feed the guard, not just a property elsewhere in the file.
+    const releaseBuildSteps = workflow.split(/\n {6}- /).filter(step =>
+      step.includes('run: npm run tauri android build'),
+    );
+    expect(releaseBuildSteps).toHaveLength(1);
+    expect(releaseBuildSteps[0]).toContain(`${ENV_PREFIX}${SIGNING_GRADLE_PROPERTY}:`);
+    expect(releaseBuildSteps[0]).toContain("${{ env.PRODUCTION_ANDROID_BUILD }}");
+    expect(releaseBuildSteps[0]).toContain('--apk true --aab true --ci');
+    expect(deliveredNames).toHaveLength(1);
     // Exactly one distinct signing property name is delivered, so the guard
     // has a single, unambiguous source of truth.
     expect([...new Set(deliveredNames)]).toEqual([SIGNING_GRADLE_PROPERTY]);

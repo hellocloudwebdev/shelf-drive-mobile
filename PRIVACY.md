@@ -18,6 +18,14 @@ The Telegram API hash is stored in the desktop operating-system credential manag
 
 Crash reporting is enabled by default and can be disabled at any time in Settings; disabling it also clears queued reports. A report contains only the application version, operating-system platform, error type, timestamp, and sanitized function names. It excludes error messages, file names, paths, file contents, Telegram messages or identifiers, credentials, phone numbers, and user-entered values.
 
+### Local app diagnostic logs
+
+Shelf Drive also keeps a bounded, automatically rotated diagnostic history in its private app storage, independently of the optional remote crash-report preference. It records only this app's technical events and sanitized crash frames. It does not read system-wide logcat or collect other apps' logs, file contents, credentials, or raw exception messages. Android can supply this app's own previous process-exit information; a complete native crash stack is not always available.
+
+Settings offers **Copy logs** and **Save / Download logs**. Exports include the app's support snapshot and diagnostic history. Copying places the export on the device clipboard; saving creates a file outside private app storage. Device and technical details can still be sensitive, so review exports before sharing.
+
+**Report a crash** opens a preparation flow with log inclusion off by default. To include a log, first review it and explicitly consent for that report. The app copies the prepared report locally and opens the repository's GitHub issue composer without putting logs in the URL. You must paste, review, and submit the issue yourself; alternatively, save the log and attach the file manually in GitHub. No diagnostic attachment is silently uploaded and no public issue is created automatically. Submitted GitHub issues and their attachments may be public under GitHub's terms.
+
 ## Local sharing servers
 
 WebDAV, REST, and password-protected local links are disabled until enabled by the user. They listen on the addresses shown in Settings and use capability tokens, API keys, or passwords. Disabling a server or regenerating its credential revokes that access. Guest or anonymous WebDAV connections receive no token-scoped file access.

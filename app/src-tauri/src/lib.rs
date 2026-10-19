@@ -9,6 +9,7 @@ pub mod desktop_power;
 pub mod desktop_preferences;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod desktop_tray;
+pub mod diagnostics;
 pub mod installation;
 mod libsql_init;
 pub mod linux_startup;
@@ -924,7 +925,8 @@ fn cmd_get_system_diagnostics(app: tauri::AppHandle) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    env_logger::init();
+    diagnostics::install_logger();
+    diagnostics::install_panic_hook();
 
     let stream_token_manager = Arc::new(crate::stream_token::StreamTokenManager::new());
 
@@ -971,6 +973,12 @@ pub fn run() {
 
     let app = builder
         .setup(move |app| {
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                if let Err(error) = diagnostics::initialize(log_dir) {
+                    log::warn!("App diagnostics storage unavailable: {error}");
+                }
+            }
+            let _ = diagnostics::cmd_record_app_diagnostic("app_started".to_owned(), Vec::new());
             crate::libsql_init::preinitialize_grammers_sqlite().map_err(|error| {
                 log::error!("Failed to preinitialize Grammers SQLite: {error}");
                 error
@@ -1468,6 +1476,9 @@ pub fn run() {
             cmd_list_cached_files,
             cmd_remove_cached_path,
             cmd_get_system_diagnostics,
+            diagnostics::cmd_record_app_diagnostic,
+            diagnostics::cmd_get_app_logs,
+            diagnostics::cmd_save_app_logs,
             installation::cmd_get_installation_info,
             android_updates::cmd_check_android_update,
             android_updates::cmd_download_and_install_android_update,

@@ -630,6 +630,15 @@ export const system = {
   getDiagnostics() {
     return tauriInvoke<string>("cmd_get_system_diagnostics");
   },
+  getAppLogs() {
+    return tauriInvoke<string>("cmd_get_app_logs");
+  },
+  saveAppLogs() {
+    return tauriInvoke<string>("cmd_save_app_logs");
+  },
+  recordAppDiagnostic(event: string, frames: string[] = []) {
+    return tauriInvokeVoid("cmd_record_app_diagnostic", { event, frames });
+  },
   getBandwidth() {
     return tauriInvoke<BandwidthStats>("cmd_get_bandwidth");
   },

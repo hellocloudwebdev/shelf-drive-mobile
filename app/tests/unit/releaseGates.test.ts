@@ -69,8 +69,10 @@ describe('release safety gates', () => {
     expect(androidPackaging).not.toContain('${GITHUB_REF_NAME:-v${version}}');
     expect(android).toContain("'system-images;android-31;google_apis;x86_64'");
     expect(android).toContain("ANDROID_EMULATOR_API: '31'");
-    expect(android).toContain(':app:assembleArm64Release');
-    expect(android).toContain('-x :app:rustBuildArm64Release');
+    expect(android).not.toContain('Build smaller ABI-specific APKs');
+    for (const task of [':app:assembleArm64Release', ':app:assembleArmRelease', ':app:assembleX86Release', ':app:assembleX86_64Release']) {
+      expect(android).not.toContain(task);
+    }
     expect(android).toContain("if: env.HAS_ANDROID_SIGNING_KEY == 'true'");
     // Android release artifacts are produced by the tag-driven release workflow:
     // it must invoke the protected Android workflow and attach its signed,
@@ -82,6 +84,28 @@ describe('release safety gates', () => {
     expect(release).toContain('ShelfDrive_${version}.apk');
     expect(release).toContain('ShelfDrive_${version}.aab');
     expect(release).toContain('android-update.json.sig');
+  });
+
+  it('limits Android distribution to the universal APK/AAB and rejects unexpected variants', () => {
+    const android = workflow('android.yml');
+    const release = workflow('release.yml');
+    const packaging = repositoryFile('app', 'scripts', 'package-android-release.sh');
+
+    expect(android).toContain('--target aarch64 armv7 i686 x86_64 --apk true --aab true --ci');
+    expect(android).toContain('bash scripts/verify-android-artifacts.sh');
+    expect(packaging).toContain('apk="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"');
+    expect(packaging).toContain('aab="src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab"');
+    expect(packaging).toContain('staged_apks=("$release_dir"/*.apk)');
+    expect(packaging).toContain('staged_aabs=("$release_dir"/*.aab)');
+    expect(packaging).toContain('Android release staging must contain exactly the universal APK');
+    expect(packaging).toContain('Android release staging must contain exactly the universal AAB');
+    expect(packaging).toContain('rm -f -- "$stale_apk"');
+    expect(packaging).not.toContain('abi_apk_path');
+    expect(packaging).not.toContain('Shelf-Drive-v${version}-android-');
+    expect(release).toContain('apk_assets=(android-release/*.apk)');
+    expect(release).toContain('aab_assets=(android-release/*.aab)');
+    expect(release).toContain('Android release must contain exactly one version-matched universal APK.');
+    expect(release).toContain('Android release must contain exactly one version-matched universal AAB.');
   });
 
   it('validates Android version monotonicity fail-closed against the previous release manifest', () => {

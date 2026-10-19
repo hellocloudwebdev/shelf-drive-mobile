@@ -1,0 +1,183 @@
+name: Android candidate validation
+on:
+  push:
+    branches: ['release-candidate/4.4.9-diagnostics']
+permissions:
+  contents: read
+concurrency:
+  group: android-candidate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  candidate-scope:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require the authorized candidate branch
+        env:
+          CANDIDATE_REF: ${{ github.ref }}
+        run: test "$CANDIDATE_REF" = 'refs/heads/release-candidate/4.4.9-diagnostics'
+  dependency-assurance:
+    needs: candidate-scope
+    uses: ./.github/workflows/dependency-assurance.yml
+    permissions:
+      contents: read
+  quality-assurance:
+    needs: candidate-scope
+    uses: ./.github/workflows/quality-assurance.yml
+    permissions:
+      contents: read
+  verify-candidate:
+    name: Verify candidate release invariants
+    needs: candidate-scope
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libdbus-1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install application dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Verify release tag, application version, and changelog
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          previous_manifest="$(bash ../scripts/resolve-previous-android-manifest.sh "$RUNNER_TEMP/previous-release")"
+          version="$(node -p "require('./package.json').version")"
+          args=(--tag "v${version}" --changelog ../CHANGELOG.md)
+          if [ -n "$previous_manifest" ]; then
+            args+=(--previous-manifest "$previous_manifest")
+          fi
+          npm run release:version:check -- "${args[@]}"
+
+      - name: Test frontend behavior and architecture invariants
+        working-directory: app
+        run: npm run test:coverage
+
+      - name: Validate locale resources and generated key types
+        working-directory: app
+        run: |
+          node scripts/i18n/generate-key-types.cjs --check
+          npm run i18n:validate
+          npm run i18n:scan
+
+      - name: Build production frontend
+        working-directory: app
+        run: npm run build:verify
+
+      - name: Test Rust library invariants
+        working-directory: app/src-tauri
+        run: cargo test --lib
+
+      - name: Verify Rust formatting
+        working-directory: app/src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Lint native release targets without warnings
+        working-directory: app/src-tauri
+        run: cargo clippy --lib --all-targets -- -D warnings
+
+  build-android:
+    needs: [verify-candidate, dependency-assurance, quality-assurance]
+    uses: ./.github/workflows/android.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    secrets: inherit
+  candidate-assurance:
+    needs: build-android
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806
+        with:
+          name: telegram-drive-android-signed
+          path: candidate-assets
+      - name: Verify the exact candidate asset set and checksums
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./app/package.json').version")"
+          test "$version" = '4.4.9'
+          node - "$version" <<'NODE'
+          const fs = require('node:fs');
+          const version = process.argv[2];
+          const expected = [
+            `ShelfDrive_${version}.apk`, `ShelfDrive_${version}.aab`,
+            'android-update.json', 'android-update.json.sig',
+            'SHA256SUMS', 'SHA256SUMS.txt',
+            'shelf-drive-source-sbom.cdx.json', 'telegram-drive-android-sbom.cdx.json',
+          ].sort();
+          const actual = fs.readdirSync('candidate-assets').sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Unexpected candidate asset set');
+          for (const name of actual) {
+            const stat = fs.lstatSync(`candidate-assets/${name}`);
+            if (!stat.isFile() || stat.size === 0) throw new Error(`Invalid asset: ${name}`);
+          }
+          const manifest = JSON.parse(fs.readFileSync('candidate-assets/android-update.json', 'utf8'));
+          if (manifest.version !== version || manifest.versionCode !== 4004009 || manifest.filename !== `ShelfDrive_${version}.apk`
+            || manifest.packageName !== 'com.hellocloudweb.shelfdrive'
+            || manifest.url !== `https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/download/v${version}/ShelfDrive_${version}.apk`) {
+            throw new Error('Candidate update manifest mismatch');
+          }
+          NODE
+          (cd candidate-assets && sha256sum -c SHA256SUMS && sha256sum -c SHA256SUMS.txt)
+          rm candidate-assets/SHA256SUMS.txt
+          node scripts/generate-checksums.cjs candidate-assets "$RUNNER_TEMP/candidate-subjects.sha256"
+      - name: Attest candidate provenance
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: ${{ runner.temp }}/candidate-subjects.sha256
+      - name: Attest candidate source SBOM
+        id: sbom
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: ${{ runner.temp }}/candidate-subjects.sha256
+          sbom-path: candidate-assets/shelf-drive-source-sbom.cdx.json
+      - name: Preserve attestation bundles and final checksums
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.sbom.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$PROVENANCE_BUNDLE" candidate-assets/provenance.sigstore.json
+          cp "$SBOM_BUNDLE" candidate-assets/sbom-attestation.sigstore.json
+          node scripts/generate-checksums.cjs candidate-assets candidate-assets/SHA256SUMS.txt
+          (cd candidate-assets && sha256sum -c SHA256SUMS.txt)
+      - name: Upload signed candidate for approval only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: shelf-drive-android-candidate
+          path: candidate-assets/*
+          if-no-files-found: error
+          retention-days: 14

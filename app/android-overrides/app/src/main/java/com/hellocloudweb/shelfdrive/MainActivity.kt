@@ -80,6 +80,13 @@ class MainActivity : TauriActivity() {
     @JvmStatic
     fun isNetworkAvailable(): Boolean = networkAvailable.get()
 
+    /** App-private, sanitized diagnostics for the Rust support command. No network upload occurs. */
+    @JvmStatic
+    fun getAppDiagnosticLog(): String {
+      val ctx = appContext ?: return ""
+      return AppDiagnostics.getDiagnosticLog(ctx)
+    }
+
     @JvmStatic
     fun isTelevisionDevice(): Boolean {
       val ctx = appContext ?: return false
@@ -135,7 +142,11 @@ class MainActivity : TauriActivity() {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         try {
           val activityManager = ctx.getSystemService(ActivityManager::class.java)
-          activityManager?.getHistoricalProcessExitReasons(ctx.packageName, 0, 5)?.forEach { info ->
+          activityManager?.getHistoricalProcessExitReasons(ctx.packageName, 0, 5)
+            ?.filter { info ->
+              (Build.VERSION.SDK_INT < 34 || info.realUid == android.os.Process.myUid()) &&
+                (info.processName == ctx.packageName || info.processName.startsWith(ctx.packageName + ":"))
+            }?.forEach { info ->
             exits.put(JSONObject().apply {
               put("reasonCode", info.reason)
               put("status", info.status)
@@ -1118,6 +1129,7 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
     instanceReference = WeakReference(this)
     MainActivity.appContext = applicationContext
+    AppDiagnostics.recordEvent(applicationContext, "activity_created")
     if (isTelevisionDevice()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     connectivityManager = getSystemService(ConnectivityManager::class.java)
     refreshNetworkAvailability()
@@ -1153,6 +1165,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onDestroy() {
+    AppDiagnostics.recordEvent(applicationContext, "activity_destroyed")
     try {
       connectivityManager?.unregisterNetworkCallback(networkCallback)
     } catch (_: Exception) {
@@ -1164,11 +1177,13 @@ class MainActivity : TauriActivity() {
 
   override fun onStart() {
     super.onStart()
+    AppDiagnostics.recordEvent(applicationContext, "activity_started")
     disableWebViewSaveEnabled(findViewById(android.R.id.content))
     enforceAppLockIfNeeded()
   }
 
   override fun onStop() {
+    AppDiagnostics.recordEvent(applicationContext, "activity_stopped")
     if (!isChangingConfigurations) {
       getSharedPreferences(PRIVACY_PREFERENCES, Context.MODE_PRIVATE).edit()
         .putLong("background_at", System.currentTimeMillis()).apply()

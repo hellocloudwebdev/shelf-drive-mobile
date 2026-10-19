@@ -25,6 +25,7 @@ const classes = [
     rustCallSymbol: 'main_class',
     rustFiles: [
       'src-tauri/src/lib.rs',
+      'src-tauri/src/diagnostics.rs',
       'src-tauri/src/commands/fs.rs',
       'src-tauri/src/commands/network.rs',
       'src-tauri/src/api_secret.rs',
@@ -68,6 +69,12 @@ const classes = [
         descriptor: '()Ljava/lang/String;',
         kotlin: 'fun getAndClearPendingTransferAction(): String',
         r8: 'java.lang.String getAndClearPendingTransferAction()',
+      },
+      {
+        name: 'getAppDiagnosticLog',
+        descriptor: '()Ljava/lang/String;',
+        kotlin: 'fun getAppDiagnosticLog(): String',
+        r8: 'java.lang.String getAppDiagnosticLog()',
       },
       {
         name: 'getCachedPath',

@@ -39,8 +39,8 @@ The production workflow fails closed if Android signing, updater signing, or the
 1. Update the same semantic version in `app/package.json`, `app/src-tauri/Cargo.toml`, and `app/src-tauri/tauri.conf.json`.
 2. Run `npm run android:version:check -- --tag vX.Y.Z` from `app/`.
 3. Run the frontend and Rust tests.
-4. Reproduce the generated Android project and build the universal APK/AAB plus the four ABI-specific APKs.
-5. Run the JNI/R8, four-ABI, 16 KB alignment, certificate, checksum, generated-update-manifest, JVM, and phone/TV instrumentation gates.
+4. Reproduce the generated Android project and build only the universal APK/AAB; both packages must contain all four supported ABIs.
+5. Run the JNI/R8, four-ABI universal-package, 16 KB alignment, certificate, checksum, generated-update-manifest, JVM, and phone/TV instrumentation gates.
 6. The reusable **Android CI** workflow (`.github/workflows/android.yml`) can be run manually or called by the release workflow. Retain its signed `telegram-drive-android-signed` artifact after every Android gate passes; signed release assets require the protected signing secrets.
 7. Push `vX.Y.Z` to start this repository's Android-only release workflow. It verifies the Android artifacts, attaches them and their SBOM/provenance metadata to a draft release, and publishes only after release-assurance gates pass. It does not build desktop applications. For Windows, Linux, or macOS builds, use the release process in the [sibling desktop repository](https://github.com/hellocloudweb/shelf-drive).
 8. Distribute Android artifacts only after the release workflow has passed for the same source revision.
@@ -49,13 +49,12 @@ The signed Android workflow artifact includes:
 
 - `ShelfDrive_vX.Y.Z.apk`
 - `ShelfDrive_vX.Y.Z.aab` (archival/device-management use)
-- `Shelf-Drive-vX.Y.Z-android-<abi>.apk` for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`
 - `SHA256SUMS` and workflow-verified `SHA256SUMS.txt`
 - `android-update.json`
 - `android-update.json.sig`
 - Android and source CycloneDX SBOMs; the published release also receives provenance and SBOM attestations.
 
-The in-app Android updater verifies the embedded Minisign key, exact package name, GitHub release URL, monotonically newer `versionCode`, APK filename, size limit, and SHA-256 before opening Android's trusted package installer. Users may need to grant “Install unknown apps” permission to Telegram Drive once.
+The release distributes one signed universal APK (not per-ABI APK variants); it includes native libraries for `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64`. The in-app Android updater verifies the embedded Minisign key, exact package name, GitHub release URL, monotonically newer `versionCode`, APK filename, size limit, and SHA-256 before opening Android's trusted package installer. Users may need to grant “Install unknown apps” permission to Telegram Drive once.
 
 ## Android and TV advertising
 

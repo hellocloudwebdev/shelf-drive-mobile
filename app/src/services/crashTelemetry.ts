@@ -1,5 +1,6 @@
 import { version as appVersion } from '../../package.json';
 import { system } from '../api/index';
+import { recordAppDiagnostic } from './appDiagnostics';
 
 type CrashSource = 'react' | 'window' | 'promise';
 
@@ -67,6 +68,7 @@ export function configureCrashTelemetry(isEnabled: boolean) {
  * file paths, file contents, Telegram IDs, and stack source paths are omitted.
  */
 export function reportCrash(error: unknown, source: CrashSource) {
+    recordAppDiagnostic(source === 'react' ? 'react_error' : source === 'window' ? 'js_window_error' : 'js_unhandled_rejection', error);
     if (!enabled) return;
     const envelope: CrashEnvelope = {
         event: 'app_crash',

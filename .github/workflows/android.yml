@@ -144,21 +144,6 @@ jobs:
         working-directory: app/src-tauri/gen/android
         run: ./gradlew :app:testUniversalReleaseUnitTest :app:compileUniversalDebugAndroidTestKotlin
 
-      - name: Build smaller ABI-specific APKs
-        working-directory: app/src-tauri/gen/android
-        env:
-          ORG_GRADLE_PROJECT_shelfDrive_requireReleaseSigning: ${{ env.PRODUCTION_ANDROID_BUILD }}
-        run: >-
-          ./gradlew
-          :app:assembleArm64Release
-          :app:assembleArmRelease
-          :app:assembleX86Release
-          :app:assembleX86_64Release
-          -x :app:rustBuildArm64Release
-          -x :app:rustBuildArmRelease
-          -x :app:rustBuildX86Release
-          -x :app:rustBuildX86_64Release
-
       - name: Verify JNI methods survived R8
         working-directory: app
         run: npm run android:jni:check -- --generated --r8-seeds src-tauri/gen/android/app/build/outputs/mapping/universalRelease/seeds.txt
