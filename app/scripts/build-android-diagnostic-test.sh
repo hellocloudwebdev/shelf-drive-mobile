@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 version="$(node -p "require('./package.json').version")"
-test "$version" = '4.4.10-test.1'
+test "$version" = '4.4.10-test.2'
 grep -q 'applicationId = "com.hellocloudweb.shelfdrive.diagnostictest"' android-overrides/app/build.gradle.kts
 : "${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK}"
 : "${JAVA_HOME:?Set JAVA_HOME to a Java 17 installation}"
@@ -31,6 +31,6 @@ npm run tauri android build -- --target aarch64 armv7 i686 x86_64 --apk true --a
 out="${DIAGNOSTIC_TEST_OUTPUT:-$PWD/android-diagnostic-test}"
 mkdir -p "$out"
 cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
-  "$out/ShelfDrive_4.4.10-test.1_universal.apk"
-(cd "$out" && sha256sum ShelfDrive_4.4.10-test.1_universal.apk > SHA256SUMS.txt)
+  "$out/ShelfDrive_4.4.10-test.2_universal.apk"
+(cd "$out" && sha256sum ShelfDrive_4.4.10-test.2_universal.apk > SHA256SUMS.txt)
 printf 'Local-only test candidate: %s\n' "$out"

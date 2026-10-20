@@ -1855,7 +1855,7 @@ pub async fn cmd_upload_file(
     .await?;
     crate::workspace::with_operation_account(
         &account,
-        cmd_upload_file_owned(
+        Box::pin(cmd_upload_file_owned(
             path,
             folder_id,
             transfer_id,
@@ -1869,9 +1869,62 @@ pub async fn cmd_upload_file(
             net_config,
             crypto_state,
             db_pool,
-        ),
+        )),
     )
     .await
+}
+
+#[cfg(test)]
+mod upload_future_size_tests {
+    use super::cmd_upload_file;
+
+    // Inspect the concrete return type without constructing an AppHandle/State,
+    // polling the future, opening a file, or contacting Telegram.
+    fn future_size<A, F: std::future::Future>(_: impl FnOnce(A) -> F) -> usize {
+        std::mem::size_of::<F>()
+    }
+
+    #[test]
+    fn upload_command_future_stays_within_bridge_budget() {
+        let bytes = future_size(
+            |(
+                path,
+                folder_id,
+                transfer_id,
+                protection_mode,
+                prompt_token,
+                protect_metadata,
+                video_upload_mode,
+                app_handle,
+                state,
+                bw_state,
+                net_config,
+                crypto_state,
+                db_pool,
+                owner_id,
+            )| {
+                cmd_upload_file(
+                    path,
+                    folder_id,
+                    transfer_id,
+                    protection_mode,
+                    prompt_token,
+                    protect_metadata,
+                    video_upload_mode,
+                    app_handle,
+                    state,
+                    bw_state,
+                    net_config,
+                    crypto_state,
+                    db_pool,
+                    owner_id,
+                )
+            },
+        );
+        // The failing ARM64 build embedded a roughly 235 KiB upload future.
+        // This is a type-size guard, not a substitute for release disassembly.
+        assert!(bytes <= 16 * 1024, "upload command future is {bytes} bytes");
+    }
 }
 
 #[cfg_attr(not(target_os = "android"), allow(unused_mut))]

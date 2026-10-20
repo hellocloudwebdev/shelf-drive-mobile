@@ -1,3 +1,8 @@
+## [4.4.10-test.2] - Unpublished upload-stack test candidate
+- Apply the boxed upload-future bridge fix and its size regression test.
+- Preserve the app-only, uncapped diagnostic retention, reviewed-export consent, and separate diagnostic test identity from test.1.
+- Static checks only: the owner must install and reproduce the same upload to confirm the crash fix on-device.
+
 ## [4.4.10-test.1] - Diagnostic test candidate
 
 - Separate side-by-side Android test application (`com.hellocloudweb.shelfdrive.diagnostictest`), not a production update.
