@@ -1847,31 +1847,41 @@ pub async fn cmd_upload_file(
     db_pool: State<'_, DbConnection>,
     owner_id: Option<String>,
 ) -> Result<String, String> {
-    let account = capture_transfer_account(
-        &app_handle,
-        transfer_id.as_deref().unwrap_or_default(),
-        owner_id.as_deref(),
-    )
-    .await?;
-    crate::workspace::with_operation_account(
-        &account,
-        Box::pin(cmd_upload_file_owned(
-            path,
-            folder_id,
-            transfer_id,
-            protection_mode,
-            prompt_token,
-            protect_metadata,
-            video_upload_mode,
-            app_handle,
-            state,
-            bw_state,
-            net_config,
-            crypto_state,
-            db_pool,
-        )),
-    )
+    let state_inner = state.inner().clone();
+    let bw_inner = bw_state.inner().clone();
+    let net_inner = net_config.inner().clone();
+    let crypto_inner = crypto_state.inner().clone();
+    let db_inner = db_pool.inner().clone();
+
+    tokio::task::spawn(async move {
+        let account = capture_transfer_account(
+            &app_handle,
+            transfer_id.as_deref().unwrap_or_default(),
+            owner_id.as_deref(),
+        )
+        .await?;
+        crate::workspace::with_operation_account(
+            &account,
+            cmd_upload_file_owned(
+                path,
+                folder_id,
+                transfer_id,
+                protection_mode,
+                prompt_token,
+                protect_metadata,
+                video_upload_mode,
+                app_handle,
+                state_inner,
+                bw_inner,
+                net_inner,
+                crypto_inner,
+                db_inner,
+            ),
+        )
+        .await
+    })
     .await
+    .map_err(|e| format!("Upload task failed: {e}"))?
 }
 
 #[cfg(test)]
@@ -1938,11 +1948,11 @@ async fn cmd_upload_file_owned(
     protect_metadata: Option<bool>,
     video_upload_mode: Option<String>,
     app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, Arc<BandwidthManager>>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
-    crypto_state: State<'_, crate::crypto::state::CryptoState>,
-    db_pool: State<'_, DbConnection>,
+    state: TelegramState,
+    bw_state: Arc<BandwidthManager>,
+    net_config: std::sync::Arc<NetworkConfig>,
+    crypto_state: crate::crypto::state::CryptoState,
+    db_pool: DbConnection,
 ) -> Result<String, String> {
     let mut temp_cache_path: Option<String> = None;
 
@@ -1950,7 +1960,12 @@ async fn cmd_upload_file_owned(
     #[cfg(target_os = "android")]
     {
         if path.contains("content://") || path.contains("msf:") || path.contains("msf%") {
-            match copy_to_android_cache(&path) {
+            let path_for_cache = path.clone();
+            let cached_result =
+                tokio::task::spawn_blocking(move || copy_to_android_cache(&path_for_cache))
+                    .await
+                    .map_err(|e| format!("Staging task failed: {e}"))?;
+            match cached_result {
                 Ok(cached_path) => {
                     log::info!(
                         "JNI STRICT GUARD: Intercepted raw URI. Overwriting path: {} -> {}",
@@ -2005,11 +2020,11 @@ async fn cmd_upload_file_inner(
     protect_metadata: Option<bool>,
     video_upload_mode: Option<String>,
     app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, Arc<BandwidthManager>>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
-    crypto_state: State<'_, crate::crypto::state::CryptoState>,
-    db_pool: State<'_, DbConnection>,
+    state: TelegramState,
+    bw_state: Arc<BandwidthManager>,
+    net_config: std::sync::Arc<NetworkConfig>,
+    crypto_state: crate::crypto::state::CryptoState,
+    db_pool: DbConnection,
 ) -> Result<String, String> {
     let transfer_account = capture_transfer_account(
         &app_handle,
@@ -2035,7 +2050,7 @@ async fn cmd_upload_file_inner(
             );
         }
         transfer_account.validate()?;
-        return cmd_upload_file_encrypted(
+        return Box::pin(cmd_upload_file_encrypted(
             path,
             folder_id,
             transfer_id,
@@ -2049,7 +2064,7 @@ async fn cmd_upload_file_inner(
             protection_mode,
             prompt_token,
             protect_metadata.unwrap_or(true),
-        )
+        ))
         .await;
     }
 
@@ -2063,7 +2078,7 @@ async fn cmd_upload_file_inner(
     // cannot strand a bandwidth reservation.
     let video_metadata =
         prepare_video_upload_metadata(&path, &file_name, video_upload_mode).await?;
-    let mut upload_reservation = BandwidthReservation::upload(bw_state.inner().clone(), size)?;
+    let mut upload_reservation = BandwidthReservation::upload(bw_state.clone(), size)?;
 
     let tid = transfer_id.unwrap_or_default();
 
@@ -2300,11 +2315,11 @@ async fn cmd_upload_file_encrypted(
     folder_id: Option<i64>,
     transfer_id: Option<String>,
     app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, Arc<BandwidthManager>>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
-    crypto_state: State<'_, crate::crypto::state::CryptoState>,
-    db_pool: State<'_, DbConnection>,
+    state: TelegramState,
+    bw_state: Arc<BandwidthManager>,
+    net_config: std::sync::Arc<NetworkConfig>,
+    crypto_state: crate::crypto::state::CryptoState,
+    db_pool: DbConnection,
     plaintext_size: u64,
     protection_mode: UploadProtectionMode,
     prompt_token: Option<u64>,
@@ -2466,7 +2481,7 @@ async fn cmd_upload_file_encrypted(
 
     // RAII reservation prevents quota leaks on every error and cancellation path.
     let mut bandwidth_reservation =
-        BandwidthReservation::upload(bw_state.inner().clone(), ciphertext_size)?;
+        BandwidthReservation::upload(bw_state.clone(), ciphertext_size)?;
 
     let tid = transfer_id.unwrap_or_default();
 
@@ -2661,7 +2676,7 @@ async fn cmd_upload_file_encrypted(
                     last_verified_at: None,
                 };
                 let registry_result =
-                    crate::db::with_connection(db_pool.inner().clone(), move |connection| {
+                    crate::db::with_connection(db_pool.clone(), move |connection| {
                         upsert_encrypted_file(connection, &record)
                             .map_err(|error| error.to_string())
                     })
@@ -6002,26 +6017,37 @@ pub async fn cmd_upload_from_url(
     owner_id: Option<String>,
 ) -> Result<String, String> {
     crate::transfer_ids::validate_transfer_id(&transfer_id)?;
-    let account = capture_transfer_account(&app_handle, &transfer_id, owner_id.as_deref()).await?;
-    crate::workspace::with_operation_account(
-        &account,
-        cmd_upload_from_url_owned(
-            url,
-            folder_id,
-            transfer_id,
-            protection_mode,
-            prompt_token,
-            protect_metadata,
-            video_upload_mode,
-            app_handle,
-            state,
-            bw_state,
-            net_config,
-            crypto_state,
-            db_pool,
-        ),
-    )
+    let state_inner = state.inner().clone();
+    let bw_inner = bw_state.inner().clone();
+    let net_inner = net_config.inner().clone();
+    let crypto_inner = crypto_state.inner().clone();
+    let db_inner = db_pool.inner().clone();
+
+    tokio::task::spawn(async move {
+        let account =
+            capture_transfer_account(&app_handle, &transfer_id, owner_id.as_deref()).await?;
+        crate::workspace::with_operation_account(
+            &account,
+            cmd_upload_from_url_owned(
+                url,
+                folder_id,
+                transfer_id,
+                protection_mode,
+                prompt_token,
+                protect_metadata,
+                video_upload_mode,
+                app_handle,
+                state_inner,
+                bw_inner,
+                net_inner,
+                crypto_inner,
+                db_inner,
+            ),
+        )
+        .await
+    })
     .await
+    .map_err(|e| format!("Remote upload task failed: {e}"))?
 }
 
 #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
@@ -6035,11 +6061,11 @@ async fn cmd_upload_from_url_owned(
     protect_metadata: Option<bool>,
     video_upload_mode: Option<String>,
     app_handle: tauri::AppHandle,
-    state: State<'_, TelegramState>,
-    bw_state: State<'_, Arc<BandwidthManager>>,
-    net_config: State<'_, std::sync::Arc<NetworkConfig>>,
-    crypto_state: State<'_, crate::crypto::state::CryptoState>,
-    db_pool: State<'_, DbConnection>,
+    state: TelegramState,
+    bw_state: Arc<BandwidthManager>,
+    net_config: std::sync::Arc<NetworkConfig>,
+    crypto_state: crate::crypto::state::CryptoState,
+    db_pool: DbConnection,
 ) -> Result<String, String> {
     let transfer_account = capture_transfer_account(&app_handle, &transfer_id, None).await?;
 
@@ -6507,8 +6533,7 @@ async fn cmd_upload_from_url_owned(
     };
 
     // Reserve upload bandwidth based on the real file size (handles both known and unknown upfront)
-    let mut upload_reservation =
-        BandwidthReservation::upload(bw_state.inner().clone(), actual_size)?;
+    let mut upload_reservation = BandwidthReservation::upload(bw_state.clone(), actual_size)?;
 
     let client_opt = { state.client.lock().await.clone() };
     let client = match client_opt {
@@ -6967,6 +6992,22 @@ mod hardening_tests {
         assert_eq!(std::fs::read(&destination).unwrap(), b"new");
         let _ = std::fs::remove_file(&destination);
         let _ = std::fs::remove_dir(&directory);
+    }
+
+    #[test]
+    fn clean_android_path_normalizes_schemes() {
+        assert_eq!(
+            clean_android_path("raw%3/storage/emulated/0/Download/test.txt"),
+            "/storage/emulated/0/Download/test.txt"
+        );
+        assert_eq!(
+            clean_android_path("raw:///storage/emulated/0/Download/test.txt"),
+            "/storage/emulated/0/Download/test.txt"
+        );
+        assert_eq!(
+            clean_android_path("file:///storage/emulated/0/Download/test.txt"),
+            "/storage/emulated/0/Download/test.txt"
+        );
     }
 }
 

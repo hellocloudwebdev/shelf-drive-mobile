@@ -10,3 +10,4 @@
 -keep class com.hellocloudweb.shelfdrive.TransferJobService { *; }
 -keep class com.hellocloudweb.shelfdrive.TransferRecoveryWorker { *; }
 -keep class com.hellocloudweb.shelfdrive.ShelfDriveApplication { *; }
+-keep class com.hellocloudweb.shelfdrive.Ipc { *; }

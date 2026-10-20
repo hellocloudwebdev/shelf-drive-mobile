@@ -45,8 +45,19 @@ describe('Android local native trace integration contracts', () => {
 
   it('reproduces the native policy and store in generated Android builds', () => {
     const apply = read('scripts/apply-android-overrides.cjs');
-    for (const file of ['AppDiagnostics.kt', 'NativeExitTraceStore.kt', 'NativeExitTracePolicy.kt']) {
+    for (const file of ['AppDiagnostics.kt', 'NativeExitTraceStore.kt', 'NativeExitTracePolicy.kt', 'Ipc.kt']) {
       expect(apply).toContain(`app/src/main/java/com/hellocloudweb/shelfdrive/${file}`);
     }
+  });
+
+  it('protects WebView JavaBridge thread from native IPC stack overflow', () => {
+    const ipc = read(`${native}Ipc.kt`);
+    expect(ipc).toContain('@Keep');
+    expect(ipc).toContain('class Ipc');
+    expect(ipc).toContain('ipcExecutor = Executors.newCachedThreadPool');
+    expect(ipc).toContain('2 * 1024 * 1024');
+    expect(ipc).toContain('Rust.ipc(webViewId, currentUrl, m)');
+    const proguard = read('android-overrides/app/proguard-rules.pro');
+    expect(proguard).toContain('-keep class com.hellocloudweb.shelfdrive.Ipc { *; }');
   });
 });

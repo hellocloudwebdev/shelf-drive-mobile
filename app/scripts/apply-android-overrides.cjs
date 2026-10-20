@@ -39,6 +39,7 @@ const required = [
   'app/src/main/java/com/hellocloudweb/shelfdrive/PlaybackService.kt',
   'app/src/main/java/com/hellocloudweb/shelfdrive/TransferRecoveryWorker.kt',
   'app/src/main/java/com/hellocloudweb/shelfdrive/TransferJobService.kt',
+  'app/src/main/java/com/hellocloudweb/shelfdrive/Ipc.kt',
   'app/src/main/res/drawable-xhdpi/tv_banner.png',
   'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
   'app/src/main/res/mipmap-mdpi/ic_launcher.png',
