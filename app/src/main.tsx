@@ -5,8 +5,14 @@ import App from "./App";
 import "./i18n";
 import { reportCrash } from './services/crashTelemetry';
 import { initializeAppDiagnostics } from './services/appDiagnostics';
+import { applyAndroidWebViewZoomPolicy } from './services/androidWebViewZoomPolicy';
 
 initializeAppDiagnostics();
+applyAndroidWebViewZoomPolicy(
+  document,
+  navigator.userAgent,
+  '__TAURI_INTERNALS__' in window,
+);
 
 window.onerror = function (message, source, lineno, colno, error) {
   console.error("Global JS Error:", message, "at", source, lineno + ":" + colno, error?.stack || error);

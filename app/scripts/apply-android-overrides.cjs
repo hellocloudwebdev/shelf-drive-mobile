@@ -29,6 +29,7 @@ const required = [
   'app/src/main/startup-prof.txt',
   'app/src/androidTest/java/com/hellocloudweb/shelfdrive/AndroidPlatformContractTest.kt',
   'app/src/main/java/com/hellocloudweb/shelfdrive/MainActivity.kt',
+  'app/src/main/java/com/hellocloudweb/shelfdrive/AndroidWebViewZoomPolicy.kt',
   'app/src/main/java/com/hellocloudweb/shelfdrive/ShelfDriveApplication.kt',
   'app/src/main/java/com/hellocloudweb/shelfdrive/AppDiagnostics.kt',
   'app/src/main/java/com/hellocloudweb/shelfdrive/NativeExitTraceStore.kt',

@@ -5,9 +5,11 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.FeatureInfo
 import android.content.pm.PackageManager
 import android.app.job.JobInfo
+import android.webkit.WebView
 import androidx.work.WorkManager
 import androidx.work.NetworkType
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import java.io.IOException
@@ -26,6 +28,22 @@ import org.junit.runner.RunWith
 class AndroidPlatformContractTest {
   private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
   private val packageManager = context.packageManager
+
+  @Test
+  fun androidWebViewPinchZoomIsDisabledByNativePolicy() {
+    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+      val webView = WebView(context)
+      try {
+        AndroidWebViewZoomPolicy.apply(webView)
+
+        assertFalse(webView.settings.supportZoom)
+        assertFalse(webView.settings.builtInZoomControls)
+        assertFalse(webView.settings.displayZoomControls)
+      } finally {
+        webView.destroy()
+      }
+    }
+  }
 
   @Test
   fun installedPackageUsesAndroid12MinimumAndAndroid16Target() {

@@ -1178,7 +1178,7 @@ class MainActivity : TauriActivity() {
   override fun onStart() {
     super.onStart()
     AppDiagnostics.recordEvent(applicationContext, "activity_started")
-    disableWebViewSaveEnabled(findViewById(android.R.id.content))
+    configureAndroidWebViews(findViewById(android.R.id.content))
     enforceAppLockIfNeeded()
   }
 
@@ -1287,13 +1287,14 @@ class MainActivity : TauriActivity() {
     }
   }
 
-  private fun disableWebViewSaveEnabled(view: android.view.View) {
+  private fun configureAndroidWebViews(view: android.view.View) {
     if (view is android.webkit.WebView) {
       view.isSaveEnabled = false
+      AndroidWebViewZoomPolicy.apply(view)
       Log.i("TauriWebView", "Successfully set isSaveEnabled = false on WebView!")
     } else if (view is android.view.ViewGroup) {
       for (i in 0 until view.childCount) {
-        disableWebViewSaveEnabled(view.getChildAt(i))
+        configureAndroidWebViews(view.getChildAt(i))
       }
     }
   }
