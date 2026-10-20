@@ -1,3 +1,12 @@
+## [4.5.0] - 2026-10-20
+### Fixed
+- Do not announce paused downloads when a shared Android transfer-pause action has no eligible downloads to pause.
+- Disable Android app WebView pinch zoom and lock the Android UI viewport; leave desktop zoom behavior unchanged.
+- Carry forward the boxed upload-command future already tested successfully in Shelf Drive TEST 4.4.10-test.2.
+### Release tracks
+- Production retains its normal application identity, signing, updater, and bounded app-only diagnostics.
+- Shelf Drive TEST remains a separately installed and signed app with uncapped app-only diagnostics and reviewed-snapshot report consent.
+
 ## [4.4.10] - 2026-10-20
 
 ### Added
