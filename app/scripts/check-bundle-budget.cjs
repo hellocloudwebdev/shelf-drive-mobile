@@ -130,8 +130,11 @@ const checks = [
   ['largest locale catalog', summary.maxLocaleDataBytes, budget.maxLocaleDataBytes],
 ];
 
+// Every catalog is emitted as a lazily fetched asset, including English: the
+// startup splash renders before any catalog is needed, so en.json is no longer
+// inlined into the entry chunk.
 const expectedCatalogs = fs.readdirSync(path.join(appRoot, 'src/i18n/locales'))
-  .filter(file => file.endsWith('.json') && file !== 'en.json');
+  .filter(file => file.endsWith('.json'));
 if (localeData.length !== expectedCatalogs.length) {
   fail(`Expected ${expectedCatalogs.length} locally bundled language catalogs, found ${localeData.length}.`);
 }

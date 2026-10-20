@@ -68,6 +68,39 @@ function sanitizeDownloadItem(item: DownloadItem): DownloadItem {
   };
 }
 
+const PAUSEABLE_TRANSFER_STATUSES = new Set<string>([
+  'pending',
+  'cooldown',
+  'waiting_for_network',
+  'downloading',
+  'decrypting',
+  'uploading',
+  'encrypting',
+  'verifying',
+]);
+
+const TERMINAL_TRANSFER_STATUSES = new Set<string>(['success', 'cancelled']);
+
+type TransferStatusCarrier = { status: string };
+
+/**
+ * Shared notification/action gating. Android's transfer notification is
+ * aggregate, so a pause/resume/cancel action reaches both queues. These helpers
+ * let each direction announce only when it actually has work, which prevents a
+ * download announcement while only an upload is running.
+ */
+export function hasPauseableTransfers(items: ReadonlyArray<TransferStatusCarrier>): boolean {
+  return items.some(item => PAUSEABLE_TRANSFER_STATUSES.has(item.status));
+}
+
+export function hasResumableTransfers(items: ReadonlyArray<TransferStatusCarrier>): boolean {
+  return items.some(item => item.status === 'paused');
+}
+
+export function hasCancellableTransfers(items: ReadonlyArray<TransferStatusCarrier>): boolean {
+  return items.some(item => !TERMINAL_TRANSFER_STATUSES.has(item.status));
+}
+
 export function isTransientNetworkError(error: unknown): boolean {
   const message = String(error).toLowerCase();
   return [

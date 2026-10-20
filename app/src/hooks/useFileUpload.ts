@@ -12,7 +12,7 @@ import type { Store } from '@tauri-apps/plugin-store';
 import { useTranslation } from 'react-i18next';
 import { useUploadChoice, type UploadChoice } from '../context/UploadChoiceContext';
 import { triggerHaptic } from '../services/feedback';
-import { isTransientNetworkError, restoreUploadQueue, serializeUploadQueue } from '../services/transferQueuePolicy';
+import { hasCancellableTransfers, hasPauseableTransfers, hasResumableTransfers, isTransientNetworkError, restoreUploadQueue, serializeUploadQueue } from '../services/transferQueuePolicy';
 import { userFacingError } from '../services/userFacingError';
 import { invalidateFolderFileQueries } from '../services/fileListRefresh';
 import { effectiveVideoUploadMode } from '../services/videoUploadMode';
@@ -737,6 +737,7 @@ export function useFileUpload(
 
     const cancelAll = () => {
         if (!isCurrent()) return;
+        if (!hasCancellableTransfers(uploadQueueRef.current.filter(ownsItem))) return;
         if (!isAndroidPlatform) {
             void transferBulkAction('cancel', 'upload', ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
             toast.info('All uploads cancelled');
@@ -759,6 +760,7 @@ export function useFileUpload(
 
     const pauseAll = () => {
         if (!isCurrent()) return;
+        if (!hasPauseableTransfers(uploadQueueRef.current.filter(ownsItem))) return;
         if (!isAndroidPlatform) {
             void transferBulkAction('pause', 'upload', ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
             toast.info('Uploads paused. Active items will restart safely when resumed.');
@@ -778,6 +780,7 @@ export function useFileUpload(
 
     const resumeAll = () => {
         if (!isCurrent()) return;
+        if (!hasResumableTransfers(uploadQueueRef.current.filter(ownsItem))) return;
         if (!isAndroidPlatform) {
             void transferBulkAction('resume', 'upload', ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
             toast.info('Uploads resumed');

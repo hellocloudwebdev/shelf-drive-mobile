@@ -1,6 +1,10 @@
 /**
- * Disable browser pinch zoom only inside the Android Tauri WebView. Desktop
+ * Disable page zoom only inside the Android Tauri WebView. Desktop
  * browser/Tauri zoom is intentionally left to the host platform and app controls.
+ *
+ * Chromium ignores `user-scalable=no` in many builds, so `maximum-scale` is
+ * pinned as well; the runtime gesture guard in `mobileZoomGuard.ts` covers the
+ * rest.
  */
 export function applyAndroidWebViewZoomPolicy(
   document: Document,
@@ -16,8 +20,8 @@ export function applyAndroidWebViewZoomPolicy(
     .split(',')
     .map((directive) => directive.trim())
     .filter(Boolean)
-    .filter((directive) => !/^user-scalable\s*=/i.test(directive));
-  directives.push('user-scalable=no');
+    .filter((directive) => !/^(user-scalable|maximum-scale|minimum-scale)\s*=/i.test(directive));
+  directives.push('maximum-scale=1.0', 'user-scalable=no');
   viewport.content = directives.join(', ');
   return true;
 }

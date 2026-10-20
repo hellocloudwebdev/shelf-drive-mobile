@@ -13,7 +13,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { useConfirm } from '../context/ConfirmContext';
 import { formatBytes } from '../utils';
 import { triggerHaptic } from '../services/feedback';
-import { isTransientNetworkError, restoreDownloadQueue, serializeDownloadQueue } from '../services/transferQueuePolicy';
+import { hasCancellableTransfers, hasPauseableTransfers, hasResumableTransfers, isTransientNetworkError, restoreDownloadQueue, serializeDownloadQueue } from '../services/transferQueuePolicy';
 import { userFacingError } from '../services/userFacingError';
 import { evaluateAndroidTransferPolicy, type AndroidTransferEnvironment } from '../services/androidTransferPolicy';
 import {
@@ -910,6 +910,7 @@ export function useFileDownload(
 
     const cancelAll = () => {
         if (!isCurrent()) return;
+        if (!hasCancellableTransfers(downloadQueueRef.current.filter(ownsItem))) return;
         if (!isAndroidPlatform) {
             void transferBulkAction('cancel', 'download', ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
             toast.info('All downloads cancelled');
@@ -940,12 +941,11 @@ export function useFileDownload(
 
     const pauseAll = () => {
         if (!isCurrent()) return;
-        const hasPauseableDownload = downloadQueueRef.current.some(item => ownsItem(item)
-            && (item.status === 'downloading' || item.status === 'decrypting' || item.status === 'verifying'
-                || item.status === 'pending' || item.status === 'cooldown' || item.status === 'waiting_for_network'));
+        const hasPauseableDownload = hasPauseableTransfers(downloadQueueRef.current.filter(ownsItem));
+        if (!hasPauseableDownload) return;
         if (!isAndroidPlatform) {
             void transferBulkAction('pause', 'download', ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
-            if (hasPauseableDownload) toast.info('Downloads paused. Active items will restart safely when resumed.');
+            toast.info('Downloads paused. Active items will restart safely when resumed.');
             return;
         }
         setDownloadQueue(q => q.map(item => {
@@ -968,11 +968,12 @@ export function useFileDownload(
         // A scheduled retry flip must not override a bulk pause and restart
         // work the user just paused.
         clearAllRetryBookkeeping();
-        if (hasPauseableDownload) toast.info('Downloads paused. Active items will restart safely when resumed.');
+        toast.info('Downloads paused. Active items will restart safely when resumed.');
     };
 
     const resumeAll = () => {
         if (!isCurrent()) return;
+        if (!hasResumableTransfers(downloadQueueRef.current.filter(ownsItem))) return;
         if (!isAndroidPlatform) {
             void transferBulkAction('resume', 'download', ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
             toast.info('Downloads resumed');

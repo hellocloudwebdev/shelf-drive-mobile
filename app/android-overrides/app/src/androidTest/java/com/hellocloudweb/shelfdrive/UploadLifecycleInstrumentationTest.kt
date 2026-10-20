@@ -13,6 +13,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -126,6 +127,56 @@ class UploadLifecycleInstrumentationTest {
       } finally {
         UploadForegroundService.stopService(context)
       }
+    }
+  }
+
+  @Test
+  fun finishingTransfersDoesNotReportAUserPause() {
+    // Regression: completing an upload called stopService() -> TransferJobService.cancel()
+    // -> JobScheduler.cancel() -> onStopJob(), which emitted a "pause" to the WebView.
+    // The JS layer then paused both queues and announced "Downloads paused" even
+    // though the upload had finished successfully.
+    assertFalse(
+      "A deliberate stop must not be reported as a user pause",
+      TransferJobService.shouldReportPauseForStop(intentionalStop = true),
+    )
+    assertTrue(
+      "An OS-initiated stop must still be reported so recovery can run",
+      TransferJobService.shouldReportPauseForStop(intentionalStop = false),
+    )
+  }
+
+  @Test
+  fun schedulingClearsAStaleIntentionalStopFlag() {
+    TransferJobService.markStopIntentionalForTest(true)
+    assertTrue(TransferJobService.isStopIntentionalForTest())
+
+    // API < 34 cannot schedule a UIDT job; the flag must still be observable and
+    // reset by the explicit test hook so one session cannot leak into the next.
+    TransferJobService.markStopIntentionalForTest(false)
+    assertFalse(TransferJobService.isStopIntentionalForTest())
+  }
+
+  @Test
+  fun stoppingTransfersAfterUploadKeepsTheNotificationOutOfPausedState() {
+    assertTrue("This test needs Android O+ foreground-service support", Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+    ensureNotificationPermission()
+    UploadForegroundService.stopService(context)
+
+    scenario.moveToState(Lifecycle.State.RESUMED)
+    try {
+      UploadForegroundService.startService(context)
+      UploadForegroundService.updateService(context, active = 1, percent = 100, speed = 0L, isPaused = false)
+
+      // The upload finished: the app stops its own transfer services.
+      UploadForegroundService.stopService(context)
+
+      // Intentional stop must not flip the shared preference into a paused state.
+      val preferences = context.getSharedPreferences("telegram_drive_transfer_recovery_v1", Context.MODE_PRIVATE)
+      assertFalse("Transfers must not be marked paused after a completed upload", preferences.getBoolean("paused", false))
+      assertFalse("Transfers must not stay pending after completion", TransferRecoveryWorker.hasPendingTransfers(context))
+    } finally {
+      UploadForegroundService.stopService(context)
     }
   }
 

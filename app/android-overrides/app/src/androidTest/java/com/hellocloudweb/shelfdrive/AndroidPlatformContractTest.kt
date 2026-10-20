@@ -39,6 +39,7 @@ class AndroidPlatformContractTest {
         assertFalse(webView.settings.supportZoom())
         assertFalse(webView.settings.builtInZoomControls)
         assertFalse(webView.settings.displayZoomControls)
+        assertEquals(100, webView.settings.textZoom)
       } finally {
         webView.destroy()
       }

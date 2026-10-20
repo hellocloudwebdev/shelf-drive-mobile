@@ -41,6 +41,20 @@ describe('supported languages', () => {
     expect(resolveSupportedLanguage(['ja-JP', 'en-US'])).toBe('ja');
   });
 
+  it('fetches English like every other catalog so it stays out of the entry chunk', async () => {
+    i18n.removeResourceBundle('en', 'translation');
+    const transport = vi.mocked(fetch);
+    transport.mockClear();
+
+    await ensureLanguageResource('en');
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(String(transport.mock.calls[0][0])).toMatch(/\/en\.json$/);
+
+    // Cached: the second call must not refetch.
+    await ensureLanguageResource('en');
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
   it('loads Japanese directly without an English fallback', async () => {
     await ensureLanguageResource('ja');
     expect(i18n.options.fallbackLng).toBe(false);

@@ -37,6 +37,14 @@ class TransferJobService : JobService() {
   }
 
   override fun onStopJob(params: JobParameters): Boolean {
+    // Cancelling the job after the last upload/download finishes is an
+    // intentional shutdown, not a user pause. Emitting "pause" here used to
+    // reach the WebView after a successful upload and pause both queues,
+    // which surfaced a stale "Downloads paused" announcement. The flag is
+    // reset by schedule() for the next transfer session.
+    val intentional = intentionalStop || !shouldReportPauseForStop(intentionalStop)
+    intentionalStop = false
+    if (intentional) return false
     MainActivity.emitTransferAction("pause")
     TransferRecoveryWorker.schedule(this)
     return true
@@ -50,6 +58,29 @@ class TransferJobService : JobService() {
     const val ACTION_PAUSE = "com.hellocloudweb.shelfdrive.UIDT_PAUSE"
     const val ACTION_RESUME = "com.hellocloudweb.shelfdrive.UIDT_RESUME"
     const val ACTION_CANCEL = "com.hellocloudweb.shelfdrive.UIDT_CANCEL"
+
+    /**
+     * Set while the app is deliberately stopping the UIDT job (work finished,
+     * user cancelled, activity teardown). JobScheduler still calls onStopJob in
+     * those cases; we must not translate that into a user-visible "pause".
+     */
+    @Volatile
+    private var intentionalStop = false
+
+    /** Test-only hook: read the pending "this stop is deliberate" flag. */
+    internal fun isStopIntentionalForTest(): Boolean = intentionalStop
+
+    /** Test-only hook: set the flag without going through JobScheduler (API < 34 safe). */
+    internal fun markStopIntentionalForTest(intentional: Boolean) {
+      intentionalStop = intentional
+    }
+
+    /**
+     * True when a forced stop should be reported to the WebView as a user pause.
+     * Extracted so the regression that produced a stale "Downloads paused"
+     * announcement after a finished upload can be asserted on any API level.
+     */
+    internal fun shouldReportPauseForStop(intentionalStop: Boolean): Boolean = !intentionalStop
 
     fun schedule(context: Context): Boolean {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
@@ -66,7 +97,8 @@ class TransferJobService : JobService() {
           .setRequiresStorageNotLow(true)
           .setUserInitiated(true)
           .build()
-        context.getSystemService(JobScheduler::class.java)?.schedule(job) == JobScheduler.RESULT_SUCCESS
+        (context.getSystemService(JobScheduler::class.java)?.schedule(job) == JobScheduler.RESULT_SUCCESS)
+          .also { scheduled -> if (scheduled) intentionalStop = false }
       } catch (error: Exception) {
         android.util.Log.w("TransferJob", "Unable to schedule UIDT job; using foreground-service fallback", error)
         false
@@ -91,6 +123,9 @@ class TransferJobService : JobService() {
     }
 
     fun cancel(context: Context) {
+      // Mark the stop as intentional before cancelling: JobScheduler.cancel()
+      // invokes onStopJob for a running job.
+      intentionalStop = true
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         context.getSystemService(JobScheduler::class.java)?.cancel(JOB_ID)
       }
