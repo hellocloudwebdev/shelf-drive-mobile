@@ -940,9 +940,12 @@ export function useFileDownload(
 
     const pauseAll = () => {
         if (!isCurrent()) return;
+        const hasPauseableDownload = downloadQueueRef.current.some(item => ownsItem(item)
+            && (item.status === 'downloading' || item.status === 'decrypting' || item.status === 'verifying'
+                || item.status === 'pending' || item.status === 'cooldown' || item.status === 'waiting_for_network'));
         if (!isAndroidPlatform) {
             void transferBulkAction('pause', 'download', ownerId).catch(error => { if (isCurrent()) toast.error(userFacingError(error, t)); });
-            toast.info('Downloads paused. Active items will restart safely when resumed.');
+            if (hasPauseableDownload) toast.info('Downloads paused. Active items will restart safely when resumed.');
             return;
         }
         setDownloadQueue(q => q.map(item => {
@@ -965,7 +968,7 @@ export function useFileDownload(
         // A scheduled retry flip must not override a bulk pause and restart
         // work the user just paused.
         clearAllRetryBookkeeping();
-        toast.info('Downloads paused. Active items will restart safely when resumed.');
+        if (hasPauseableDownload) toast.info('Downloads paused. Active items will restart safely when resumed.');
     };
 
     const resumeAll = () => {
