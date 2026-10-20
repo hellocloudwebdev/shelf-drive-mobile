@@ -1,3 +1,12 @@
+## [4.5.0] - 2026-10-20
+### Fixed
+- Do not announce paused downloads when the shared Android pause action has no eligible downloads to pause.
+- Disable Android app WebView pinch zoom and lock the Android UI viewport; desktop zoom behavior is unchanged.
+- Preserve the boxed upload-command future from the successful 4.4.10-test.2 device test.
+### TEST-only safeguards
+- Keep Shelf Drive TEST separately installed and signed, with uncapped app-only diagnostic collection and reviewed-snapshot report consent.
+- Disable production updater checks and installs explicitly for the TEST track, independently of the version string.
+
 ## [4.4.10-test.2] - Unpublished upload-stack test candidate
 - Apply the boxed upload-future bridge fix and its size regression test.
 - Preserve the app-only, uncapped diagnostic retention, reviewed-export consent, and separate diagnostic test identity from test.1.
