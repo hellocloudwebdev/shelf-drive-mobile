@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { MobileBottomNav, type MobileTab } from './MobileBottomNav';
+import { applyAndroidWebViewZoomPolicy } from '../../services/androidWebViewZoomPolicy';
 import { TouchFileList } from './TouchFileList';
 import { ThemeSegmented } from './ThemeSegmented';
 import { DriveConceptTour } from '../desktop/dashboard/DriveConceptTour';
@@ -147,6 +148,10 @@ function MediaEmptyState({ icon: Icon, title, hint, onUpload }: MediaEmptyStateP
 }
 
 export default function MobileDashboard({ onLogout }: { onLogout?: () => void }) {
+  // Native Android disables pinch zoom before page load; reinforce its viewport here.
+  useEffect(() => {
+    applyAndroidWebViewZoomPolicy(document, navigator.userAgent, '__TAURI_INTERNALS__' in window);
+  }, []);
   const scrollRootRef = useRef<HTMLElement>(null);
   const { t } = useTranslation();
   const { confirm } = useConfirm();
