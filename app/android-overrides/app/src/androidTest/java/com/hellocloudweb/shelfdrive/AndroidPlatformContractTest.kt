@@ -36,7 +36,7 @@ class AndroidPlatformContractTest {
       try {
         AndroidWebViewZoomPolicy.apply(webView)
 
-        assertFalse(webView.settings.supportZoom)
+        assertFalse(webView.settings.supportZoom())
         assertFalse(webView.settings.builtInZoomControls)
         assertFalse(webView.settings.displayZoomControls)
       } finally {
