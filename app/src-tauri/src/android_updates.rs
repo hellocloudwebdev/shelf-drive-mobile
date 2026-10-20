@@ -27,6 +27,17 @@ pub struct AndroidInstallResult {
     pub unknown_sources_settings_opened: bool,
 }
 
+// This repository builds the isolated diagnostic TEST app, regardless of its display version.
+const IS_TEST_TRACK: bool = true;
+
+fn test_track_check_short_circuit<T>() -> Option<Option<T>> {
+    IS_TEST_TRACK.then_some(None)
+}
+
+fn test_track_install_block() -> Option<&'static str> {
+    IS_TEST_TRACK.then_some("Production updates are disabled in diagnostic test builds")
+}
+
 #[cfg(target_os = "android")]
 const UPDATE_MANIFEST_URL: &str =
     "https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest/download/android-update.json";
@@ -181,9 +192,9 @@ fn current_version_code() -> Result<u64, String> {
 
 #[tauri::command]
 pub async fn cmd_check_android_update() -> Result<Option<AndroidUpdateManifest>, String> {
-    // Side-by-side test candidates must never consume the production update channel.
-    if env!("CARGO_PKG_VERSION").contains("-test.") {
-        return Ok(None);
+    // TEST-track binaries must never consume the production update channel.
+    if let Some(result) = test_track_check_short_circuit() {
+        return Ok(result);
     }
     #[cfg(target_os = "android")]
     {
@@ -236,8 +247,8 @@ fn launch_installer(path: &std::path::Path) -> Result<AndroidInstallResult, Stri
 pub async fn cmd_download_and_install_android_update(
     app: tauri::AppHandle,
 ) -> Result<AndroidInstallResult, String> {
-    if env!("CARGO_PKG_VERSION").contains("-test.") {
-        return Err("Production updates are disabled in diagnostic test builds".into());
+    if let Some(reason) = test_track_install_block() {
+        return Err(reason.into());
     }
     #[cfg(target_os = "android")]
     {
@@ -358,5 +369,23 @@ mod tests {
             filename: "Shelf-Drive-v4.0.0-android-universal.apk".into(),
         };
         assert!(validate_manifest(&manifest).is_err());
+    }
+}
+
+#[cfg(test)]
+mod test_track_contract_tests {
+    use super::{test_track_check_short_circuit, test_track_install_block};
+
+    #[test]
+    fn test_track_check_returns_no_production_update() {
+        assert_eq!(test_track_check_short_circuit::<()>(), Some(None));
+    }
+
+    #[test]
+    fn test_track_installer_is_blocked() {
+        assert_eq!(
+            test_track_install_block(),
+            Some("Production updates are disabled in diagnostic test builds")
+        );
     }
 }

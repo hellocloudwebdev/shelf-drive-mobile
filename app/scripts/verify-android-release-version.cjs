@@ -27,16 +27,30 @@ function readChangelogVersion(contents) {
   return match[1];
 }
 
+function readAndroidApplicationId(contents) {
+  const match = /^\s*applicationId\s*=\s*["']([^"']+)["']/m.exec(contents);
+  if (!match) throw new Error('Unable to read the Android applicationId.');
+  return match[1];
+}
+
+const RELEASE_APPLICATION_ID = 'com.hellocloudweb.shelfdrive';
+
 function verifyReleaseVersions({ appRoot, tag, changelog, previousManifest, generatedProperties }) {
   const packageVersion = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8')).version;
   const tauriVersion = JSON.parse(fs.readFileSync(path.join(appRoot, 'src-tauri/tauri.conf.json'), 'utf8')).version;
   const cargoVersion = readCargoVersion(fs.readFileSync(path.join(appRoot, 'src-tauri/Cargo.toml'), 'utf8'));
+  const androidApplicationId = readAndroidApplicationId(fs.readFileSync(
+    path.join(appRoot, 'android-overrides/app/build.gradle.kts'), 'utf8'
+  ));
   const parsed = parseVersion(packageVersion);
   const expectedTag = `v${packageVersion}`;
   const mismatches = [];
   if (tag && tag !== expectedTag) mismatches.push(`release tag ${tag} must equal ${expectedTag}`);
   if (tauriVersion !== packageVersion) mismatches.push(`tauri.conf.json version ${tauriVersion} must equal ${packageVersion}`);
   if (cargoVersion !== packageVersion) mismatches.push(`Cargo.toml version ${cargoVersion} must equal ${packageVersion}`);
+  if (androidApplicationId !== RELEASE_APPLICATION_ID) {
+    mismatches.push(`Android applicationId ${androidApplicationId} must equal production ID ${RELEASE_APPLICATION_ID}`);
+  }
   if (changelog) {
     const changelogVersion = readChangelogVersion(fs.readFileSync(changelog, 'utf8'));
     if (changelogVersion !== packageVersion) {

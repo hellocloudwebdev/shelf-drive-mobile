@@ -22,11 +22,14 @@ beforeEach(() => {
   appRoot = mkdtempSync(join(tmpdir(), 'android-stable-version-'));
   temporaryDirectories.push(appRoot);
   mkdirSync(join(appRoot, 'src-tauri'));
+  mkdirSync(join(appRoot, 'android-overrides', 'app'), { recursive: true });
   const candidate = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')).version as string;
   const stable = candidate.split('-')[0];
   writeFileSync(join(appRoot, 'package.json'), JSON.stringify({ version: stable }));
   writeFileSync(join(appRoot, 'src-tauri', 'tauri.conf.json'), JSON.stringify({ version: stable }));
   writeFileSync(join(appRoot, 'src-tauri', 'Cargo.toml'), `[package]\nversion = "${stable}"\n`);
+  writeFileSync(join(appRoot, 'android-overrides', 'app', 'build.gradle.kts'),
+    'android {\n    defaultConfig {\n        applicationId = "com.hellocloudweb.shelfdrive"\n    }\n}\n');
 });
 
 function writePreviousManifest(manifest: { packageName?: string; versionCode?: number; version?: string }): string {
@@ -59,6 +62,13 @@ describe('Android release versioning', () => {
     expect(() => readChangelogVersion('# Changelog\n\nNo release headings')).toThrow();
   });
 
+  it('rejects the isolated TEST applicationId even when every version is stable', () => {
+    writeFileSync(join(appRoot, 'android-overrides', 'app', 'build.gradle.kts'),
+      'android {\n    defaultConfig {\n        applicationId = "com.hellocloudweb.shelfdrive.diagnostictest"\n    }\n}\n');
+    expect(() => verifyReleaseVersions({ appRoot }))
+      .toThrow(/Android applicationId .* must equal production ID com\.hellocloudweb\.shelfdrive/);
+  });
+
   it('requires an exact version tag when a tagged release is supplied', () => {
     const packageVersion = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8')).version as string;
     expect(verifyReleaseVersions({ appRoot, tag: `v${packageVersion}` }).version).toBe(packageVersion);
@@ -66,8 +76,9 @@ describe('Android release versioning', () => {
       .toThrow(`release tag main must equal v${packageVersion}`);
   });
 
-  it('rejects the diagnostic prerelease through the production release gate', () => {
-    expect(() => verifyReleaseVersions({ appRoot: process.cwd() })).toThrow(/plain semantic versioning/);
+  it('rejects the diagnostic TEST application through the production release gate', () => {
+    expect(() => verifyReleaseVersions({ appRoot: process.cwd() }))
+      .toThrow(/Android applicationId .* must equal production ID/);
   });
 
   describe('previous-update-manifest monotonicity', () => {
