@@ -55,7 +55,7 @@ class UploadForegroundService : Service() {
         putExtra(EXTRA_SPEED, speed.coerceAtLeast(0L))
         putExtra(EXTRA_PAUSED, isPaused)
       }
-      context.startService(intent)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
     }
 
     @JvmStatic
