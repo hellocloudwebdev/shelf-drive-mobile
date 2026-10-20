@@ -5,7 +5,7 @@ import { useFileDownload } from '../../src/hooks/useFileDownload';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(), listen: vi.fn(), emit: vi.fn(), save: vi.fn(), open: vi.fn(),
-  unlisten: vi.fn(),
+  unlisten: vi.fn(), toastInfo: vi.fn(),
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen, emit: mocks.emit }));
@@ -32,7 +32,7 @@ vi.mock('../../src/services/desktopTransferEngine', async () => ({
   transferItemAction: vi.fn(), transferBulkAction: vi.fn(), supplyTransferPromptToken: vi.fn(async () => {}),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: mocks.toastInfo, warning: vi.fn() } }));
 
 const ENVIRONMENT = {
   connected: true, metered: false, roaming: false, charging: true, batteryLow: false,
@@ -72,6 +72,14 @@ describe('Android download retry budgets via network reconnect', () => {
     mocks.listen.mockImplementation(async () => mocks.unlisten);
   });
   afterEach(() => { vi.useRealTimers(); });
+
+  it('does not announce a download pause when a shared pause only concerns uploads', () => {
+    const { result } = renderHook(() => useFileDownload(makeStore(), true, 'waiting', 'account-a'));
+
+    act(() => { result.current.pauseAll(); });
+
+    expect(mocks.toastInfo).not.toHaveBeenCalledWith('Downloads paused. Active items will restart safely when resumed.');
+  });
 
   it('caps in-flight transient-network retries at three total attempts across reconnects', async () => {
     vi.useFakeTimers();
@@ -186,6 +194,7 @@ describe('Android download retry budgets via network reconnect', () => {
     // Pause-all must pause a waiting item, not leave it for the next
     // reconnect to resurrect.
     act(() => { result.current.pauseAll(); });
+    expect(mocks.toastInfo).toHaveBeenCalledWith('Downloads paused. Active items will restart safely when resumed.');
     expect(statusOf(result)).toBe('paused');
     rerender({ online: false });
     rerender({ online: true });
