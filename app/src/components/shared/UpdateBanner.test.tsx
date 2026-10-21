@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { UpdateBanner } from './UpdateBanner';
+import '../../i18n';
 import type { UpdateInstallPhase } from '../../services/updateReliability';
 
 const defaultProps = {
