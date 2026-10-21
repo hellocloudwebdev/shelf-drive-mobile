@@ -1,10 +1,11 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import en from './locales/en.json';
-
 // Translation catalogs are data, not executable JavaScript. Only the selected
 // language is fetched; Vite bundles the local JSON assets into desktop/Android.
+// English is fetched like every other catalog instead of being inlined into the
+// entry chunk: the startup splash renders before any catalog is needed, and
+// App.tsx awaits ensureLanguageResource() before switching languages.
 const localeUrls = import.meta.glob<string>(['./locales/*.json', '!./locales/en.json'], {
   eager: true, query: '?url', import: 'default',
 });
@@ -13,9 +14,7 @@ const languageRequests = new Map<string, Promise<void>>();
 i18n
   .use(initReactI18next)
   .init({
-    resources: {
-      en: { translation: en },
-    },
+    resources: {},
     lng: 'en',
     // Every shipped locale is structurally complete and CI rejects missing keys.
     // Do not silently mask localization regressions with English at runtime.
@@ -29,15 +28,22 @@ i18n
   });
 
 export async function ensureLanguageResource(language: string): Promise<void> {
-  if (language === 'en' || i18n.hasResourceBundle(language, 'translation')) return;
+  if (i18n.hasResourceBundle(language, 'translation')) return;
   const url = localeUrls[`./locales/${language}.json`];
-  if (!url) throw new Error(`Unsupported language resource: ${language}`);
+  if (language !== 'en' && !url) throw new Error(`Unsupported language resource: ${language}`);
   let request = languageRequests.get(language);
   if (!request) {
     request = (async () => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Language resource unavailable: ${language}`);
-      const resource: unknown = await response.json();
+      let resource: unknown;
+      if (language === 'en') {
+        // A dynamic import keeps English out of the entry chunk while avoiding
+        // an extra JSON asset counted against the fixed non-English locale budget.
+        resource = (await import('./locales/en.json')).default;
+      } else {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Language resource unavailable: ${language}`);
+        resource = await response.json();
+      }
       if (!resource || typeof resource !== 'object' || Array.isArray(resource)) throw new Error(`Invalid language resource: ${language}`);
       if (!i18n.hasResourceBundle(language, 'translation')) {
         i18n.addResourceBundle(language, 'translation', resource, true, true);

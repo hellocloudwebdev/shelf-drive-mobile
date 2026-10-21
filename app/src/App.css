@@ -191,31 +191,23 @@ body,
   transition: background-color var(--motion-slow) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
 }
 
-.desktop-shell {
+.desktop-shell,
+.text-ui {
   font-size: 0.8125rem;
   line-height: 1.125rem;
 }
 
-.type-app-title,
 .text-app-title {
   font-size: 0.9375rem;
   line-height: 1.25rem;
   letter-spacing: -0.01em;
 }
 
-.type-ui,
-.text-ui {
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
-}
-
-.type-metadata,
 .text-metadata {
   font-size: 0.75rem;
   line-height: 1rem;
 }
 
-.type-badge,
 .text-badge {
   font-size: 0.6875rem;
   line-height: 0.875rem;
@@ -296,7 +288,8 @@ textarea:disabled {
     opacity var(--motion-fast) var(--ease-standard);
 }
 
-.quiet-control:hover:not(:disabled) {
+.quiet-control:hover:not(:disabled),
+.quiet-menu-item:hover:not(:disabled) {
   background: var(--color-app-hover);
 }
 
@@ -320,11 +313,8 @@ textarea:disabled {
     background-color var(--motion-fast) var(--ease-standard);
 }
 
-.quiet-menu-item:hover:not(:disabled) {
-  background: var(--color-app-hover);
-}
-
-.quiet-control.sidebar-sync-action {
+.quiet-control.sidebar-sync-action,
+.quiet-control.sidebar-logout-action {
   background: transparent;
   border: 1px solid var(--color-app-border);
 }
@@ -347,11 +337,6 @@ textarea:disabled {
 .quiet-control.toolbar-upload-action:hover:not(:disabled) {
   background: var(--color-app-accent-hover);
   border-color: transparent;
-}
-
-.quiet-control.sidebar-logout-action {
-  background: transparent;
-  border: 1px solid var(--color-app-border);
 }
 
 .quiet-control.sidebar-logout-action:hover:not(:disabled) {
