@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "4.5.0"
+version = "4.5.1"
 description = "A local-first file workspace for files stored in Telegram, built with Tauri, Rust, and React."
 authors = ["Cameron Amer"]
 edition = "2021"
@@ -79,7 +79,7 @@ reqwest = { version = "0.12", default-features = false, features = ["stream", "r
 sysinfo = "0.30"
 tokio-rustls = "0.26"
 rustls = "0.23.45"
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 unrar = "0.5"

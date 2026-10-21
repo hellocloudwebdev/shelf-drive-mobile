@@ -1,3 +1,14 @@
+## [4.5.1] - 2026-10-21
+### Fixed
+- Open both my.telegram.org controls in Getting Started through the system browser using the mobile-supported URL opener and its required capability. Show a visible retry/manual-open message if the browser cannot launch.
+- Keep the update notification below the status bar, stack its message and actions on narrow screens, and prevent Update & Restart from wrapping into overlapping lines.
+- Update certificate-verification dependencies to reject distrusted emSign certificate paths, preserving the existing dependency security gate without advisory exceptions.
+### Release tracks
+- Production retains its existing application identity, signing, updater, and bounded app-only diagnostics.
+- Shelf Drive TEST remains a separate app with its dedicated signing key and disabled production updater. Both tracks provide a universal APK and AAB.
+### Verification limits
+- Browser layout and automated tests do not replace a physical-device browser-launch or status-bar test; neither is claimed here.
+
 ## [4.5.0] - 2026-10-20
 ### Fixed
 - Stop announcing "Downloads paused" after a finished upload. Completing a transfer stopped the Android transfer service, and the resulting forced stop was reported to the app as a user pause, so a shared pause action reached the download queue even when only uploads had been running. A deliberate stop is no longer treated as a user pause, and each direction now announces only when it has work of its own to pause, resume, or cancel.
