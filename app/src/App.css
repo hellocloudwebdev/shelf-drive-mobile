@@ -191,31 +191,23 @@ body,
   transition: background-color var(--motion-slow) var(--ease-standard), color var(--motion-standard) var(--ease-standard);
 }
 
-.desktop-shell {
+.desktop-shell,
+.text-ui {
   font-size: 0.8125rem;
   line-height: 1.125rem;
 }
 
-.type-app-title,
 .text-app-title {
   font-size: 0.9375rem;
   line-height: 1.25rem;
   letter-spacing: -0.01em;
 }
 
-.type-ui,
-.text-ui {
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
-}
-
-.type-metadata,
 .text-metadata {
   font-size: 0.75rem;
   line-height: 1rem;
 }
 
-.type-badge,
 .text-badge {
   font-size: 0.6875rem;
   line-height: 0.875rem;
@@ -296,7 +288,8 @@ textarea:disabled {
     opacity var(--motion-fast) var(--ease-standard);
 }
 
-.quiet-control:hover:not(:disabled) {
+.quiet-control:hover:not(:disabled),
+.quiet-menu-item:hover:not(:disabled) {
   background: var(--color-app-hover);
 }
 
@@ -320,11 +313,8 @@ textarea:disabled {
     background-color var(--motion-fast) var(--ease-standard);
 }
 
-.quiet-menu-item:hover:not(:disabled) {
-  background: var(--color-app-hover);
-}
-
-.quiet-control.sidebar-sync-action {
+.quiet-control.sidebar-sync-action,
+.quiet-control.sidebar-logout-action {
   background: transparent;
   border: 1px solid var(--color-app-border);
 }
@@ -349,11 +339,6 @@ textarea:disabled {
   border-color: transparent;
 }
 
-.quiet-control.sidebar-logout-action {
-  background: transparent;
-  border: 1px solid var(--color-app-border);
-}
-
 .quiet-control.sidebar-logout-action:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-app-danger) 10%, transparent);
   border-color: color-mix(in srgb, var(--color-app-danger) 38%, var(--color-app-border));
@@ -371,7 +356,6 @@ textarea:disabled {
 .text-balance {
   text-wrap: balance;
 }
-
 /* Calm onboarding canvas: restrained tint and layered glass add depth without noise. */
 .auth-gradient {
   background:
@@ -445,12 +429,6 @@ textarea:disabled {
 }
 
 /* Auth form icons - Direct overrides for maximum visibility */
-.auth-form-icon {
-  color: #ffffff !important;
-  /* Default (Dark Mode): Pure White */
-  opacity: 1 !important;
-  z-index: 20;
-}
 
 /* Light Mode Override */
 :root.light .auth-form-icon {
@@ -670,7 +648,8 @@ textarea:disabled {
   transition: transform 140ms var(--ease-standard), background-color 140ms var(--ease-standard);
 }
 
-.press-row:active {
+.press-row:active,
+.auth-primary-action:active:not(:disabled) {
   transform: scale(0.985);
 }
 
@@ -743,10 +722,6 @@ textarea:disabled {
 .auth-primary-action:hover:not(:disabled) {
   background: var(--color-app-accent-hover);
   transform: translateY(-1px);
-}
-
-.auth-primary-action:active:not(:disabled) {
-  transform: scale(0.985);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -991,9 +966,7 @@ textarea:disabled {
 :root.light input::placeholder,
 :root.light textarea::placeholder {
   color: var(--color-app-text-tertiary);
-}
-
-:root.light input:focus,
+}:root.light input:focus,
 :root.light textarea:focus {
   border-color: var(--color-app-accent);
 }

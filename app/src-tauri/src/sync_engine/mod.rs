@@ -395,7 +395,7 @@ async fn count_conflicts(db: &DbConnection) -> Result<usize, String> {
 fn hash_file(path: &Path) -> Result<String, String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let mut digest = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024];
+    let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
         if read == 0 {
@@ -1287,5 +1287,14 @@ mod safety_tests {
             .unwrap();
         assert_eq!(tree.keys().cloned().collect::<Vec<_>>(), vec!["report.txt"]);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn hash_file_produces_sha256() {
+        let path = std::env::temp_dir().join(format!("test-hash-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"test content for hash").unwrap();
+        let hash = hash_file(&path).unwrap();
+        assert_eq!(hash.len(), 64);
+        let _ = std::fs::remove_file(path);
     }
 }

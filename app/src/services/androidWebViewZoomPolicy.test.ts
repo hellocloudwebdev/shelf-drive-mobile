@@ -15,7 +15,9 @@ describe('applyAndroidWebViewZoomPolicy', () => {
     const { document, viewport } = makeDocument();
 
     expect(applyAndroidWebViewZoomPolicy(document, 'Mozilla/5.0 (Linux; Android 15)', true)).toBe(true);
-    expect(viewport.content).toBe('width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no');
+    expect(viewport.content).toBe(
+      'width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no',
+    );
   });
 
   it('replaces an existing scaling directive instead of leaving contradictory policies', () => {
@@ -23,7 +25,19 @@ describe('applyAndroidWebViewZoomPolicy', () => {
 
     applyAndroidWebViewZoomPolicy(document, 'Android', true);
 
-    expect(viewport.content).toBe('width=device-width, initial-scale=1, user-scalable=no');
+    expect(viewport.content).toBe(
+      'width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no',
+    );
+  });
+
+  it('pins maximum-scale because Chromium ignores user-scalable=no on its own', () => {
+    const { document, viewport } = makeDocument('width=device-width, maximum-scale=3, user-scalable=yes');
+
+    applyAndroidWebViewZoomPolicy(document, 'Android', true);
+
+    expect(viewport.content).toContain('maximum-scale=1.0');
+    expect(viewport.content).not.toContain('maximum-scale=3');
+    expect(viewport.content).not.toContain('user-scalable=yes');
   });
 
   it.each([

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   restoreDownloadQueue,
   restoreUploadQueue,
+  hasCancellableTransfers,
+  hasPauseableTransfers,
+  hasResumableTransfers,
   isTransientNetworkError,
   serializeDownloadQueue,
   serializeUploadQueue,
@@ -77,5 +80,41 @@ describe('network failure classification', () => {
     expect(isTransientNetworkError('connection reset by peer')).toBe(true);
     expect(isTransientNetworkError('DNS lookup failed: host unreachable')).toBe(true);
     expect(isTransientNetworkError('FILE_TOO_BIG')).toBe(false);
+  });
+});
+
+describe('transfer action gating', () => {
+  // The Android transfer notification is aggregate: its Pause action reaches
+  // both the upload and the download queue. Each direction must therefore
+  // announce only when it has work of its own, otherwise finishing an upload
+  // produced a stale "Downloads paused" announcement.
+  const statuses = (...values: string[]) => values.map(status => ({ status }));
+
+  it('treats only in-flight and queued work as pauseable', () => {
+    expect(hasPauseableTransfers(statuses('pending', 'uploading'))).toBe(true);
+    expect(hasPauseableTransfers(statuses('waiting_for_network'))).toBe(true);
+    expect(hasPauseableTransfers(statuses('success', 'cancelled', 'error', 'paused'))).toBe(false);
+    expect(hasPauseableTransfers([])).toBe(false);
+  });
+
+  it('only resumes when something is actually paused', () => {
+    expect(hasResumableTransfers(statuses('paused'))).toBe(true);
+    expect(hasResumableTransfers(statuses('uploading', 'pending', 'success'))).toBe(false);
+  });
+
+  it('does not cancel when every item already finished', () => {
+    expect(hasCancellableTransfers(statuses('success', 'cancelled'))).toBe(false);
+    expect(hasCancellableTransfers(statuses('error'))).toBe(true);
+    expect(hasCancellableTransfers(statuses('downloading'))).toBe(true);
+    expect(hasCancellableTransfers([])).toBe(false);
+  });
+
+  it('stays silent for a download queue that only holds finished items while an upload runs', () => {
+    const downloadsWhileUploading = statuses('success', 'cancelled');
+    expect(hasPauseableTransfers(downloadsWhileUploading)).toBe(false);
+    expect(hasResumableTransfers(downloadsWhileUploading)).toBe(false);
+    expect(hasCancellableTransfers(downloadsWhileUploading)).toBe(false);
+    // A failed item is still removable, so cancel must stay available for it.
+    expect(hasCancellableTransfers(statuses('success', 'error'))).toBe(true);
   });
 });

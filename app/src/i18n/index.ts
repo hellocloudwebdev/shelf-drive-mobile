@@ -1,11 +1,12 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import en from './locales/en.json';
-
 // Translation catalogs are data, not executable JavaScript. Only the selected
 // language is fetched; Vite bundles the local JSON assets into desktop/Android.
-const localeUrls = import.meta.glob<string>(['./locales/*.json', '!./locales/en.json'], {
+// English is fetched like every other catalog instead of being inlined into the
+// entry chunk: the startup splash renders before any catalog is needed, and
+// App.tsx awaits ensureLanguageResource() before switching languages.
+const localeUrls = import.meta.glob<string>('./locales/*.json', {
   eager: true, query: '?url', import: 'default',
 });
 const languageRequests = new Map<string, Promise<void>>();
@@ -13,9 +14,7 @@ const languageRequests = new Map<string, Promise<void>>();
 i18n
   .use(initReactI18next)
   .init({
-    resources: {
-      en: { translation: en },
-    },
+    resources: {},
     lng: 'en',
     // Every shipped locale is structurally complete and CI rejects missing keys.
     // Do not silently mask localization regressions with English at runtime.
@@ -29,7 +28,7 @@ i18n
   });
 
 export async function ensureLanguageResource(language: string): Promise<void> {
-  if (language === 'en' || i18n.hasResourceBundle(language, 'translation')) return;
+  if (i18n.hasResourceBundle(language, 'translation')) return;
   const url = localeUrls[`./locales/${language}.json`];
   if (!url) throw new Error(`Unsupported language resource: ${language}`);
   let request = languageRequests.get(language);

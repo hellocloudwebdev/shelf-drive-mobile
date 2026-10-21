@@ -1,8 +1,10 @@
 ## [4.5.0] - 2026-10-20
 ### Fixed
-- Do not announce paused downloads when a shared Android transfer-pause action has no eligible downloads to pause.
-- Disable Android app WebView pinch zoom and lock the Android UI viewport; leave desktop zoom behavior unchanged.
+- Stop announcing "Downloads paused" after a finished upload. Completing a transfer stopped the Android transfer service, and the resulting forced stop was reported to the app as a user pause, so a shared pause action reached the download queue even when only uploads had been running. A deliberate stop is no longer treated as a user pause, and each direction now announces only when it has work of its own to pause, resume, or cancel.
+- Disable pinch zoom on phones. The Android WebView policy is now applied as soon as the WebView is created instead of during `onStart()`, and it is backed by a runtime gesture guard (multi-touch gestures, two-finger scroll, `ctrl`+wheel and double-tap) plus a locked, non-scalable viewport. Desktop zoom behaviour is unchanged.
 - Carry forward the boxed upload-command future already tested successfully in Shelf Drive TEST 4.4.10-test.2.
+### Changed
+- Fetch the English translation catalog the same way as every other language instead of inlining it into the entry chunk, and drop three unused type aliases and one dead rule from the stylesheet. The initial JavaScript payload falls from 551,670 to 504,746 bytes and the CSS from 140,206 to 139,934 bytes, restoring both reviewed performance budgets to a passing state.
 ### Release tracks
 - Production retains its normal application identity, signing, updater, and bounded app-only diagnostics.
 - Shelf Drive TEST remains a separately installed and signed app with uncapped app-only diagnostics and reviewed-snapshot report consent.

@@ -201,18 +201,26 @@ pub fn stop_foreground_service() {
 pub fn update_foreground_service(_active: i32, _progress: i32, _speed: i64, _paused: bool) {}
 
 #[tauri::command]
-pub fn cmd_start_foreground_service() {
+pub async fn cmd_start_foreground_service() {
     #[cfg(target_os = "android")]
-    start_foreground_service();
+    let _ = tokio::task::spawn_blocking(start_foreground_service).await;
 }
 
 #[tauri::command]
-pub fn cmd_stop_foreground_service() {
+pub async fn cmd_stop_foreground_service() {
     #[cfg(target_os = "android")]
-    stop_foreground_service();
+    let _ = tokio::task::spawn_blocking(stop_foreground_service).await;
 }
 
 #[tauri::command]
-pub fn cmd_update_foreground_service(active: i32, progress: i32, speed: i64, paused: bool) {
-    update_foreground_service(active, progress, speed, paused);
+pub async fn cmd_update_foreground_service(active: i32, progress: i32, speed: i64, paused: bool) {
+    #[cfg(target_os = "android")]
+    let _ = tokio::task::spawn_blocking(move || {
+        update_foreground_service(active, progress, speed, paused)
+    })
+    .await;
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (active, progress, speed, paused);
+    }
 }

@@ -1118,6 +1118,17 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  /**
+   * Apply the Android-only WebView policy as soon as Wry creates the WebView.
+   * onStart() traversal is too early on some cold starts (the WebView may not
+   * exist yet) and too late to stop a pinch already in flight.
+   */
+  override fun onWebViewCreate(webView: android.webkit.WebView) {
+    super.onWebViewCreate(webView)
+    webView.isSaveEnabled = false
+    AndroidWebViewZoomPolicy.apply(webView)
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     try {

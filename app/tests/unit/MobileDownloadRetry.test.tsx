@@ -81,6 +81,25 @@ describe('Android download retry budgets via network reconnect', () => {
     expect(mocks.toastInfo).not.toHaveBeenCalledWith('Downloads paused. Active items will restart safely when resumed.');
   });
 
+  it('stays silent when the shared pause arrives after every download already finished', async () => {
+    // Regression: finishing an upload stops the Android transfer service,
+    // which emitted a pause to the WebView. The download queue still held the
+    // just-completed item, so "Downloads paused" was announced after a
+    // successful upload. A finished queue must not announce anything.
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useFileDownload(makeStore(), true, 'waiting', 'account-a'));
+    await enqueueOne(result);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(statusOf(result)).toBe('success');
+
+    act(() => { result.current.pauseAll(); });
+    act(() => { result.current.resumeAll(); });
+
+    expect(mocks.toastInfo).not.toHaveBeenCalledWith('Downloads paused. Active items will restart safely when resumed.');
+    expect(mocks.toastInfo).not.toHaveBeenCalledWith('Downloads resumed');
+    expect(statusOf(result)).toBe('success');
+  });
+
   it('caps in-flight transient-network retries at three total attempts across reconnects', async () => {
     vi.useFakeTimers();
     mocks.invoke.mockImplementation((command: string) => {
