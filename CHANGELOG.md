@@ -1,3 +1,9 @@
+## [4.5.1] - 2026-10-21 (TEST candidate)
+
+### TEST-only release preparation
+- Prepare the side-by-side diagnostic TEST app version 4.5.1 with its dedicated Android application ID and signing identity.
+- Build and verify local universal APK and AAB artifacts only; no production updater packaging, upload, push, tag, or release is performed.
+
 ## [4.5.0] - 2026-10-20
 ### Fixed
 - Do not announce paused downloads when the shared Android pause action has no eligible downloads to pause.
