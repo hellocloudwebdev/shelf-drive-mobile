@@ -2,7 +2,8 @@ package com.hellocloudweb.shelfdrive
 
 import android.webkit.JavascriptInterface
 import androidx.annotation.Keep
-import java.util.concurrent.Executors
+import android.util.Log
+import org.json.JSONObject
 
 /**
  * Android WebView JavaScript interface for Tauri IPC communication.
@@ -19,21 +20,55 @@ import java.util.concurrent.Executors
 @Keep
 class Ipc(val webView: RustWebView, val webViewClient: RustWebViewClient) {
   companion object {
-    private val ipcExecutor = Executors.newCachedThreadPool { runnable ->
-      Thread(null, runnable, "TauriIpcWorker", 2 * 1024 * 1024).apply {
-        isDaemon = true
+    private val ipcExecutor = BoundedIpcExecutor(
+      onFailure = { failure -> Log.e("TauriIpc", "IPC dispatch failed: ${failure.javaClass.simpleName}", failure) },
+    )
+
+    /** Invalidate queued IPC work belonging to this exact WebView, without affecting a replacement. */
+    fun closeForWebView(webView: android.webkit.WebView?) {
+      val rustWebView = webView as? RustWebView ?: return
+      ipcExecutor.closeClientsFor(rustWebView)
+    }
+  }
+
+  private val client = ipcExecutor.openClient(webView)
+
+  @JavascriptInterface
+  fun postMessage(message: String?) {
+    if (message == null) return
+    val webViewId = webView.id
+    val currentUrl = webViewClient.currentUrl
+    val errorCallbackId = errorCallbackId(message) ?: run {
+      Log.e("TauriIpc", "Malformed IPC envelope; error callback ID is not an unsigned 32-bit number")
+      return
+    }
+    return when (ipcExecutor.submit(client) {
+      try {
+        Rust.ipc(webViewId, currentUrl, message)
+      } catch (failure: Exception) {
+        Log.e("TauriIpc", "IPC dispatch failed: ${failure.javaClass.simpleName}", failure)
+        reject(errorCallbackId, currentUrl)
+      }
+    }) {
+      BoundedIpcExecutor.Submission.ACCEPTED -> Unit
+      BoundedIpcExecutor.Submission.CLOSED -> Unit
+      BoundedIpcExecutor.Submission.OVERLOADED -> {
+        Log.e("TauriIpc", "IPC queue full; rejecting request for WebView $webViewId")
+        reject(errorCallbackId, currentUrl)
       }
     }
   }
 
-  @JavascriptInterface
-  fun postMessage(message: String?) {
-    message?.let { m ->
-      val webViewId = webView.id
-      val currentUrl = webViewClient.currentUrl
-      ipcExecutor.execute {
-        Rust.ipc(webViewId, currentUrl, m)
-      }
+  private fun errorCallbackId(message: String): Long? = try {
+    IpcErrorCallback.callbackId(JSONObject(message).opt("error"))
+  } catch (_: Exception) {
+    null
+  }
+
+  private fun reject(errorCallbackId: Long, capturedUrl: String) {
+    webView.post {
+      if (!client.active || webViewClient.currentUrl != capturedUrl) return@post
+      webView.evaluateJavascript(IpcErrorCallback.rejectionScript(errorCallbackId), null)
     }
   }
 }

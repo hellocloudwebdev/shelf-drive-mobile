@@ -6,6 +6,18 @@ plugins {
     id("rust")
 }
 
+kotlin {
+    sourceSets.all {
+        // Java source exclusions do not filter Kotlin files emitted by Wry.
+        kotlin.exclude { it.file.name == "Ipc.kt" && it.file.parentFile.name == "generated" }
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    // Wry also adds generated/ itself as a source root, so match the actual path.
+    exclude { it.file.name == "Ipc.kt" && it.file.parentFile.name == "generated" }
+}
+
 val tauriProperties = Properties().apply {
     val propFile = file("tauri.properties")
     if (propFile.exists()) {
@@ -57,6 +69,8 @@ android {
     ndkVersion = "30.0.14904198"
     namespace = "com.hellocloudweb.shelfdrive"
     sourceSets.getByName("main") {
+        // Wry emits a same-package Ipc.kt under generated/; compile only our bounded override.
+        java.exclude("**/generated/Ipc.kt")
         jniLibs.srcDir(layout.buildDirectory.dir("intermediates/cxx_runtime"))
     }
     defaultConfig {

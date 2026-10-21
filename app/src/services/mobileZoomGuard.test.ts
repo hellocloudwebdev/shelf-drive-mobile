@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { installMobileZoomGuard, isMobileRuntime, lockViewportScale } from './mobileZoomGuard';
+import { installMobileZoomGuard, lockViewportScale } from './mobileZoomGuard';
 
 type Listener = (event: any) => void;
 
-function makeHarness(userAgent: string, maxTouchPoints: number, viewportContent?: string | null) {
+function makeHarness(userAgent: string, viewportContent?: string | null, isTauri = false) {
   const document = window.document.implementation.createHTMLDocument();
   if (viewportContent !== null) {
     const viewport = document.createElement('meta');
@@ -14,19 +14,21 @@ function makeHarness(userAgent: string, maxTouchPoints: number, viewportContent?
 
   const windowListeners = new Map<string, Listener[]>();
   const documentListeners = new Map<string, Listener[]>();
+  const documentListenerOptions = new Map<string, AddEventListenerOptions[]>();
 
   const win = {
-    navigator: { userAgent, maxTouchPoints },
-    matchMedia: (query: string) => ({ matches: query === '(pointer: coarse)' && maxTouchPoints > 0 }),
+    navigator: { userAgent },
     document,
+    ...(isTauri ? { __TAURI_INTERNALS__: {} } : {}),
     addEventListener: (type: string, listener: Listener) => {
       windowListeners.set(type, [...(windowListeners.get(type) ?? []), listener]);
     },
   };
 
   const originalAdd = document.addEventListener.bind(document);
-  document.addEventListener = ((type: string, listener: Listener) => {
+  document.addEventListener = ((type: string, listener: Listener, options?: AddEventListenerOptions) => {
     documentListeners.set(type, [...(documentListeners.get(type) ?? []), listener]);
+    documentListenerOptions.set(type, [...(documentListenerOptions.get(type) ?? []), options ?? {}]);
     originalAdd(type, listener);
   }) as typeof document.addEventListener;
 
@@ -37,53 +39,22 @@ function makeHarness(userAgent: string, maxTouchPoints: number, viewportContent?
       preventDefault: vi.fn(),
       stopPropagation: vi.fn(),
       touches: [],
+      target: { closest: () => null },
       ...event,
     };
     listeners.forEach((listener) => listener(fullEvent));
     return fullEvent;
   };
 
-  return { document, win, dispatch, windowListeners, documentListeners };
+  return { document, win, dispatch, windowListeners, documentListeners, documentListenerOptions };
 }
 
 const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 Chrome/128 Mobile Safari/537.36';
 const DESKTOP_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128 Safari/537.36';
 
-describe('isMobileRuntime', () => {
-  it('detects Android phones', () => {
-    expect(isMobileRuntime({ navigator: { userAgent: ANDROID_UA, maxTouchPoints: 5 } })).toBe(true);
-  });
-
-  it('detects iPadOS reporting a desktop user agent', () => {
-    expect(
-      isMobileRuntime({
-        navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 5 },
-      }),
-    ).toBe(true);
-  });
-
-  it('detects coarse-pointer touch devices without a mobile user agent', () => {
-    expect(
-      isMobileRuntime({
-        navigator: { userAgent: 'Linux aarch64', maxTouchPoints: 5 },
-        matchMedia: (query: string) => ({ matches: query === '(pointer: coarse)' }),
-      }),
-    ).toBe(true);
-  });
-
-  it('leaves desktop browsers alone', () => {
-    expect(
-      isMobileRuntime({
-        navigator: { userAgent: DESKTOP_UA, maxTouchPoints: 0 },
-        matchMedia: () => ({ matches: false }),
-      }),
-    ).toBe(false);
-  });
-});
-
 describe('lockViewportScale', () => {
   it('pins scale without duplicating existing directives', () => {
-    const { document } = makeHarness(ANDROID_UA, 5, 'width=device-width, user-scalable=yes, maximum-scale=4');
+    const { document } = makeHarness(ANDROID_UA, 'width=device-width, user-scalable=yes, maximum-scale=4');
 
     expect(lockViewportScale(document)).toBe(true);
 
@@ -98,14 +69,14 @@ describe('lockViewportScale', () => {
   });
 
   it('returns false without a viewport meta tag', () => {
-    const { document } = makeHarness(ANDROID_UA, 5, null);
+    const { document } = makeHarness(ANDROID_UA, null);
     expect(lockViewportScale(document)).toBe(false);
   });
 });
 
 describe('installMobileZoomGuard', () => {
-  it('activates on mobile and pins the viewport plus injects the stylesheet', () => {
-    const { document, win } = makeHarness(ANDROID_UA, 5);
+  it('activates in Android Tauri and pins the viewport plus injects the stylesheet', () => {
+    const { document, win } = makeHarness(ANDROID_UA, undefined, true);
 
     expect(installMobileZoomGuard(win)).toBe(true);
 
@@ -114,17 +85,20 @@ describe('installMobileZoomGuard', () => {
     expect(document.getElementById('shelf-drive-mobile-zoom-guard')).not.toBeNull();
   });
 
-  it('does not activate on desktop so browser zoom keeps working', () => {
-    const { document, win } = makeHarness(DESKTOP_UA, 0);
+  it('leaves desktop and mobile browsers untouched so accessibility zoom remains available', () => {
+    const { document: desktopDocument, win: desktopWin } = makeHarness(DESKTOP_UA);
+    const { document, win } = makeHarness(ANDROID_UA);
     const before = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content;
 
+    expect(installMobileZoomGuard(desktopWin)).toBe(false);
     expect(installMobileZoomGuard(win)).toBe(false);
     expect(document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content).toBe(before);
     expect(document.getElementById('shelf-drive-mobile-zoom-guard')).toBeNull();
+    expect(desktopDocument.getElementById('shelf-drive-mobile-zoom-guard')).toBeNull();
   });
 
   it('injects the stylesheet only once', () => {
-    const { document, win } = makeHarness(ANDROID_UA, 5);
+    const { document, win } = makeHarness(ANDROID_UA, undefined, true);
 
     installMobileZoomGuard(win);
     installMobileZoomGuard(win);
@@ -132,34 +106,39 @@ describe('installMobileZoomGuard', () => {
     expect(document.querySelectorAll('#shelf-drive-mobile-zoom-guard')).toHaveLength(1);
   });
 
-  it('blocks pinch gestures and two-finger touch moves', () => {
-    const { win, dispatch } = makeHarness(ANDROID_UA, 5);
+  it('blocks pinch gestures and two-finger touch moves with cancellable listeners', () => {
+    const { win, dispatch, documentListenerOptions } = makeHarness(ANDROID_UA, undefined, true);
     installMobileZoomGuard(win);
 
     expect(dispatch('gesturestart').preventDefault).toHaveBeenCalled();
     expect(dispatch('gesturechange').preventDefault).toHaveBeenCalled();
     expect(dispatch('touchmove', { touches: [{}, {}] }).preventDefault).toHaveBeenCalled();
+    expect(documentListenerOptions.get('gesturestart')?.[0]).toMatchObject({ passive: false, capture: true });
   });
 
   it('still allows one-finger scrolling', () => {
-    const { win, dispatch } = makeHarness(ANDROID_UA, 5);
+    const { win, dispatch } = makeHarness(ANDROID_UA, undefined, true);
     installMobileZoomGuard(win);
 
     expect(dispatch('touchmove', { touches: [{}] }).preventDefault).not.toHaveBeenCalled();
   });
 
   it('blocks ctrl+wheel but not plain wheel scrolling', () => {
-    const { win, dispatch } = makeHarness(ANDROID_UA, 5);
+    const { win, dispatch } = makeHarness(ANDROID_UA, undefined, true);
     installMobileZoomGuard(win);
 
     expect(dispatch('wheel', { ctrlKey: true }).preventDefault).toHaveBeenCalled();
     expect(dispatch('wheel', { ctrlKey: false }).preventDefault).not.toHaveBeenCalled();
   });
 
-  it('suppresses double-tap zoom from a synthesised dblclick', () => {
-    const { win, dispatch } = makeHarness(ANDROID_UA, 5);
+  it('does not cancel ordinary double taps or media-specific pinch handling', () => {
+    const { win, dispatch } = makeHarness(ANDROID_UA, undefined, true);
     installMobileZoomGuard(win);
 
-    expect(dispatch('dblclick').preventDefault).toHaveBeenCalled();
+    expect(dispatch('dblclick').preventDefault).not.toHaveBeenCalled();
+    expect(dispatch('touchend').preventDefault).not.toHaveBeenCalled();
+    const mediaEvent = { touches: [{}, {}], target: { closest: () => ({ tagName: 'VIDEO' }) } };
+    expect(dispatch('touchmove', mediaEvent).preventDefault).not.toHaveBeenCalled();
+    expect(dispatch('gesturestart', mediaEvent).preventDefault).not.toHaveBeenCalled();
   });
 });

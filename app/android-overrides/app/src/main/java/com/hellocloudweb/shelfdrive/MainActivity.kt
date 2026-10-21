@@ -1176,6 +1176,7 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onDestroy() {
+    Ipc.closeForWebView(findWebView(findViewById(android.R.id.content)))
     AppDiagnostics.recordEvent(applicationContext, "activity_destroyed")
     try {
       connectivityManager?.unregisterNetworkCallback(networkCallback)

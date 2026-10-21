@@ -1862,7 +1862,8 @@ pub async fn cmd_upload_file(
         .await?;
         crate::workspace::with_operation_account(
             &account,
-            cmd_upload_file_owned(
+            // Keep the large upload state machine off the worker stack too.
+            Box::pin(cmd_upload_file_owned(
                 path,
                 folder_id,
                 transfer_id,
@@ -1876,7 +1877,7 @@ pub async fn cmd_upload_file(
                 net_inner,
                 crypto_inner,
                 db_inner,
-            ),
+            )),
         )
         .await
     })

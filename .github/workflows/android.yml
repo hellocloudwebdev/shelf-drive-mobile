@@ -146,6 +146,9 @@ jobs:
       - name: Run bounded native exit trace JVM policy and storage checks
         working-directory: app
         run: bash scripts/test-native-exit-traces.sh
+      - name: Run bounded Android IPC executor JVM checks
+        working-directory: app
+        run: bash scripts/test-ipc-executor.sh
 
       - name: Verify JNI methods survived R8
         working-directory: app

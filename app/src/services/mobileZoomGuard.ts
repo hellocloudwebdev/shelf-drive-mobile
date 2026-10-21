@@ -1,10 +1,10 @@
 /**
- * Mobile (Android/iOS) page-zoom suppression.
+ * Android Tauri WebView page-zoom suppression.
  *
  * Why this exists: a phone has no reason to pinch-zoom an app shell. Chromium's
- * WebView ignores `user-scalable=no` in a growing number of builds, and iOS
- * ignores it entirely, so the viewport directive alone does not stop the UI from
- * drifting under a two-finger gesture. The native layer disables
+ * WebView ignores `user-scalable=no` in a growing number of builds, so the
+ * viewport directive alone does not stop the UI from drifting under a
+ * two-finger gesture. The native layer disables
  * `WebSettings.setSupportZoom`, but the gesture detector can still be reached.
  *
  * This guard blocks the remaining paths at the DOM level:
@@ -12,18 +12,18 @@
  *    non-standard WebKit/Chromium events used for pinch),
  *  - `touchmove` events that carry two or more active touches,
  *  - `ctrl`+wheel, which desktop Chromium/WebView report for trackpad pinch,
- *  - double-tap-to-zoom,
- *  - and it pins the viewport so the initial scale cannot drift.
+ *  - and it pins the viewport so the initial scale cannot drift. CSS touch-action
+ *    also suppresses browser double-tap zoom without cancelling the resulting click.
  *
- * Desktop is untouched: `isMobileRuntime` requires a mobile user agent or a
- * coarse pointer, so mouse/keyboard users keep normal browser zoom.
+ * The guard is installed only in the Android Tauri app. Ordinary desktop and
+ * mobile browsers keep their native zoom behavior for accessibility.
  */
 
 export interface MobileZoomGuardWindow {
-  navigator?: { userAgent?: string; maxTouchPoints?: number };
-  matchMedia?: (query: string) => { matches: boolean };
+  navigator?: { userAgent?: string };
   addEventListener?: (type: string, listener: (event: any) => void, options?: any) => void;
   document?: Document;
+  __TAURI_INTERNALS__?: unknown;
 }
 
 export interface MobileZoomGuardDocument {
@@ -35,38 +35,19 @@ export interface MobileZoomGuardDocument {
 }
 
 const MOBILE_ZOOM_GUARD_STYLE_ID = 'shelf-drive-mobile-zoom-guard';
-const DOUBLE_TAP_WINDOW_MS = 350;
 
 /** Non-passive so `preventDefault()` on touchmove is honoured by the browser. */
 const BLOCKING_LISTENER: AddEventListenerOptions = { passive: false, capture: true };
-const PASSIVE_LISTENER: AddEventListenerOptions = { passive: true, capture: true };
 
 const ZOOM_GUARD_CSS = `
-html, body {
-  touch-action: pan-x pan-y;
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-  overscroll-behavior: none;
-}
-#root, #root * {
+#root :not(:has(video, audio)) {
   touch-action: pan-x pan-y;
 }
 `;
 
-/** True for phone/tablet runtimes where page zoom should be unavailable. */
-export function isMobileRuntime(win: MobileZoomGuardWindow): boolean {
-  const userAgent = win.navigator?.userAgent ?? '';
-  const mobileUserAgent = /Android|iPhone|iPod|iPad|Mobile Safari|Windows Phone|webOS|BlackBerry/i.test(userAgent);
-  // iPadOS 13+ reports a desktop user agent; maxTouchPoints exposes the truth.
-  const tabletUserAgent = /Macintosh/i.test(userAgent) && (win.navigator?.maxTouchPoints ?? 0) > 1;
-  if (mobileUserAgent || tabletUserAgent) return true;
-
-  try {
-    const coarsePointer = win.matchMedia?.('(pointer: coarse)');
-    return Boolean(coarsePointer?.matches) && (win.navigator?.maxTouchPoints ?? 0) > 0;
-  } catch {
-    return false;
-  }
+/** The no-page-zoom policy belongs to Android's app WebView, not mobile browsers. */
+function isAndroidTauriRuntime(win: MobileZoomGuardWindow): boolean {
+  return Boolean(win.__TAURI_INTERNALS__) && /android/i.test(win.navigator?.userAgent ?? '');
 }
 
 /** Pin the viewport so the page cannot start zoomed or become zoomable. */
@@ -112,26 +93,31 @@ export function installMobileZoomGuard(
   const guardedDocument = (doc ?? win.document) as MobileZoomGuardDocument | undefined;
   if (!guardedDocument) return false;
 
-  const enabled = options.forceEnabled ?? isMobileRuntime(win);
+  const enabled = options.forceEnabled ?? isAndroidTauriRuntime(win);
   if (!enabled) return false;
   if (!win.addEventListener) return false;
 
   lockViewportScale(guardedDocument);
   injectZoomGuardStyles(guardedDocument);
 
+  const isMediaTarget = (event: any) => Boolean(event?.target?.closest?.('video, audio, [data-allow-mobile-zoom]'));
+
   const block = (event: any) => {
+    // Leave native media controls and explicitly zoomable media surfaces to their owner.
+    if (isMediaTarget(event)) return;
     if (event?.cancelable !== false) event.preventDefault?.();
     // Stop pointer-events-based zoom handlers that sit above the document.
     event?.stopPropagation?.();
   };
 
-  // WebKit/Chromium proprietary multi-touch gesture events (pinch).
-  win.addEventListener('gesturestart', block, PASSIVE_LISTENER);
-  win.addEventListener('gesturechange', block, PASSIVE_LISTENER);
-  win.addEventListener('gestureend', block, PASSIVE_LISTENER);
-  guardedDocument.addEventListener('gesturestart', block, PASSIVE_LISTENER);
-  guardedDocument.addEventListener('gesturechange', block, PASSIVE_LISTENER);
-  guardedDocument.addEventListener('gestureend', block, PASSIVE_LISTENER);
+  // WebKit/Chromium proprietary multi-touch gesture events (pinch). These must
+  // be non-passive or preventDefault() is ignored by the browser.
+  win.addEventListener('gesturestart', block, BLOCKING_LISTENER);
+  win.addEventListener('gesturechange', block, BLOCKING_LISTENER);
+  win.addEventListener('gestureend', block, BLOCKING_LISTENER);
+  guardedDocument.addEventListener('gesturestart', block, BLOCKING_LISTENER);
+  guardedDocument.addEventListener('gesturechange', block, BLOCKING_LISTENER);
+  guardedDocument.addEventListener('gestureend', block, BLOCKING_LISTENER);
 
   // Any two-finger scroll/pinch. A single finger must still scroll the app.
   guardedDocument.addEventListener(
@@ -150,25 +136,6 @@ export function installMobileZoomGuard(
       if (event?.ctrlKey) block(event);
     },
     BLOCKING_LISTENER,
-  );
-
-  // iOS Safari zooms on double tap even with the viewport pinned.
-  let lastTouchEnd = 0;
-  guardedDocument.addEventListener(
-    'touchend',
-    (event: any) => {
-      const now = Date.now();
-      if (now - lastTouchEnd <= DOUBLE_TAP_WINDOW_MS) block(event);
-      lastTouchEnd = now;
-    },
-    BLOCKING_LISTENER,
-  );
-
-  // Some Android builds zoom on a `dblclick` synthesised from two taps.
-  guardedDocument.addEventListener(
-    'dblclick',
-    (event: any) => block(event),
-    { passive: false, capture: true },
   );
 
   return true;

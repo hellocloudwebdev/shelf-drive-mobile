@@ -45,7 +45,7 @@ describe('Android local native trace integration contracts', () => {
 
   it('reproduces the native policy and store in generated Android builds', () => {
     const apply = read('scripts/apply-android-overrides.cjs');
-    for (const file of ['AppDiagnostics.kt', 'NativeExitTraceStore.kt', 'NativeExitTracePolicy.kt', 'Ipc.kt']) {
+    for (const file of ['AppDiagnostics.kt', 'NativeExitTraceStore.kt', 'NativeExitTracePolicy.kt', 'Ipc.kt', 'BoundedIpcExecutor.kt', 'IpcErrorCallback.kt']) {
       expect(apply).toContain(`app/src/main/java/com/hellocloudweb/shelfdrive/${file}`);
     }
   });
@@ -54,9 +54,21 @@ describe('Android local native trace integration contracts', () => {
     const ipc = read(`${native}Ipc.kt`);
     expect(ipc).toContain('@Keep');
     expect(ipc).toContain('class Ipc');
-    expect(ipc).toContain('ipcExecutor = Executors.newCachedThreadPool');
-    expect(ipc).toContain('2 * 1024 * 1024');
-    expect(ipc).toContain('Rust.ipc(webViewId, currentUrl, m)');
+    expect(ipc).toContain('ipcExecutor = BoundedIpcExecutor(');
+    expect(ipc).not.toContain('newCachedThreadPool');
+    expect(ipc).toContain('Rust.ipc(webViewId, currentUrl, message)');
+    expect(ipc).toContain('IpcErrorCallback.rejectionScript(errorCallbackId)');
+    expect(ipc).toContain('!client.active || webViewClient.currentUrl != capturedUrl');
+    const executor = read(`${native}BoundedIpcExecutor.kt`);
+    expect(executor).toContain('DEFAULT_MAX_WORKERS = 2');
+    expect(executor).toContain('DEFAULT_QUEUE_CAPACITY = 16');
+    expect(executor).toContain('2L * 1024L * 1024L');
+    expect(executor).toContain('allowCoreThreadTimeOut(true)');
+    expect(executor).toContain('ArrayBlockingQueue(queueCapacity)');
+    expect(read(`${native}MainActivity.kt`)).toContain('Ipc.closeForWebView(findWebView(findViewById(android.R.id.content)))');
+    const gradle = read('android-overrides/app/build.gradle.kts');
+    expect(gradle).toContain('tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>()');
+    expect(gradle).toContain('exclude { it.file.name == "Ipc.kt" && it.file.parentFile.name == "generated" }');
     const proguard = read('android-overrides/app/proguard-rules.pro');
     expect(proguard).toContain('-keep class com.hellocloudweb.shelfdrive.Ipc { *; }');
   });

@@ -34,12 +34,13 @@ class AndroidPlatformContractTest {
     InstrumentationRegistry.getInstrumentation().runOnMainSync {
       val webView = WebView(context)
       try {
+        webView.settings.textZoom = 125
         AndroidWebViewZoomPolicy.apply(webView)
 
         assertFalse(webView.settings.supportZoom())
         assertFalse(webView.settings.builtInZoomControls)
         assertFalse(webView.settings.displayZoomControls)
-        assertEquals(100, webView.settings.textZoom)
+        assertEquals(125, webView.settings.textZoom)
       } finally {
         webView.destroy()
       }
