@@ -140,7 +140,12 @@ adb_retry shell settings put global window_animation_scale 0
 adb_retry shell settings put global transition_animation_scale 0
 adb_retry shell settings put global animator_duration_scale 0
 
-for native_abi in arm64-v8a armeabi-v7a x86 x86_64; do
+read -r -a test_native_abis <<< "${ANDROID_TEST_NATIVE_ABIS:-arm64-v8a armeabi-v7a x86 x86_64}"
+for native_abi in "${test_native_abis[@]}"; do
+  case "$native_abi" in
+    arm64-v8a|armeabi-v7a|x86|x86_64) ;;
+    *) echo "Unsupported test native ABI: $native_abi" >&2; exit 2 ;;
+  esac
   native_library="$APP_ROOT/src-tauri/gen/android/app/src/main/jniLibs/$native_abi/libapp_lib.so"
   if [[ ! -e "$native_library" ]]; then
     echo "Missing prebuilt universal JNI library: $native_library" >&2

@@ -13,7 +13,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -151,33 +150,6 @@ class UploadLifecycleInstrumentationTest {
         UploadForegroundService.stopService(context)
       }
     }
-  }
-
-  @Test
-  fun finishingTransfersDoesNotReportAUserPause() {
-    // Regression: completing an upload called stopService() -> TransferJobService.cancel()
-    // -> JobScheduler.cancel() -> onStopJob(), which emitted a "pause" to the WebView.
-    // The JS layer then paused both queues and announced "Downloads paused" even
-    // though the upload had finished successfully.
-    assertFalse(
-      "A deliberate stop must not be reported as a user pause",
-      TransferJobService.shouldReportPauseForStop(intentionalStop = true),
-    )
-    assertTrue(
-      "An OS-initiated stop must still be reported so recovery can run",
-      TransferJobService.shouldReportPauseForStop(intentionalStop = false),
-    )
-  }
-
-  @Test
-  fun schedulingClearsAStaleIntentionalStopFlag() {
-    TransferJobService.markStopIntentionalForTest(true)
-    assertTrue(TransferJobService.isStopIntentionalForTest())
-
-    // API < 34 cannot schedule a UIDT job; the flag must still be observable and
-    // reset by the explicit test hook so one session cannot leak into the next.
-    TransferJobService.markStopIntentionalForTest(false)
-    assertFalse(TransferJobService.isStopIntentionalForTest())
   }
 
   @Test

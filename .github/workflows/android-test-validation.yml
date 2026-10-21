@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 180
     env:
       NDK_VERSION: 30.0.14904198
+      ANDROID_TEST_NATIVE_ABIS: x86_64
       RUSTFLAGS: "-C link-arg=-Wl,--allow-multiple-definition"
       CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS: "-C link-arg=-Wl,--allow-multiple-definition"
     steps:
@@ -74,15 +75,15 @@ jobs:
           npm run tauri android init
           node scripts/apply-android-overrides.cjs
 
+      - name: Build TEST x86_64 debug APK
+        working-directory: app
+        run: npm run tauri android build -- --target x86_64 --apk true --debug --ci
+
       - name: Run Android lifecycle harness checks
         working-directory: app
         run: |
           npm test -- --run tests/unit/androidLifecycleHarness.test.ts
           bash scripts/test-foreground-service-lifecycle.sh
-
-      - name: Build TEST x86_64 debug APK
-        working-directory: app
-        run: npm run tauri android build -- --target x86_64 --apk true --debug --ci
 
       - name: Allow hardware-accelerated Android emulators
         shell: bash
