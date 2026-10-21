@@ -3,11 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthWizard } from '../../src/components/shared/AuthWizard';
 import { AuthCodeStep } from '../../src/components/shared/auth/AuthSteps';
 import { AUTH_COMMAND_TIMEOUT_MS } from '../../src/api';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { open as shellOpen } from '@tauri-apps/plugin-shell';
 
 const invokeMock = vi.fn();
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (...args: unknown[]) => invokeMock(...args) }));
 vi.mock('@tauri-apps/plugin-shell', () => ({ open: vi.fn() }));
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn(async () => undefined) }));
 vi.mock('@tauri-apps/plugin-store', () => ({
   load: vi.fn(async () => ({
     get: vi.fn(async () => null),
@@ -84,6 +87,31 @@ describe('AuthWizard phone authentication', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it.each(['my.telegram.org', 'Open my.telegram.org'])('opens the developer portal from %s using the native browser opener', async (name) => {
+    render(<AuthWizard onLogin={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'How do I get my API credentials?' }));
+    fireEvent.click(screen.getByRole('button', { name, exact: true }));
+
+    await waitFor(() => expect(openUrl).toHaveBeenCalledExactlyOnceWith('https://my.telegram.org'));
+    expect(shellOpen).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('shows browser-launch failures inside the help modal and permits retry', async () => {
+    vi.mocked(openUrl).mockRejectedValueOnce(new Error('No browser available'));
+    render(<AuthWizard onLogin={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'How do I get my API credentials?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open my.telegram.org', exact: true }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Could not open your browser.');
+    expect(alert.textContent).toContain('https://my.telegram.org');
+    expect(alert.parentElement?.textContent).toContain('Open my.telegram.org');
+    fireEvent.click(screen.getByRole('button', { name: 'my.telegram.org', exact: true }));
+    await waitFor(() => expect(openUrl).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('preserves setup, phone-code, and successful sign-in sequencing', async () => {
