@@ -195,6 +195,16 @@ class UploadLifecycleInstrumentationTest {
       // The upload finished: the app stops its own transfer services.
       UploadForegroundService.stopService(context)
 
+      // Duplicate terminal requests and immediately restarted generations must
+      // not cancel foreground promotion or leave a delayed service alive.
+      repeat(2) {
+        UploadForegroundService.stopService(context)
+        UploadForegroundService.startService(context)
+        UploadForegroundService.updateService(context, active = 1, percent = 100, speed = 0L, isPaused = false)
+        UploadForegroundService.stopService(context)
+        UploadForegroundService.stopService(context)
+      }
+
       // Intentional stop must not flip the shared preference into a paused state.
       val preferences = context.getSharedPreferences("telegram_drive_transfer_recovery_v1", Context.MODE_PRIVATE)
       assertFalse("Transfers must not be marked paused after a completed upload", preferences.getBoolean("paused", false))

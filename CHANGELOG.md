@@ -3,6 +3,7 @@
 - Open both my.telegram.org controls in Getting Started through the system browser using the mobile-supported URL opener and its required capability. Show a visible retry/manual-open message if the browser cannot launch.
 - Keep the update notification below the status bar, stack its message and actions on narrow screens, and prevent Update & Restart from wrapping into overlapping lines.
 - Update certificate-verification dependencies to reject distrusted emSign certificate paths, preserving the existing dependency security gate without advisory exceptions.
+- Serialize upload-service startup and completion shutdown so a very fast transfer cannot cancel foreground promotion; keep duplicate or stale stop requests from affecting a newer transfer run.
 ### Release tracks
 - Production retains its existing application identity, signing, updater, and bounded app-only diagnostics.
 - Shelf Drive TEST remains a separate app with its dedicated signing key and disabled production updater. Both tracks provide a universal APK and AAB.

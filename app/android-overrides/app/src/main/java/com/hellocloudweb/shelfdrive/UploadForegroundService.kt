@@ -100,6 +100,10 @@ class UploadForegroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // A restart can reuse an instance whose earlier stop removed its
+    // notification. Promote before terminal/stale cleanup too, so every
+    // delivered foreground start satisfies Android's startup contract.
+    startAsForeground(createNotification())
     val requestedGeneration = intent?.getLongExtra(EXTRA_GENERATION, 0L) ?: 0L
     val generation = if (requestedGeneration > 0L) requestedGeneration
       else lifecyclePolicy.onUntrackedServiceStart()
@@ -115,9 +119,6 @@ class UploadForegroundService : Service() {
       }
       ForegroundServiceLifecyclePolicy.StartDisposition.PROCESS -> serviceGeneration = generation
     }
-    // A newer start can be delivered to an instance whose earlier stop already
-    // removed its notification; promote before processing that command too.
-    startAsForeground(createNotification())
     when (intent?.action) {
       ACTION_UPDATE -> {
         activeCount = intent.getIntExtra(EXTRA_ACTIVE, activeCount).coerceAtLeast(0)
