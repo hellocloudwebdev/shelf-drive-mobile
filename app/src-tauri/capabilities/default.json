@@ -13,6 +13,10 @@
     "core:default",
     "os:default",
     "shell:allow-open",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://my.telegram.org" }]
+    },
     "store:default",
     "updater:default",
     "process:allow-restart",

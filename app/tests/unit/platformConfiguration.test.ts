@@ -30,14 +30,29 @@ describe('target-specific Tauri capabilities', () => {
 
   it('scopes the Android opener permission to default-scheme URLs only', () => {
     // Every mobile openUrl call targets an https:// page (releases page,
-    // privacy policy, project site). opener:default would additionally grant
-    // the unscoped open_url command (arbitrary paths) and reveal-item-in-dir,
-    // neither of which the mobile app uses.
+    // privacy policy, project site, Telegram portal). The command permission
+    // and URL scope are both required: allow-default-urls alone is scope-only.
+    // Do not grant open_path or reveal-item-in-dir to the mobile webview.
     const mobile = readJson('src-tauri/capabilities/mobile.json') as {
       permissions?: string[];
     };
 
+    expect(mobile.permissions).toContain('opener:allow-open-url');
     expect(mobile.permissions).toContain('opener:allow-default-urls');
     expect(mobile.permissions).not.toContain('opener:default');
+    expect(mobile.permissions).not.toContain('opener:allow-open-path');
+    expect(mobile.permissions).not.toContain('opener:allow-reveal-item-in-dir');
+  });
+
+  it('limits the desktop browser opener to the Telegram developer portal', () => {
+    const desktop = readJson('src-tauri/capabilities/default.json') as {
+      permissions: Array<string | { identifier: string; allow?: unknown[] }>;
+    };
+    expect(desktop.permissions).toContainEqual({
+      identifier: 'opener:allow-open-url',
+      allow: [{ url: 'https://my.telegram.org' }],
+    });
+    expect(desktop.permissions).not.toContain('opener:default');
+    expect(desktop.permissions).not.toContain('opener:allow-default-urls');
   });
 });

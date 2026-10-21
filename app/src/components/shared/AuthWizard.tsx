@@ -5,6 +5,7 @@ import { Sun, Moon, ExternalLink, X, Heart } from "lucide-react";
 import { load } from '@tauri-apps/plugin-store';
 import { useTheme } from '../../context/ThemeContext';
 import { open } from '@tauri-apps/plugin-shell';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import {
     AuthCodeStep,
     AuthMethodStep,
@@ -50,6 +51,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
     const [error, setError] = useState<string | null>(null);
     const [floodWait, setFloodWait] = useState<number | null>(null);
     const [showHelp, setShowHelp] = useState(false);
+    const [portalOpenError, setPortalOpenError] = useState<string | null>(null);
     const [showDonate, setShowDonate] = useState(false);
     const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
     const [loginMethod, setLoginMethod] = useState<'phone' | 'qr'>(() => isMobile ? 'phone' : 'qr');
@@ -438,6 +440,16 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
         void handleQrLogin();
     };
 
+    const handleOpenTelegramPortal = async () => {
+        setPortalOpenError(null);
+        try {
+            // plugin-shell uses a desktop process launcher; opener dispatches the
+            // Android ACTION_VIEW intent to the user's default browser instead.
+            await openUrl('https://my.telegram.org');
+        } catch {
+            setPortalOpenError('Could not open your browser. Open https://my.telegram.org manually, or tap the button to try again.');
+        }
+    };
     const handleOpenFragment = async () => {
         if (!codeDelivery?.fragmentUrl) return;
         try {
@@ -637,7 +649,7 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
                                         Go to Telegram's Developer Portal
                                     </h3>
                                     <p className="ms-7 text-ui leading-relaxed text-app-text-secondary">
-                                        Visit <button type="button" onClick={(e) => { e.preventDefault(); open('https://my.telegram.org'); }} className="cursor-pointer text-app-accent underline hover:text-app-text">my.telegram.org</button> and log in with your phone number.
+                                        Visit <button type="button" onClick={() => { void handleOpenTelegramPortal(); }} className="cursor-pointer text-app-accent underline hover:text-app-text">my.telegram.org</button> and log in with your phone number.
                                     </p>
                                 </div>
 
@@ -669,12 +681,17 @@ export function AuthWizard({ onLogin }: { onLogin: () => void }) {
 
                                 <button
                                     type="button"
-                                    onClick={(e) => { e.preventDefault(); open('https://my.telegram.org'); }}
+                                    onClick={() => { void handleOpenTelegramPortal(); }}
                                     className="quiet-control auth-primary-action"
                                 >
                                     <ExternalLink className="w-4 h-4" />
                                     Open my.telegram.org
                                 </button>
+                                {portalOpenError && (
+                                    <p role="alert" className="text-ui leading-relaxed text-app-danger">
+                                        {portalOpenError}
+                                    </p>
+                                )}
                             </div>
                         </motion.div>
                     </motion.div>
