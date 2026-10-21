@@ -93,6 +93,18 @@ class UploadLifecycleInstrumentationTest {
     return notification
   }
 
+  private fun waitForNotificationGone(notificationId: Int, timeoutMs: Long = 5_000) {
+    val deadline = System.currentTimeMillis() + timeoutMs
+    while (System.currentTimeMillis() < deadline) {
+      if (notificationManager.activeNotifications.none { it.id == notificationId }) return
+      Thread.sleep(100)
+    }
+    assertTrue(
+      "Upload notification $notificationId was not removed after service stop",
+      notificationManager.activeNotifications.none { it.id == notificationId },
+    )
+  }
+
   @Test
   fun foregroundServiceUpdatesAndSurvivesActivityBackgroundResume() {
     assertTrue("This test needs Android O+ foreground-service support", Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -166,6 +178,7 @@ class UploadLifecycleInstrumentationTest {
     scenario.moveToState(Lifecycle.State.RESUMED)
     try {
       UploadForegroundService.startService(context)
+      val notificationId = if (TransferJobService.isPending(context)) 2028 else 2026
       UploadForegroundService.updateService(context, active = 1, percent = 100, speed = 0L, isPaused = false)
 
       // The upload finished: the app stops its own transfer services.
@@ -175,6 +188,7 @@ class UploadLifecycleInstrumentationTest {
       val preferences = context.getSharedPreferences("telegram_drive_transfer_recovery_v1", Context.MODE_PRIVATE)
       assertFalse("Transfers must not be marked paused after a completed upload", preferences.getBoolean("paused", false))
       assertFalse("Transfers must not stay pending after completion", TransferRecoveryWorker.hasPendingTransfers(context))
+      waitForNotificationGone(notificationId)
     } finally {
       UploadForegroundService.stopService(context)
     }
