@@ -18,12 +18,12 @@ export function SettingsSection({ title, children, className }: SettingsSectionP
   return (
     <section
       className={cx(
-        'overflow-hidden rounded-overlay border border-app-border-subtle bg-app-surface-raised/70 shadow-[var(--shadow-raised)]',
+        'glass-surface mobile-glass-card overflow-hidden rounded-overlay',
         className,
       )}
       aria-label={title}
     >
-      <h3 className="px-4 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wide text-app-text-tertiary">{title}</h3>
+      <h3 className="px-4 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-[0.13em] text-app-text-tertiary">{title}</h3>
       <div>
         {items.map((item, index) => (
           <Fragment key={index}>
@@ -52,7 +52,7 @@ export function SettingsRow({ icon, title, description, trailing, onClick, chevr
   const content = (
     <>
       {icon && (
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-app-accent/10 text-app-accent" aria-hidden="true">
+        <span className="mobile-glass-icon-tile flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-app-accent/10 text-app-accent" aria-hidden="true">
           {icon}
         </span>
       )}

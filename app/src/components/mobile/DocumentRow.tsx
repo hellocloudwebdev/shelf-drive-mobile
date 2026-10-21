@@ -21,13 +21,13 @@ export function DocumentRow({ file, onOpen, onActions, onToggleFavorite }: Docum
   const isFavorite = file.is_favorite === true;
 
   return (
-    <div className="press-row flex min-h-14 items-center gap-1 rounded-[1.125rem] border border-app-border-subtle bg-app-surface-raised/60 p-2.5 shadow-[var(--shadow-raised)] hover:bg-app-hover">
+    <div className="glass-surface mobile-glass-card press-row flex min-h-14 items-center gap-1 rounded-[1.125rem] p-2.5">
       <button
         type="button"
         onClick={() => onOpen(file)}
         className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-xl text-start focus-visible:outline-app-accent"
       >
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-app-surface-sunken/70">
+        <span className="mobile-glass-icon-tile flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-app-surface-sunken/70">
           <FileTypeIcon filename={file.name} />
         </span>
         <span className="min-w-0">

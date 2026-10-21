@@ -54,7 +54,7 @@ export function MobileBottomNav({ activeTab, onChange, isAndroid, isTelevision }
   return (
     <nav
       aria-label="Primary"
-      className={cx('glass-nav fixed z-50 rounded-full p-1.5', positionClass)}
+      className={cx('mobile-bottom-nav glass-nav fixed z-50 rounded-full p-1.5', positionClass)}
     >
       <div className="relative flex w-full">
         <span
@@ -75,14 +75,16 @@ export function MobileBottomNav({ activeTab, onChange, isAndroid, isTelevision }
               aria-current={isActive ? 'page' : undefined}
               aria-label={label}
               className={cx(
-                'relative z-10 flex min-h-[3.75rem] flex-1 flex-col items-center justify-center gap-1 rounded-full px-0.5 transition-[color,transform] duration-200 ease-out motion-reduce:transition-none active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-app-accent',
+                'mobile-bottom-nav-item relative z-10 flex min-h-[3.75rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-0.5 transition-[color,transform] duration-200 ease-out motion-reduce:transition-none active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-app-accent',
                 isActive ? 'text-cyan-950' : 'text-app-text-secondary hover:text-app-text',
               )}
             >
-              <Icon
-                className={cx('h-5 w-5 transition-transform duration-200 motion-reduce:transition-none', isActive && 'scale-105')}
-                aria-hidden="true"
-              />
+              <span className={cx('flex h-8 w-8 items-center justify-center rounded-full transition-[background-color,transform] duration-200 motion-reduce:transition-none', isActive ? 'bg-cyan-500/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]' : 'bg-transparent')}>
+                <Icon
+                  className={cx('h-5 w-5 transition-transform duration-200 motion-reduce:transition-none', isActive && 'scale-105')}
+                  aria-hidden="true"
+                />
+              </span>
               <span className={cx('whitespace-nowrap text-[10px] tracking-tight', isActive ? 'font-semibold' : 'font-medium')}>{label}</span>
             </button>
           );

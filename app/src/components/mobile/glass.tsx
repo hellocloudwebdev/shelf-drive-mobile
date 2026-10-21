@@ -23,7 +23,7 @@ interface GlassSurfaceProps extends HTMLAttributes<HTMLDivElement> {
 
 export function GlassSurface({ variant = 'surface', className, children, ...rest }: GlassSurfaceProps) {
   return (
-    <div className={cx(VARIANT_CLASS[variant], className)} {...rest}>
+    <div className={cx(VARIANT_CLASS[variant], variant === 'surface' && 'mobile-glass-card', className)} {...rest}>
       {children}
     </div>
   );

@@ -49,7 +49,7 @@ export function PhotoTile({ file, onOpen }: PhotoTileProps) {
     <button
       type="button"
       onClick={() => onOpen(file)}
-      className="press-row relative aspect-square overflow-hidden rounded-xl bg-app-surface-sunken focus-visible:outline-app-accent"
+      className="mobile-glass-media press-row relative aspect-square overflow-hidden rounded-[1.125rem] bg-app-surface-sunken focus-visible:outline-app-accent"
       aria-label={file.name}
     >
       {src ? (
@@ -89,7 +89,7 @@ interface PhotoGridProps {
 
 export function PhotoGrid({ files, onOpen, className }: PhotoGridProps) {
   return (
-    <div role="list" className={cx('grid grid-cols-3 gap-1.5', className)}>
+    <div role="list" className={cx('grid grid-cols-3 gap-2', className)}>
       {files.map(file => (
         <div role="listitem" key={file.id}>
           <PhotoTile file={file} onOpen={onOpen} />

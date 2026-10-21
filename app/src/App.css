@@ -1166,3 +1166,24 @@ label.search-field input[type="search"]:focus-visible {
     transition: none !important;
   }
 }
+
+
+/* Mobile content uses the shared glass surfaces; keep modifiers to accent details. */
+.mobile-glass-card {
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--color-app-accent) 9%, transparent), transparent 58%);
+  border-color: color-mix(in srgb, var(--color-app-accent) 18%, var(--glass-border));
+}
+.mobile-glass-icon-tile {
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--color-app-accent) 12%, transparent), transparent);
+}
+.mobile-glass-segmented {
+  background: color-mix(in srgb, var(--color-app-surface-sunken) 62%, var(--glass-bg));
+  border: 1px solid var(--glass-border);
+}
+.mobile-glass-segment-selected {
+  background: color-mix(in srgb, var(--color-app-accent) 18%, var(--glass-bg));
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+.mobile-glass-media {
+  border: 1px solid color-mix(in srgb, var(--color-app-accent) 22%, var(--glass-border));
+}

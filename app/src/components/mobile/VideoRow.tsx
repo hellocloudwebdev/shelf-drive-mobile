@@ -35,7 +35,7 @@ function VideoThumbnail({ file }: VideoThumbnailProps) {
   }, [file.id, file.folder_id]);
 
   return (
-    <div className="relative h-[4.25rem] w-[7.5rem] shrink-0 overflow-hidden rounded-xl bg-app-surface-sunken">
+    <div className="mobile-glass-media relative h-[4.25rem] w-[7.5rem] shrink-0 overflow-hidden rounded-xl bg-app-surface-sunken">
       {src ? (
         <img
           src={src}
@@ -75,7 +75,7 @@ export function VideoRow({ file, onPlay, onActions }: VideoRowProps) {
   return (
     <div
       role="listitem"
-      className="press-row flex items-center gap-2.5 rounded-[1.125rem] border border-app-border-subtle bg-app-surface-raised/60 p-2.5 shadow-[var(--shadow-raised)] hover:bg-app-hover"
+      className="glass-surface mobile-glass-card press-row flex items-center gap-2.5 rounded-[1.125rem] p-2.5"
     >
       <button
         type="button"

@@ -1,3 +1,13 @@
+## [4.5.2] - 2026-10-22
+
+### Changed
+- Refresh the mobile interface with frosted surfaces, cyan accents, rounded file cards and five-tab navigation inspired by the supplied design.
+- Keep live file, folder, search, transfer and settings actions connected to the existing backend.
+- Preserve the status bar and floating upload button appearance and Android API 31–36 support.
+
+### Security
+- Retain the patched updater using ZIP 9.0.4; ZIP security advisories remain release-blocking without exceptions.
+
 ## [4.5.1] - 2026-10-21
 ### Fixed
 - Open both my.telegram.org controls in Getting Started through the system browser using the mobile-supported URL opener and its required capability. Show a visible retry/manual-open message if the browser cannot launch.

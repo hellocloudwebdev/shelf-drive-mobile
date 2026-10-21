@@ -7,22 +7,22 @@ const OPTIONS = [
     id: 'system',
     label: 'System',
     icon: Monitor,
-    wash: 'bg-gradient-to-r from-rose-200/70 via-pink-100/60 to-rose-100/40',
-    iconColor: 'text-rose-500',
+    wash: 'mobile-glass-segment-selected',
+    iconColor: 'text-app-accent',
   },
   {
     id: 'light',
     label: 'Light',
     icon: Sun,
-    wash: 'bg-gradient-to-r from-amber-200/70 via-amber-100/60 to-orange-100/40',
-    iconColor: 'text-amber-500',
+    wash: 'mobile-glass-segment-selected',
+    iconColor: 'text-app-accent',
   },
   {
     id: 'dark',
     label: 'Dark',
     icon: Moon,
-    wash: 'bg-gradient-to-r from-blue-300/70 via-blue-200/60 to-sky-100/40',
-    iconColor: 'text-blue-500',
+    wash: 'mobile-glass-segment-selected',
+    iconColor: 'text-app-accent',
   },
 ] as const;
 
@@ -39,7 +39,7 @@ export function ThemeSegmented() {
     themePreference === 'system' ? 'system' : theme === 'light' ? 'light' : 'dark';
 
   return (
-    <div role="radiogroup" aria-label="App theme" className="flex gap-1 rounded-full bg-app-surface-raised p-1 shadow-[var(--shadow-raised)]">
+    <div role="radiogroup" aria-label="App theme" className="mobile-glass-segmented flex gap-1 rounded-full p-1">
       {OPTIONS.map(({ id, label, icon: Icon, wash, iconColor }) => {
         const isSelected = id === selected;
         return (

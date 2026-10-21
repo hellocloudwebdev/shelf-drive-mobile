@@ -23,6 +23,7 @@ import { FileRow, FileRowSkeleton } from './FileRow';
 import { PhotoGrid, PhotoGridSkeleton } from './PhotoGrid';
 import { VideoList, VideoListSkeleton } from './VideoRow';
 import { DocumentList, DocumentListSkeleton } from './DocumentRow';
+import { MobileHomeOverview } from './MobileHomeOverview';
 import { SettingsSection, SettingsRow, SettingsToggleRow } from './SettingsSection';
 import { usePlatform, isMobilePreview } from '../../hooks/usePlatform';
 import { useTelegramConnection } from '../../hooks/useTelegramConnection';
@@ -1011,7 +1012,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     <div className={`atmospheric-canvas absolute inset-0 flex flex-col text-telegram-text overflow-hidden select-none font-sans ${isTelevision ? 'tv-shell' : ''}`}>
       <main
         ref={scrollRootRef}
-        className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-44 scroll-smooth"
+        className="mobile-dashboard-content mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-44 scroll-smooth"
       >
         {/* ── Transfers overlay view ──────────────────────────────────── */}
         {transfersOpen ? (
@@ -1157,7 +1158,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
           </div>
         ) : activeTab === 'home' && (
           /* ── Home ────────────────────────────────────────────────────── */
-          <div className="space-y-4">
+          <div className="mobile-home-view space-y-4">
             <header className="flex items-center justify-between gap-3 pt-1">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-app-accent/12 shadow-[var(--shadow-raised)]">
@@ -1182,22 +1183,19 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
               <>
                 <GlassSearch value={homeSearch} onChange={setHomeSearch} placeholder="Search files and folders..." />
 
-                <FilterChipRow
-                  ariaLabel="Quick filters"
-                  activeId="all"
-                  options={[
-                    { id: 'all', label: i18n.t('common.all') },
-                    { id: 'photos', label: i18n.t('common.photos') },
-                    { id: 'videos', label: i18n.t('common.videos') },
-                    { id: 'documents', label: i18n.t('common.documents') },
-                  ]}
-                  onChange={(id) => {
-                    if (id === 'all') {
-                      setActiveTab('home');
-                    } else {
-                      setActiveTab(id as MobileTab);
-                    }
+                <MobileHomeOverview
+                  files={allFiles}
+                  loading={isLoading}
+                  contextLabel={i18n.t('common.saved_messages')}
+                  labels={{
+                    overview: i18n.t('common.storage_insights'),
+                    files: i18n.t('common.files'),
+                    knownSize: i18n.t('common.size'),
+                    photos: i18n.t('common.photos'),
+                    videos: i18n.t('common.videos'),
+                    documents: i18n.t('common.documents'),
                   }}
+                  onNavigate={tab => setActiveTab(tab)}
                 />
               </>
             )}
@@ -1219,7 +1217,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             ) : isBrowsing ? (
               <>
                 {/* Folder / smart view browsing */}
-                <div className="flex items-center justify-between gap-2 rounded-[1.125rem] border border-app-border-subtle bg-app-surface-raised/60 p-2.5 shadow-[var(--shadow-raised)]">
+                <div className="mobile-browse-toolbar glass-surface flex items-center justify-between gap-2 rounded-[1.35rem] border border-app-border-subtle p-2.5 shadow-[var(--shadow-raised)]">
                   <div className="flex min-w-0 items-center gap-2">
                     <GlassIconButton label="Back to Home" className="h-9 w-9" onClick={() => { setActiveFolderId(null); setActiveView(null); }}>
                       <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -1387,7 +1385,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
         {/* ── Photos ──────────────────────────────────────────────────── */}
         {activeTab === 'photos' && (
-          <div className="space-y-3">
+          <div className="mobile-library-view space-y-3">
             <header className="flex items-center gap-2 pt-1">
               <GlassIconButton label="Back to Home" onClick={() => setActiveTab('home')}>
                 <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
@@ -1433,7 +1431,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
         {/* ── Videos ──────────────────────────────────────────────────── */}
         {activeTab === 'videos' && (
-          <div className="space-y-3">
+          <div className="mobile-library-view space-y-3">
             <header className="flex items-center gap-2 pt-1">
               <GlassIconButton label="Back to Home" onClick={() => setActiveTab('home')}>
                 <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
@@ -1468,7 +1466,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
         {/* ── Documents ───────────────────────────────────────────────── */}
         {activeTab === 'documents' && (
-          <div className="space-y-3">
+          <div className="mobile-library-view space-y-3">
             <header className="flex items-center gap-2 pt-1">
               <GlassIconButton label="Back to Home" onClick={() => setActiveTab('home')}>
                 <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
@@ -1503,8 +1501,8 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
         {/* ── Settings ────────────────────────────────────────────────── */}
         {activeTab === 'settings' && (
-          <div className="space-y-4">
-            <header className="pt-1">
+          <div className="mobile-settings-view space-y-4">
+            <header className="mobile-settings-heading glass-surface rounded-[1.4rem] border border-white/50 px-4 py-3.5 shadow-[var(--shadow-raised)]">
               <h1 className="text-xl font-bold tracking-tight text-app-text">{i18n.t('common.settings')}</h1>
               <p className="text-metadata text-app-text-secondary">Shelf Drive v{appVersion}</p>
             </header>
