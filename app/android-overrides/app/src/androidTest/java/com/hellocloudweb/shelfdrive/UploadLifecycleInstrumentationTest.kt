@@ -105,6 +105,17 @@ class UploadLifecycleInstrumentationTest {
     )
   }
 
+  private fun assertNotificationRemainsGone(notificationId: Int, durationMs: Long = 7_000) {
+    val deadline = System.currentTimeMillis() + durationMs
+    while (System.currentTimeMillis() < deadline) {
+      assertTrue(
+        "Upload notification $notificationId reappeared after stop",
+        notificationManager.activeNotifications.none { it.id == notificationId },
+      )
+      Thread.sleep(100)
+    }
+  }
+
   @Test
   fun foregroundServiceUpdatesAndSurvivesActivityBackgroundResume() {
     assertTrue("This test needs Android O+ foreground-service support", Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -189,6 +200,7 @@ class UploadLifecycleInstrumentationTest {
       assertFalse("Transfers must not be marked paused after a completed upload", preferences.getBoolean("paused", false))
       assertFalse("Transfers must not stay pending after completion", TransferRecoveryWorker.hasPendingTransfers(context))
       waitForNotificationGone(notificationId)
+      assertNotificationRemainsGone(notificationId) // no delayed start may revive it past the FGS watchdog window
     } finally {
       UploadForegroundService.stopService(context)
     }

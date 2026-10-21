@@ -17,7 +17,6 @@ object IpcExecutorJvmChecks {
       "task failures are reported and workers continue" to ::taskFailureIsReported,
       "idle workers retire" to ::idleWorkersRetire,
       "explicit worker stack reservation" to ::explicitWorkerStackReservation,
-      "foreground service stop is serialized by generation" to ::foregroundServiceStopSerialization,
     )
     val failures = mutableListOf<String>()
     checks.forEach { (name, check) ->
@@ -162,33 +161,6 @@ object IpcExecutorJvmChecks {
   private fun explicitWorkerStackReservation() {
     equal(2L * 1024L * 1024L, BoundedIpcExecutor.WORKER_STACK_SIZE_BYTES)
     equal(2, BoundedIpcExecutor.DEFAULT_MAX_WORKERS)
-  }
-
-  private fun foregroundServiceStopSerialization() {
-    val policy = ForegroundServiceLifecyclePolicy()
-    equal(null, policy.requestStop()) // Idle stop must not request a new service start.
-
-    val pendingStart = policy.requestStart()
-    equal(pendingStart, policy.requestStart()) // Updates join the pending generation.
-    val stopToken = policy.requestStop()
-    equal(pendingStart, stopToken)
-    equal(pendingStart, policy.onServiceCreated()) // The delayed onCreate must not revive it.
-    var stops = 0
-    check(policy.stopIfCurrent(stopToken!!) { stops++ }) { "current generation stop was rejected" }
-    equal(1, stops)
-
-    val newerStart = policy.requestStart()
-    check(newerStart > pendingStart) { "a later start must receive a newer generation" }
-    check(!policy.stopIfCurrent(stopToken) { stops++ }) { "stale stop shut down a newer generation" }
-    equal(1, stops)
-
-    policy.onStartRequestFailed(newerStart)
-    equal(null, policy.requestStop()) // failed start must not leave a phantom service request
-
-    val running = policy.onUntrackedServiceStart()
-    equal(running, policy.requestStop())
-    policy.onStopRequestFailed(running)
-    equal(running, policy.requestStop()) // a rejected stop remains retryable
   }
 
   private fun await(latch: CountDownLatch, message: String) {

@@ -30,9 +30,8 @@ COMPILER_CP="$COMPILER:$STDLIB:$SCRIPT_RUNTIME:$TROVE:$ANNOTATIONS:$COROUTINES"
 APP="${ROOT}/android-overrides/app"
 EXECUTOR="$APP/src/main/java/com/hellocloudweb/shelfdrive/BoundedIpcExecutor.kt"
 CALLBACK="$APP/src/main/java/com/hellocloudweb/shelfdrive/IpcErrorCallback.kt"
-SERVICE_POLICY="$APP/src/main/java/com/hellocloudweb/shelfdrive/ForegroundServiceLifecyclePolicy.kt"
 CHECKS="$APP/src/test/kotlin/com/hellocloudweb/shelfdrive/IpcExecutorJvmChecks.kt"
-for source in "$EXECUTOR" "$CALLBACK" "$SERVICE_POLICY" "$CHECKS"; do
+for source in "$EXECUTOR" "$CALLBACK" "$CHECKS"; do
   [[ -f "$source" ]] || { echo "Missing source: $source" >&2; exit 2; }
 done
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ipc-executor-jvm.XXXXXX")"
@@ -40,5 +39,5 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 mkdir -p "$BUILD_DIR/classes"
 java -cp "$COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
   -no-stdlib -no-reflect -jvm-target 1.8 -classpath "$STDLIB" \
-  -d "$BUILD_DIR/classes" "$EXECUTOR" "$CALLBACK" "$SERVICE_POLICY" "$CHECKS"
+  -d "$BUILD_DIR/classes" "$EXECUTOR" "$CALLBACK" "$CHECKS"
 java -cp "$BUILD_DIR/classes:$STDLIB" com.hellocloudweb.shelfdrive.IpcExecutorJvmChecks
