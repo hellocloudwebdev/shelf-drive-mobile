@@ -32,7 +32,8 @@ export function UpdateBanner({
                     initial={{ opacity: 0, y: -50 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -50 }}
-                    className="fixed inset-x-0 top-0 z-50 px-3 pb-3 pt-[calc(max(env(safe-area-inset-top,0px),24px)+0.75rem)] sm:pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] bg-gradient-to-r from-telegram-primary/90 via-blue-500/90 to-purple-500/90 backdrop-blur-sm shadow-lg"
+                    style={{ paddingTop: 'calc(max(env(safe-area-inset-top, 0px), var(--update-banner-inset, 24px)) + 0.75rem)' }}
+                    className="fixed inset-x-0 top-0 z-50 px-3 pb-3 sm:[--update-banner-inset:0px] bg-gradient-to-r from-telegram-primary/90 via-blue-500/90 to-purple-500/90 backdrop-blur-sm shadow-lg"
                 >
                     <div className="mx-auto flex max-w-screen-lg flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-4">
                         <div className="flex min-w-0 items-center justify-center gap-2 text-center sm:justify-start sm:text-left">

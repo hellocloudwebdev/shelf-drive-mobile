@@ -20,8 +20,8 @@ describe('UpdateBanner', () => {
         const banner = container.querySelector('.fixed');
         const content = banner?.firstElementChild;
 
-        expect(banner?.className).toContain('pt-[calc(max(env(safe-area-inset-top,0px),24px)+0.75rem)]');
-        expect(banner?.className).toContain('sm:pt-[calc(env(safe-area-inset-top,0px)+0.75rem)]');
+        expect(banner?.getAttribute('style')).toContain('max(env(safe-area-inset-top, 0px), var(--update-banner-inset, 24px))');
+        expect(banner?.className).toContain('sm:[--update-banner-inset:0px]');
         expect(content?.className).toContain('flex-col');
         expect(content?.className).toContain('sm:flex-row');
         expect(content?.className).toContain('sm:gap-4');
