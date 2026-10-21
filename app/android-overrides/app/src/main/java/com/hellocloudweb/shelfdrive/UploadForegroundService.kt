@@ -100,16 +100,15 @@ class UploadForegroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    // A restart can reuse an instance whose earlier stop removed its
-    // notification. Promote before terminal/stale cleanup too, so every
-    // delivered foreground start satisfies Android's startup contract.
-    startAsForeground(createNotification())
     val requestedGeneration = intent?.getLongExtra(EXTRA_GENERATION, 0L) ?: 0L
     val generation = if (requestedGeneration > 0L) requestedGeneration
       else lifecyclePolicy.onUntrackedServiceStart()
     when (lifecyclePolicy.onStartCommand(generation)) {
       ForegroundServiceLifecyclePolicy.StartDisposition.IGNORE_STALE,
       ForegroundServiceLifecyclePolicy.StartDisposition.STOP_TERMINAL -> {
+        // Even a terminal start may reuse an instance whose earlier stop
+        // removed its notification. Promote before terminal cleanup.
+        startAsForeground(createNotification())
         lifecyclePolicy.stopIfNotSuperseded(generation) {
           serviceGeneration = generation
           stopForeground(STOP_FOREGROUND_REMOVE)
@@ -119,16 +118,22 @@ class UploadForegroundService : Service() {
       }
       ForegroundServiceLifecyclePolicy.StartDisposition.PROCESS -> serviceGeneration = generation
     }
+    // Publish one foreground notification using the incoming state. Posting
+    // an old snapshot first can leave stale text after Android coalesces it.
     when (intent?.action) {
       ACTION_UPDATE -> {
         activeCount = intent.getIntExtra(EXTRA_ACTIVE, activeCount).coerceAtLeast(0)
         progress = intent.getIntExtra(EXTRA_PROGRESS, progress).coerceIn(0, 100)
         speedBytesPerSecond = intent.getLongExtra(EXTRA_SPEED, speedBytesPerSecond).coerceAtLeast(0L)
         paused = intent.getBooleanExtra(EXTRA_PAUSED, paused)
-        notifyProgress()
       }
-      ACTION_PAUSE -> { paused = true; MainActivity.emitTransferAction("pause"); notifyProgress() }
-      ACTION_RESUME -> { paused = false; MainActivity.emitTransferAction("resume"); notifyProgress() }
+      ACTION_PAUSE -> paused = true
+      ACTION_RESUME -> paused = false
+    }
+    startAsForeground(createNotification())
+    when (intent?.action) {
+      ACTION_PAUSE -> MainActivity.emitTransferAction("pause")
+      ACTION_RESUME -> MainActivity.emitTransferAction("resume")
       ACTION_CANCEL -> {
         MainActivity.emitTransferAction("cancel")
         TransferRecoveryWorker.setPendingTransfers(this, false)
@@ -219,7 +224,4 @@ class UploadForegroundService : Service() {
     return builder.build()
   }
 
-  private fun notifyProgress() {
-    getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, createNotification())
-  }
 }
