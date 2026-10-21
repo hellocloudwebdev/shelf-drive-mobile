@@ -31,14 +31,25 @@ class UploadForegroundService : Service() {
     private const val EXTRA_PROGRESS = "progress"
     private const val EXTRA_SPEED = "speed"
     private const val EXTRA_PAUSED = "paused"
+    private const val EXTRA_GENERATION = "service_generation"
+    private val lifecyclePolicy = ForegroundServiceLifecyclePolicy()
+
+    private fun startForegroundService(context: Context, intent: Intent) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+      else context.startService(intent)
+    }
+
 
     @JvmStatic
     fun startService(context: Context) {
       MainActivity.requestTransferNotificationPermission()
       TransferRecoveryWorker.setPendingTransfers(context, true)
       if (TransferJobService.schedule(context)) return
-      val intent = Intent(context, UploadForegroundService::class.java)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+      lifecyclePolicy.startAndDispatch { generation ->
+        val intent = Intent(context, UploadForegroundService::class.java)
+          .putExtra(EXTRA_GENERATION, generation)
+        startForegroundService(context, intent)
+      }
     }
 
     @JvmStatic
@@ -48,23 +59,39 @@ class UploadForegroundService : Service() {
         TransferJobService.update(context, active, percent, speed, isPaused)
         return
       }
-      val intent = Intent(context, UploadForegroundService::class.java).apply {
-        action = ACTION_UPDATE
-        putExtra(EXTRA_ACTIVE, active.coerceAtLeast(0))
-        putExtra(EXTRA_PROGRESS, percent.coerceIn(0, 100))
-        putExtra(EXTRA_SPEED, speed.coerceAtLeast(0L))
-        putExtra(EXTRA_PAUSED, isPaused)
+      lifecyclePolicy.startAndDispatch { generation ->
+        val intent = Intent(context, UploadForegroundService::class.java).apply {
+          action = ACTION_UPDATE
+          putExtra(EXTRA_ACTIVE, active.coerceAtLeast(0))
+          putExtra(EXTRA_PROGRESS, percent.coerceIn(0, 100))
+          putExtra(EXTRA_SPEED, speed.coerceAtLeast(0L))
+          putExtra(EXTRA_PAUSED, isPaused)
+          putExtra(EXTRA_GENERATION, generation)
+        }
+        startForegroundService(context, intent)
       }
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
     }
 
     @JvmStatic
     fun stopService(context: Context) {
       TransferRecoveryWorker.setPendingTransfers(context, false)
       TransferJobService.cancel(context)
-      context.stopService(Intent(context, UploadForegroundService::class.java))
+      lifecyclePolicy.stopAndDispatch(
+        idleStop = {
+          // Preserve harmless cleanup for a service started outside this API;
+          // this path never issues a foreground-service start request.
+          context.stopService(Intent(context, UploadForegroundService::class.java))
+        },
+        runningStop = {
+          // stopService is allowed from the background and cannot resurrect the
+          // instance. Startup stops are handled by onStartCommand instead.
+          context.stopService(Intent(context, UploadForegroundService::class.java))
+        },
+      )
     }
   }
+
+  private var serviceGeneration = 0L
 
   override fun onCreate() {
     super.onCreate()
@@ -73,6 +100,25 @@ class UploadForegroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // A restart can reuse an instance whose earlier stop removed its
+    // notification. Promote before terminal/stale cleanup too, so every
+    // delivered foreground start satisfies Android's startup contract.
+    startAsForeground(createNotification())
+    val requestedGeneration = intent?.getLongExtra(EXTRA_GENERATION, 0L) ?: 0L
+    val generation = if (requestedGeneration > 0L) requestedGeneration
+      else lifecyclePolicy.onUntrackedServiceStart()
+    when (lifecyclePolicy.onStartCommand(generation)) {
+      ForegroundServiceLifecyclePolicy.StartDisposition.IGNORE_STALE,
+      ForegroundServiceLifecyclePolicy.StartDisposition.STOP_TERMINAL -> {
+        lifecyclePolicy.stopIfNotSuperseded(generation) {
+          serviceGeneration = generation
+          stopForeground(STOP_FOREGROUND_REMOVE)
+          stopSelf(startId)
+        }
+        return START_NOT_STICKY
+      }
+      ForegroundServiceLifecyclePolicy.StartDisposition.PROCESS -> serviceGeneration = generation
+    }
     when (intent?.action) {
       ACTION_UPDATE -> {
         activeCount = intent.getIntExtra(EXTRA_ACTIVE, activeCount).coerceAtLeast(0)
@@ -87,7 +133,7 @@ class UploadForegroundService : Service() {
         MainActivity.emitTransferAction("cancel")
         TransferRecoveryWorker.setPendingTransfers(this, false)
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopSelf(startId)
       }
     }
     return START_NOT_STICKY
@@ -102,6 +148,11 @@ class UploadForegroundService : Service() {
   }
 
   override fun onBind(intent: Intent?): IBinder? = null
+
+  override fun onDestroy() {
+    lifecyclePolicy.onServiceDestroyed(serviceGeneration)
+    super.onDestroy()
+  }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
     TransferRecoveryWorker.schedule(this)
@@ -126,7 +177,9 @@ class UploadForegroundService : Service() {
   }
 
   private fun actionIntent(action: String, requestCode: Int) = PendingIntent.getService(
-    this, requestCode, Intent(this, UploadForegroundService::class.java).setAction(action),
+    this, requestCode, Intent(this, UploadForegroundService::class.java)
+      .setAction(action)
+      .putExtra(EXTRA_GENERATION, serviceGeneration),
     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
   )
 

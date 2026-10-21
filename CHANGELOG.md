@@ -1,8 +1,16 @@
 ## [4.5.1] - 2026-10-21 (TEST candidate)
 
+### Fixed
+- Open both my.telegram.org controls through the system browser, with a visible fallback message if launching fails.
+- Keep the update banner below the status bar and keep its actions readable on narrow screens.
+- Update certificate trust dependencies without weakening dependency security checks.
+- Lazy-load the English catalog and trim unused CSS to stay within the existing performance budgets.
+- Serialize upload-service startup and completion shutdown, including duplicate and stale stop requests.
+
 ### TEST-only release preparation
 - Prepare the side-by-side diagnostic TEST app version 4.5.1 with its dedicated Android application ID and signing identity.
 - Build and verify local universal APK and AAB artifacts only; no production updater packaging, upload, push, tag, or release is performed.
+- Keep production updates disabled. Diagnostic collection remains app-only and uncapped: logs can fill storage, exports can exhaust memory, and native traces can contain secrets or personal data. Review every report before sharing; sharing requires fresh consent.
 
 ## [4.5.0] - 2026-10-20
 ### Fixed
