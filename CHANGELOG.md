@@ -1,3 +1,10 @@
+## [4.5.3] - 2026-10-22
+### Changed
+- Apply the approved black dark-mode appearance with a solid black canvas, darker surfaces, and refined navigation contrast.
+- Preserve the status bar and floating upload button styling, existing backend actions, and light-mode appearance.
+### Release
+- Production Android universal APK and AAB only; retain the existing application identity, signing, signed updater, and Android API 31–36 compatibility gates.
+
 ## [4.5.2] - 2026-10-22
 
 ### Changed
