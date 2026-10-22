@@ -16,28 +16,28 @@
   --text-badge--line-height: 0.875rem;
   --text-app-title: 0.9375rem;
   --text-app-title--line-height: 1.25rem;
-  /* Frosted cyan glass palette — blue-black night canvas with an ice-cyan
-     accent (#4FC3F7, 9.1:1 on canvas) for text/icons; filled controls keep the
+  /* Black/charcoal dark palette with the existing ice-cyan
+     accent (#4FC3F7) for text/icons; filled controls keep the
      brand cyan with readable ink via accent-contrast. Cyan stays as the single
      refraction accent; violet/pink tokens survive as cyan/ice aliases. */
-  --color-app-canvas: #0b1220;
-  --color-app-sidebar: #0d1526;
-  --color-app-surface: #121b2e;
-  --color-app-surface-raised: #17223a;
-  --color-app-surface-sunken: #070d18;
+  --color-app-canvas: #000000;
+  --color-app-sidebar: #090909;
+  --color-app-surface: #131315;
+  --color-app-surface-raised: #1c1c1e;
+  --color-app-surface-sunken: #080808;
   --color-app-accent: #4fc3f7;
   --color-app-accent-hover: #7dd3fc;
   --color-app-accent-soft: rgba(34, 193, 242, 0.16);
   --color-app-accent-contrast: #0b1220;
-  --color-app-text: #e9eef8;
-  --color-app-text-secondary: #8f9db8;
-  --color-app-text-tertiary: #8492ae;
+  --color-app-text: #f5f5f5;
+  --color-app-text-secondary: #a3a3a8;
+  --color-app-text-tertiary: #98989e;
   --color-app-border-subtle: rgba(255, 255, 255, 0.08);
-  --color-app-border: rgba(255, 255, 255, 0.14);
+  --color-app-border: rgba(255, 255, 255, 0.12);
   --color-app-border-strong: rgba(255, 255, 255, 0.22);
   --color-app-hover: rgba(255, 255, 255, 0.07);
-  --color-app-selected: rgba(79, 195, 247, 0.2);
-  --color-app-overlay: rgba(5, 10, 22, 0.68);
+  --color-app-selected: rgba(255, 255, 255, 0.12);
+  --color-app-overlay: rgba(0, 0, 0, 0.72);
   --color-app-success: #34d399;
   --color-app-warning: #fbbf24;
   --color-app-danger: #f2555a;
@@ -87,17 +87,6 @@
   --color-app-info: #0891b2;
   --color-app-accent-violet: #0e7490;
   --color-app-accent-pink: #6b9bd1;
-
-  --color-telegram-bg: var(--color-app-canvas);
-  --color-telegram-surface: var(--color-app-surface);
-  --color-telegram-primary: var(--color-app-accent);
-  --color-telegram-secondary: var(--color-app-info);
-  --color-telegram-text: var(--color-app-text);
-  --color-telegram-subtext: var(--color-app-text-secondary);
-  --color-telegram-border: var(--color-app-border);
-  --color-telegram-hover: var(--color-app-hover);
-  --color-telegram-glass-bg: var(--color-app-surface);
-  --color-telegram-glass-border: var(--color-app-text);
 }
 
 :root {
@@ -157,6 +146,49 @@
   --glass-highlight: rgba(255, 255, 255, 0.95);
   --glass-shadow: 0 2px 6px rgba(35, 70, 120, 0.05), 0 10px 35px rgba(35, 70, 120, 0.1);
   --accent-glow: rgba(34, 193, 242, 0.22);
+}
+
+/* Reference-inspired black mode. Scope every override to the default dark
+   palette so light mode and user-selected custom themes keep their UI.
+   Accent tokens and .glass-fab deliberately stay unchanged: upload is protected. */
+.dark:not(.custom-theme) {
+  --glass-bg: #131315;
+  --glass-bg-strong: rgba(19, 19, 21, 0.94);
+  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  --shadow-raised: none;
+  --shadow-floating: var(--glass-shadow);
+  --refraction-tint: none;
+}
+
+.dark:not(.custom-theme) :is(.atmospheric-canvas, .auth-gradient) {
+  background: var(--color-app-canvas);
+}
+
+.dark:not(.custom-theme) :is(.mobile-glass-card, .mobile-glass-icon-tile, .mobile-glass-media) {
+  background-image: none;
+  border-color: var(--glass-border);
+}
+
+
+.dark:not(.custom-theme) .mobile-glass-segment-selected {
+  background: #303033;
+}
+
+/* Neutral graphite selection, like the reference's floating navigation.
+   The upload FAB shares the old cyan treatment but is intentionally excluded. */
+.dark:not(.custom-theme) .glass-nav-capsule {
+  background: linear-gradient(180deg, #414143, #303032);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.dark:not(.custom-theme) .mobile-bottom-nav-item[aria-current="page"] {
+  color: var(--color-app-text);
+}
+
+.dark:not(.custom-theme) .mobile-bottom-nav-item[aria-current="page"] > span:first-child {
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Atmospheric canvas: an extremely subtle ice-cyan wash behind the app.
