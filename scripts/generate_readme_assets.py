@@ -1,11 +1,14 @@
-"""Generate the animated README assets (carousel GIF + SVG banners).
+"""Generate the animated README assets (carousel GIF, MP4 tour, and SVG banners).
 
 Usage (from repo root):  python scripts/generate_readme_assets.py
-Requires: Pillow
+Requires: Pillow, ffmpeg (optional for MP4)
 """
 from pathlib import Path
 import math
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import shutil
+import subprocess
+import tempfile
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 
 ROOT = Path(__file__).resolve().parent.parent
 LIVE_SHOTS = ROOT / "screenshots" / "live"
@@ -13,14 +16,18 @@ SHOTS = ROOT / "screenshots"
 OUT = ROOT / "assets" / "readme"
 
 SCREENS = [
-    ("04-home.png", "Touch-first home dashboard"),
-    ("05-folder.png", "Organized folders & 2-way sync"),
-    ("06-photos.png", "Vibrant photo gallery grid"),
-    ("07-videos.png", "4K video streaming & offline cache"),
-    ("08-documents.png", "TDENC2 encrypted document vault"),
-    ("09-settings.png", "Storage telemetry & bandwidth limits"),
-    ("11-light-home.png", "Pristine frosted light theme"),
-    ("01-tour-cloud.png", "Interactive onboarding tour"),
+    ("05-home.png", "Dark UI · Home dashboard & instant search"),
+    ("15-light-home.png", "Light UI · Pristine frosted glass home"),
+    ("06-folder.png", "Dark UI · Channel-backed folder workspace"),
+    ("19-light-folder.png", "Light UI · Photos & Memories folder"),
+    ("07-photos.png", "Dark UI · Vivid thumbnail media grid"),
+    ("16-light-photos.png", "Light UI · Photo gallery with contrast sync"),
+    ("08-videos.png", "Dark UI · Video library with duration badges"),
+    ("09-documents.png", "Dark UI · PDFs, vault files & archives"),
+    ("20-light-documents.png", "Light UI · Clean document workspace"),
+    ("13-settings.png", "Dark UI · Storage telemetry & limits"),
+    ("17-light-settings.png", "Light UI · Settings & 15 theme selectors"),
+    ("02-tour-cloud.png", "Onboarding Tour · Telegram becomes your cloud"),
 ]
 
 W, H = 1100, 700
@@ -47,7 +54,6 @@ def background():
     glow = Image.new("RGB", (W, H), (0, 0, 0))
     ImageDraw.Draw(glow).ellipse([W // 2 - 380, 60, W // 2 + 380, 620], fill=(0, 70, 95))
     glow = glow.filter(ImageFilter.GaussianBlur(120))
-    from PIL import ImageChops
     bg = ImageChops.add(bg, glow)
     d = ImageDraw.Draw(bg)
     for gx in range(16, W, 32):
@@ -86,7 +92,7 @@ def render():
     bg = background()
     base_phones = [phone(p) for p, _ in SCREENS]
     n = len(SCREENS)
-    title_f, sub_f = font(30, True), font(17)
+    title_f = font(28, True)
     spacing = 300
 
     def frame(t):
@@ -152,6 +158,23 @@ def render():
     OUT.mkdir(parents=True, exist_ok=True)
     q[0].save(OUT / "showcase.gif", save_all=True, append_images=q[1:], duration=durations, loop=0, optimize=True, disposal=1)
     print("wrote showcase.gif", (OUT / "showcase.gif").stat().st_size // 1024, "KB")
+
+    # Also compile showcase.mp4 via ffmpeg
+    try:
+        tdir = Path(tempfile.mkdtemp(prefix="showcase_mp4_"))
+        for fi, fr in enumerate(frames):
+            fr.save(tdir / f"f_{fi:05d}.png")
+        mp4_path = OUT / "showcase.mp4"
+        subprocess.run([
+            "ffmpeg", "-y", "-framerate", "15", "-i", str(tdir / "f_%05d.png"),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            "-crf", "20", "-movflags", "+faststart", str(mp4_path)
+        ], capture_output=True)
+        shutil.rmtree(tdir, ignore_errors=True)
+        if mp4_path.exists():
+            print("wrote showcase.mp4", mp4_path.stat().st_size // 1024, "KB")
+    except Exception as e:
+        print("showcase.mp4 compilation skipped:", e)
 
 
 if __name__ == "__main__":

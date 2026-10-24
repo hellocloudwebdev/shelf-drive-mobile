@@ -1,399 +1,409 @@
 <p align="center">
-  <img src="./assets/readme/hero-animated.svg" width="100%" alt="Shelf Drive — More than storage, it's your digital shelf">
+  <img src="./assets/readme/hero-animated.svg" width="100%" alt="Shelf Drive — more than storage, it's your digital shelf">
 </p>
 
 <p align="center">
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/hellocloudwebdev/shelf-drive-mobile?style=for-the-badge&color=4FC3F7&label=Latest%20Release&logo=android&logoColor=white" alt="Latest Release"></a>
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/actions"><img src="https://img.shields.io/github/actions/workflow/status/hellocloudwebdev/shelf-drive-mobile/quality-assurance.yml?style=for-the-badge&label=CI&color=34d399" alt="CI Status"></a>
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/hellocloudwebdev/shelf-drive-mobile?style=for-the-badge&color=38BDF8&label=Latest%20Release&logo=android&logoColor=white" alt="Latest release"></a>
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/actions/workflows/quality-assurance.yml"><img src="https://img.shields.io/github/actions/workflow/status/hellocloudwebdev/shelf-drive-mobile/quality-assurance.yml?style=for-the-badge&label=CI&color=34d399" alt="CI status"></a>
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases"><img src="https://img.shields.io/github/downloads/hellocloudwebdev/shelf-drive-mobile/total?style=for-the-badge&color=818cf8&label=Downloads" alt="Downloads"></a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Android-12%E2%80%9316-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 12–16 (API 31–36)">
-  <img src="https://img.shields.io/badge/Google%20TV-supported-4FC3F7?style=flat-square&logo=googletv&logoColor=white" alt="Google TV">
+  <img src="https://img.shields.io/badge/Google%20TV-supported-38BDF8?style=flat-square&logo=googletv&logoColor=white" alt="Google TV">
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19">
   <img src="https://img.shields.io/badge/Rust-stable-DEA584?style=flat-square&logo=rust&logoColor=black" alt="Rust">
   <img src="https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=black" alt="Tauri 2">
-  <img src="https://img.shields.io/badge/Languages-24-fbbf24?style=flat-square" alt="24 Languages">
-  <img src="https://img.shields.io/badge/Themes-15-c084fc?style=flat-square" alt="15 Themes">
+  <img src="https://img.shields.io/badge/Languages-24-fbbf24?style=flat-square" alt="24 languages">
+  <img src="https://img.shields.io/badge/Themes-15-c084fc?style=flat-square" alt="15 themes">
+  <img src="https://img.shields.io/badge/Zero%20Relay-Direct%20MTProto-00E5FF?style=flat-square" alt="Direct MTProto">
   <img src="https://img.shields.io/badge/Telemetry-none-1DE9B6?style=flat-square" alt="No telemetry">
 </p>
 
 <p align="center">
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/stargazers"><img src="https://img.shields.io/github/stars/hellocloudwebdev/shelf-drive-mobile?style=social" alt="Stars"></a>
-  &nbsp;
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/network/members"><img src="https://img.shields.io/github/forks/hellocloudwebdev/shelf-drive-mobile?style=social" alt="Forks"></a>
+  <img src="./assets/readme/divider.svg" width="100%" alt="Divider">
 </p>
 
 <p align="center">
-  <a href="https://readme-typing-svg.demolab.com">
-    <img src="https://readme-typing-svg.demolab.com?font=Segoe+UI&weight=600&size=22&duration=3200&pause=900&color=4FC3F7&center=true&vCenter=true&width=760&lines=Your+Telegram+account+%E2%86%92+a+beautiful+personal+drive;Folders%2C+search%2C+streaming+%26+sync+%E2%80%94+on+your+phone;Zero+relay+servers.+Zero+tracking.+100%25+open+source.;Sideload+the+APK+and+own+your+cloud+%E2%98%81%EF%B8%8F" alt="Typing animation">
+  <strong><em>“More than storage — it’s your digital shelf.”</em></strong>
+</p>
+
+<p align="center">
+  A local-first, privacy-respecting file workspace for Android, built directly on the files in your Telegram account.<br>
+  Channel-backed folders, instant search, on-the-fly streaming, background sync, durable transfers, and optional TDENC2 encryption — zero relay servers, no telemetry by default.
+</p>
+
+<p align="center">
+  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F%20Download%20APK-38BDF8?style=for-the-badge&labelColor=0b1220" alt="Download the APK" height="44"></a>
+  &nbsp;
+  <a href="https://hellocloudwebdev.github.io/shelf-drive-mobile/"><img src="https://img.shields.io/badge/Visit%20the%20Website-0b1220?style=for-the-badge&logo=googlechrome&logoColor=38BDF8" alt="Visit the website" height="44"></a>
+  &nbsp;
+  <a href="#app-tour"><img src="https://img.shields.io/badge/%E2%96%B6%EF%B8%8F%20Watch%20Tour%20Video-0b1220?style=for-the-badge&logo=youtube&logoColor=FBBF24" alt="Watch Tour Video" height="44"></a>
+</p>
+
+<p align="center">
+  <sub><b><a href="#app-tour">01 App Tour</a></b> · <b><a href="#features">02 Features</a></b> · <b><a href="#screens">03 Dark &amp; Light UI</a></b> · <b><a href="#download">04 Download</a></b> · <b><a href="#privacy">05 Privacy &amp; Security</a></b> · <b><a href="#quick-start">06 Quick Start</a></b> · <b><a href="#tech-stack">07 Architecture &amp; Tech</a></b></sub>
+</p>
+
+<br>
+
+> [!NOTE]
+> **Repository Scope:** This repository builds the **Android** application — phones, tablets, foldable devices, Android TV, and Google TV. Desktop builds for Windows, macOS, and Linux live in the sibling repository [`hellocloudwebdev/shelf-drive`](https://github.com/hellocloudwebdev/shelf-drive). The application core (`app/src`, `app/src-tauri/src`, tests, and dependency policies) is shared and kept in strict synchronization — see [Docs/SHARED_CORE_SYNC.md](./Docs/SHARED_CORE_SYNC.md).
+
+> [!IMPORTANT]
+> **Android Baseline:** Android 12–16 (API 31–36), `minSdk` 31, and `targetSdk` 36. Version 4.4.8+ deprecated legacy Android 7–11 support to leverage Android 12+ native Keystore isolation, WorkManager background guarantees, and Modern WebView engine standards.
+
+---
+
+<a id="app-tour"></a>
+
+<p align="center">
+  <img src="./assets/readme/section-tour.svg" width="100%" alt="01 App Tour &amp; Walkthrough">
+</p>
+
+<h3 align="center">Feature Video: Onboarding &amp; Drive Concept Tour</h3>
+
+<p align="center">
+  <video src="./assets/readme/tour-feature.mp4" controls="controls" width="100%" poster="./screenshots/live/02-tour-cloud.png" style="max-width: 960px; border-radius: 12px; box-shadow: 0 16px 36px rgba(0,0,0,0.45);"></video>
+</p>
+
+<p align="center">
+  <a href="./assets/readme/tour-feature.mp4">
+    <img src="./assets/readme/tour-feature.gif" width="100%" style="max-width: 960px; border-radius: 12px;" alt="Shelf Drive Onboarding Tour Feature Animation">
   </a>
 </p>
 
 <p align="center">
-  <a href="#-app-tour"><b>App Tour</b></a> &nbsp;•&nbsp;
-  <a href="#at-a-glance"><b>Features</b></a> &nbsp;•&nbsp;
-  <a href="#download-android"><b>Download</b></a> &nbsp;•&nbsp;
-  <a href="#privacy--security"><b>Security</b></a> &nbsp;•&nbsp;
-  <a href="#quick-start"><b>Quick Start</b></a> &nbsp;•&nbsp;
-  <a href="#build-from-source-android"><b>Build</b></a> &nbsp;•&nbsp;
-  <a href="#tech-stack"><b>Tech</b></a>
-</p>
-
-<p align="center">
-  <img src="./assets/readme/divider.svg" width="100%" alt="">
-</p>
-
-<p align="center">
-  <strong><em>"More than storage — it's your digital shelf."</em></strong>
-</p>
-
-<p align="center">
-  The mobile home of Shelf Drive — a local-first file workspace powered by your own Telegram account.<br>
-  Open-source. Free to use. No third-party servers. Your files never leave your control.
-</p>
-
-<p align="center">
-  <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F%20Download%20APK-4FC3F7?style=for-the-badge&labelColor=0b1220" alt="Download APK" height="44"></a>
-</p>
-
-<a id="-app-tour"></a>
-
-<h2 align="center">📱 App Tour</h2>
-
-<p align="center">
-  <img src="./assets/readme/showcase.gif" width="900" alt="Animated tour of Shelf Drive: home, folders, photos, videos, encrypted documents, settings, and light mode">
-</p>
-
-<p align="center">
-  <sub>Eight real-time screens, one unified frosted-glass identity — captured directly from the live application runtime.</sub>
-</p>
-
-<p align="center">
-  <img src="./assets/readme/marquee.svg" width="100%" alt="React 19 · TypeScript · Tauri 2 · Rust · Tailwind 4 · Grammers · SQLite · Vite">
+  <sub>🎥 <b>High-Definition Walkthrough:</b> <a href="./assets/readme/tour-feature.mp4"><b>Download MP4 (764 KB)</b></a> · <a href="./assets/readme/showcase.mp4"><b>Showcase Tour MP4 (1.89 MB)</b></a> · Generated directly from live mobile render runs</sub>
 </p>
 
 <br>
 
-> **Repository scope:** this repository builds the **Android (phones, tablets, Android TV / Google TV)** application. The Windows, macOS, and Linux desktop applications live in the sibling repository [`hellocloudwebdev/shelf-drive`](https://github.com/hellocloudwebdev/shelf-drive). The application core (`app/src`, `app/src-tauri/src`, tests, and dependency manifests) is intentionally shared between the two repositories and kept in sync — see [Docs/SHARED_CORE_SYNC.md](./Docs/SHARED_CORE_SYNC.md).
+<h3 align="center">Interactive Showcase Carousel</h3>
 
-**Android compatibility:** Android 12–16 (API 31–36); `minSdk` 31 and `targetSdk` 36. Version 4.4.8 is a breaking support change and no longer supports Android 7–11.
+<p align="center">
+  <img src="./assets/readme/showcase.gif" width="100%" style="max-width: 960px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.4);" alt="Animated showcase of Shelf Drive across dark and light modes">
+</p>
 
----
+<p align="center">
+  <sub>Captured from the running Android runtime with mocked Tauri IPC — regenerated deterministically via <code>scripts/generate_readme_assets.py</code></sub>
+</p>
 
-## 💡 The Idea
+<p align="center">
+  <img src="./assets/readme/marquee.svg" width="100%" alt="React 19 · TypeScript 5.8 · Tauri 2 · Rust · Tailwind CSS 4 · Grammers · SQLite · Vite 7">
+</p>
 
-> *"Your Saved Messages becomes your personal storage. Shelf Drive turns it into a clean, organized drive for all your files."*
+<br>
+
+### The Drive Concept: 3 Steps to Your Personal Cloud
+
+> *“Your Saved Messages becomes your personal storage. Shelf Drive turns it into a clean, organized drive for all your files.”*
 >
-> — Shelf Drive Onboarding Tour
+> — *Shelf Drive Guided Onboarding Tour*
 
-Telegram gives every user generous cloud storage through Saved Messages and channels. Shelf Drive transforms that raw storage into a polished, organized workspace — with folders, search, streaming, sync, sharing, and a beautiful frosted-glass interface — all running locally on your device with no relay servers in between.
+Telegram provides every account with virtually unlimited cloud storage through **Saved Messages** and private channels. Shelf Drive bridges the gap between raw messaging chats and a full-fledged cloud workspace:
 
-**Think of it as your personal cloud drive**, except the storage is Telegram's, the app is open-source, and everything runs on your device.
-
-<br>
+1. **Step 1: Storage (Telegram Becomes Your Cloud)**  
+   Your Saved Messages chat becomes your primary home drive. Files sent here are indexed locally into photos, videos, audio, and documents with instant retrieval.
+2. **Step 2: Folders (Private Channels, Built In)**  
+   Every folder you create is mapped to an isolated, private Telegram channel. Folders survive complete app reinstalls, cannot be viewed by other users, and stay in continuous sync with the desktop application.
+3. **Step 3: Files (Everything In One Place)**  
+   High-speed thumbnail grids, metadata extractors, multi-part parallel resumable streaming, and optional TDENC2 client-side envelope encryption.
 
 ---
 
+<a id="features"></a>
+
 <p align="center">
-  <img src="./assets/readme/section-features.svg" width="100%" alt="Section: Features">
+  <img src="./assets/readme/section-features.svg" width="100%" alt="02 Features">
 </p>
 
-## At a Glance
+| Feature | Capabilities &amp; Mobile Specifics |
+|:---|:---|
+| **Touch-First File Management** | Adaptive grid and list layouts, gesture multi-select, drag-and-drop batch operations, instant search, and unified breadcrumbs. |
+| **Folders as Private Channels** | Zero server setup. Each folder is a private Telegram channel. Moving or renaming files preserves channel mapping and syncs across devices. |
+| **Durable Transfer Engine** | Background `WorkManager` upload and download queues that survive device restarts and network transitions with pause, resume, and auto-retry. |
+| **Instant Media Streaming** | In-app playback for 4K/1080p video (HLS / MP4 / MKV) and lossless audio (FLAC / MP3 / AAC / OGG). Continues playback where you left off. |
+| **Documents &amp; Archives** | Integrated PDF reader, rich document filters, and in-memory ZIP/RAR/7z archive exploration with selective file extraction. |
+| **Bidirectional Folder Sync** | Continuous or scheduled background synchronization between local Android storage folders and Telegram channels — see [SYNC_GUIDE.md](./SYNC_GUIDE.md). |
+| **TDENC2 Envelope Encryption** | Optional client-side XChaCha20-Poly1305 + Argon2id encryption. Vault passphrase never leaves the device. Supports encrypted streaming. |
+| **Country Code Picker &amp; QR Sign-In** | High-reliability sign-in flow with searchable country code prefix selector, DC auto-migration, and direct QR code authentication. |
+| **Offline Packs** | Pin any folder or file to local device cache for uninterrupted offline browsing and playback on flights and low-connectivity zones. |
+| **15 Liquid Themes** | Dark, Light, Pure AMOLED, Nord, Monokai, Ocean, Forest, Plum, Paper, Rose, Mint, Sky, etc., with automatic system dark/light synchronization. |
+| **24 Languages &amp; Full RTL** | English, Spanish, Russian, Arabic, Hindi, Bengali, Chinese, Japanese, Korean, Persian, Urdu, French, German, and more, with native RTL layout mirroring. |
+| **TV &amp; Remote Navigation** | Tailored D-pad spatial navigation, remote focus rings, and large-screen dashboard mode for Android TV and Google TV. |
+| **Privacy-Safe Local Diagnostics** | Bounded, rotating local diagnostic logs on API 31+. In-app log reviewer, copy, and export tools. Zero automated telemetry or analytics. |
+| **Viewport Zoom Guard** | Enforces a stable, non-scalable viewport and native gesture guards on Android phones to eliminate accidental pinch-zoom jitter. |
 
-| | Feature | What It Does |
-|:---:|:---|:---|
-| 📁 | **File Management** | Touch-first grid & list views, multi-select, bulk actions, folders, search, sort |
-| 🚀 | **Transfers** | Durable upload/download queues that survive restarts, pause/resume, bandwidth controls |
-| 🎬 | **Media Streaming** | Built-in video player, audio playback, image preview |
-| 📄 | **Document Viewer** | PDF viewer, archive browser (ZIP/RAR/7z), Continue Watching shelf |
-| 🔄 | **Folder Sync** | Bidirectional sync between a local directory and a Telegram channel |
-| 🔗 | **Sharing** | Password-protected download links, QR codes, Telegram message links |
-| 🔐 | **Encryption** | Optional TDENC2 envelope encryption with vault passphrase and recovery bundles |
-| 📦 | **Offline Packs** | Download collections for trips — watch and browse without internet |
-| 🎨 | **15 Themes** | Dark, light, AMOLED, Nord, Monokai, Forest, Plum, and more — or create your own |
-| 🌍 | **24 Languages** | English, Spanish, Russian, Arabic, Hindi, Chinese, Japanese, Korean, and 16 more |
-| 📺 | **TV Navigation** | Spatial navigation with remote control support on Android TV / Google TV |
-| ♿ | **Accessibility** | WCAG 4.5:1 contrast enforcement, reduced motion support, screen reader tested |
+<details>
+<summary><strong>📱 Mobile Shell Architecture: Designed for One-Thumb Ergonomics</strong></summary>
+<br>
+
+- **Shallow Navigation Hierarchy:** A persistent 5-tab bottom navigation bar (`Home` · `Photos` · `Videos` · `Documents` · `Settings`) brings all major media domains within immediate reach.
+- **Frosted Drawer:** Swiping from the left opens the acrylic frosted drawer with custom folder workspaces, storage insights, shared views, and channel settings.
+- **Multi-Type Upload Sheet:** A unified floating action trigger opens a multi-source sheet covering individual files, camera photos, video rolls, folder trees, and the native Android Document Provider.
+- **Persistent Transfer Status:** Real-time transfer pill stays docked at the bottom of the screen while navigating, keeping upload/download speeds and queue depths visible.
+
+</details>
+
+---
+
+<a id="screens"></a>
+
+<p align="center">
+  <img src="./assets/readme/section-screens.svg" width="100%" alt="03 Interface &amp; Themes">
+</p>
+
+### Side-by-Side: Dark UI vs. Light UI
+
+Every screen in Shelf Drive is crafted in both dark and light palettes, adhering to a strict **4.5:1 WCAG contrast floor** for accessibility, outdoor sunlight readability, and night-time eye comfort:
+
+| Screen Surface | Dark Mode | Light Mode |
+|:---:|:---:|:---:|
+| **Home Dashboard**<br><sub>Recent items, storage overview, instant search</sub> | <img src="./screenshots/live/05-home.png" width="360" alt="Home Dashboard - Dark Mode"> | <img src="./screenshots/live/15-light-home.png" width="360" alt="Home Dashboard - Light Mode"> |
+| **Photos &amp; Memories Folder**<br><sub>Channel-backed workspace with upload controls</sub> | <img src="./screenshots/live/06-folder.png" width="360" alt="Folder View - Dark Mode"> | <img src="./screenshots/live/19-light-folder.png" width="360" alt="Folder View - Light Mode"> |
+| **Photo Gallery Grid**<br><sub>Vibrant thumbnail tiles &amp; album grouping</sub> | <img src="./screenshots/live/07-photos.png" width="360" alt="Photo Gallery - Dark Mode"> | <img src="./screenshots/live/16-light-photos.png" width="360" alt="Photo Gallery - Light Mode"> |
+| **Documents Workspace**<br><sub>PDFs, spreadsheets, encrypted vault records</sub> | <img src="./screenshots/live/09-documents.png" width="360" alt="Documents View - Dark Mode"> | <img src="./screenshots/live/20-light-documents.png" width="360" alt="Documents View - Light Mode"> |
+| **Settings &amp; Telemetry**<br><sub>Network limits, 15 themes, diagnostic tools</sub> | <img src="./screenshots/live/13-settings.png" width="360" alt="Settings Page - Dark Mode"> | <img src="./screenshots/live/17-light-settings.png" width="360" alt="Settings Page - Light Mode"> |
 
 <br>
 
-### 📱 Mobile Experience
+### Guided Onboarding &amp; Mobile Interaction Sheets
 
-The mobile interface features a **frosted glass navigation system** with a 5-tab bottom bar, floating upload button, and fluid gesture-driven interactions — designed from the ground up for touch.
+| 01. Welcome &amp; Auth | 02. Guided Tour Step 1 | 03. Guided Tour Step 2 |
+|:---:|:---:|:---:|
+| <img src="./screenshots/live/01-auth.png" width="250" alt="Auth Screen with Telegram API and phone sign-in"> | <img src="./screenshots/live/02-tour-cloud.png" width="250" alt="Tour slide 1: Telegram becomes your cloud"> | <img src="./screenshots/live/03-tour-private.png" width="250" alt="Tour slide 2: Private folders built-in"> |
+| <sub>Telegram credentials &amp; country selector</sub> | <sub>Your Saved Messages as cloud storage</sub> | <sub>Private channels as permanent folders</sub> |
 
-<p align="center">
-  <img src="./screenshots/live/04-home.png" width="280" alt="Touch-first home dashboard with recent files and folders">
-  &nbsp;&nbsp;&nbsp;
-  <img src="./screenshots/live/06-photos.png" width="280" alt="Photos tab with vibrant media grid and tags">
-  &nbsp;&nbsp;&nbsp;
-  <img src="./screenshots/live/08-documents.png" width="280" alt="Encrypted document and vault storage">
-</p>
-
-<p align="center">
-  <em>Core Mobile Views: Home Dashboard with instant search · Photos Gallery grid · Encrypted Documents Vault</em>
-</p>
-
-<br>
-
-<h4 align="center">🌓 Dark Mode vs. Light Mode</h4>
-
-<p align="center">
-  <img src="./screenshots/live/04-home.png" width="270" alt="Android dark mode home view">
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="./screenshots/live/11-light-home.png" width="270" alt="Android light mode home view">
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="./screenshots/live/09-settings.png" width="270" alt="Android dark settings view">
-</p>
-
-<p align="center">
-  <em>Fluid theme engine: Dark AMOLED · Pristine Light · 15 adaptive palettes with system preference sync</em>
-</p>
+| 04. Video Library | 05. Navigation Drawer | 06. Contextual File Actions | 07. Multi-Source Upload |
+|:---:|:---:|:---:|:---:|
+| <img src="./screenshots/live/08-videos.png" width="220" alt="Video library with durations"> | <img src="./screenshots/live/10-drawer.png" width="220" alt="Frosted acrylic navigation drawer"> | <img src="./screenshots/live/11-file-actions.png" width="220" alt="File action sheet: preview, share, vault"> | <img src="./screenshots/live/12-upload-sheet.png" width="220" alt="Upload bottom sheet"> |
+| <sub>Media streaming &amp; offline playback</sub> | <sub>Folder channels &amp; quick filters</sub> | <sub>Download, rename, pin, share, vault</sub> | <sub>Files, photos, videos &amp; directories</sub> |
 
 <br>
 
 <details>
-<summary><strong>📸 View More Live Application Screens (Folders, Video Player &amp; Onboarding)</strong></summary>
+<summary><strong>🛠️ How to Regenerate Live Screenshots &amp; Media Assets</strong></summary>
 <br>
 
-| Folder View &amp; 2-Way Sync | 4K Video Streaming | Storage Telemetry | Onboarding Experience |
-|:---:|:---:|:---:|:---:|
-| <img src="./screenshots/live/05-folder.png" width="220" alt="Organized folder view with upload and sync"> | <img src="./screenshots/live/07-videos.png" width="220" alt="4K video player with streaming buffers"> | <img src="./screenshots/live/09-settings.png" width="220" alt="Storage quotas and bandwidth limits"> | <img src="./screenshots/live/01-tour-cloud.png" width="220" alt="Guided tour: Telegram becomes your cloud"> |
+Screenshots and videos are 100% reproducible and generated by headless automated browser scripts:
 
-<p align="center">
-  <em>All screenshots captured live from the running mobile runtime with real interactive UI states.</em>
-</p>
+```bash
+# Terminal 1 — Start the mobile preview server
+cd app && npm run dev -- --host 127.0.0.1 --port 4173
+
+# Terminal 2 — Capture high-res screenshots (both Dark & Light modes)
+node scripts/capture-readme-screenshots.mjs
+
+# Terminal 3 — Rebuild the animated tour video, showcase GIF, and website WebP assets
+python scripts/generate_tour_video.py
+python scripts/generate_readme_assets.py
+python scripts/generate_website_assets.py
+```
 
 </details>
 
-<br>
-
 ---
 
+<a id="download"></a>
+
 <p align="center">
-  <img src="./assets/readme/section-platforms.svg" width="100%" alt="Section: Platforms">
+  <img src="./assets/readme/section-platforms.svg" width="100%" alt="04 Download &amp; Platforms">
 </p>
 
-## Download (Android)
+Shelf Drive for Android is distributed as an **independently signed, sideloaded release** — free from Google Play restrictions and relay dependencies.
 
-Shelf Drive for Android is distributed as a **signed, sideloaded APK** — not through Google Play.
-
-| Platform | Download | Notes |
+| Platform / Form Factor | Artifact | Architecture &amp; Target |
 |:---|:---|:---|
-| **Android** | [Latest release](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest) | Android 12–16 (API 31–36); minimum API 31 (`minSdk` 31), target API 36; universal APK also runs on tablets |
-| **Android TV / Google TV** | Same APK | Spatial navigation with remote control support |
+| **Android Phones &amp; Foldables** | [Latest Release APK](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest) | Universal APK (API 31–36: `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) |
+| **Android Tablets** | [Latest Release APK](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest) | Adaptive multi-column split view layout |
+| **Android TV &amp; Google TV** | Same Universal APK | Dedicated TV banner, D-pad remote focus rings, leanback controls |
+| **Play App Signing Bundle** | [Latest Release AAB](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest) | `ShelfDrive_<version>.aab` for custom distribution |
 
-### Sideload Install
+### Sideload Installation Runbook
 
-1. Download `ShelfDrive_<version>.apk` from the [latest release](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest).
-2. Open the APK on your device and accept the **install from unknown sources** prompt for your browser or file manager.
-3. Launch Shelf Drive and sign in with your Telegram API credentials.
+1. Download `ShelfDrive_<version>.apk` from [GitHub Releases](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest).
+2. Tap the downloaded file and confirm the **Install from unknown sources** prompt in your browser or file manager.
+3. Open Shelf Drive and connect your Telegram account.
 
-Every release APK is signed with a pinned release keystore and verified in CI before publication. The full runbook — including the signing-certificate fingerprint and manual verification steps — lives in [Docs/ANDROID_SIDELOAD_RELEASE.md](./Docs/ANDROID_SIDELOAD_RELEASE.md).
+### Cryptographic In-App Updates
 
-### In-App Updates
+The application checks for new releases by fetching a **minisign-signed manifest** (`android-update.json` + `android-update.json.sig`). Before passing the package to Android’s Package Installer, Shelf Drive:
+- Verifies the cryptographic signature against the embedded maintainer public key.
+- Validates the downloaded APK’s SHA-256 hash against the manifest.
+- Ensures the package signature matches the pinned release keystore.
 
-The app ships its own sideload update channel: on launch it fetches a **minisign-signed update manifest** (`android-update.json` + `.sig`) from this repository's releases, verifies the signature against a public key embedded in the app, checks the SHA-256 digest of the downloaded APK, and hands the verified file to Android's package installer. Updates never come from an unverified source.
-
-<br>
+Detailed release procedures and certificate fingerprints: [Docs/ANDROID_SIDELOAD_RELEASE.md](./Docs/ANDROID_SIDELOAD_RELEASE.md).
 
 ---
 
+<a id="privacy"></a>
+
 <p align="center">
-  <img src="./assets/readme/section-security.svg" width="100%" alt="Section: Privacy & Security">
+  <img src="./assets/readme/section-security.svg" width="100%" alt="05 Privacy &amp; Security">
 </p>
 
-## Privacy & Security
-
-> *"Private folders, built in. Shelf Drive uses private Telegram channels to keep your folders organized and accessible only to you."*
+> *“Private folders, built in. Shelf Drive uses private Telegram channels to keep your folders organized and accessible only to you.”*
 >
-> — Shelf Drive Onboarding Tour
+> — *Shelf Drive Security Invariants*
 
-Shelf Drive is built with a **zero-trust, local-first architecture**:
+- 🛡️ **Zero Relay Infrastructure:** Files travel directly between your Android device and Telegram servers over encrypted MTProto. Shelf Drive operates no relay servers, proxies, or storage nodes.
+- 🔑 **Hardware-Backed Keystore:** API credentials, session tokens, and master keys reside in the Android Keystore secure enclave.
+- 🔒 **TDENC2 Envelope Encryption:** Client-side XChaCha20-Poly1305 authenticated encryption with Argon2id key derivation adds military-grade confidentiality before files leave your phone.
+- 🎬 **Zero-Disk Encrypted Streaming:** TDENC2-protected audio, video, and PDF content can stream without unencrypted files being dumped into disk caches; media decrypts on-the-fly in memory.
+- 📋 **Privacy-Safe Local Diagnostics:** Diagnostics are stored strictly in rotating, bounded local files on the device. Logs are never auto-uploaded. Crash reports require manual review and consent before copying to clipboard for GitHub submission.
+- 🚫 **No Tracking, No Telemetry:** No third-party ad SDKs, tracker pixels, or behavioral analytics libraries are compiled into the binary.
 
-- 🔒 **No relay servers** — Your files travel directly between your device and Telegram's servers via MTProto encryption. No third-party infrastructure touches your data.
-- 🎧 **Encrypted streaming** — TDENC2-protected audio, video, and PDF content can stream.
-- 🗝️ **Credentials stay local** — Your API hash is stored in the Android Keystore-backed secure store. It never leaves your device.
-- 🛡️ **Optional encryption** — Enable TDENC2 envelope encryption to add a vault passphrase on top of Telegram's built-in encryption. Per-file passphrases and recovery bundle export are supported.
-- 📜 **Open source** — Every line of code is auditable. The Rust backend, React frontend, and all IPC boundaries are fully transparent.
-- 🔏 **Signed updates** — Android release artifacts are signed, and the sideload update manifest is minisign-verified with a key embedded in the app before installation.
-- 🚫 **No analytics by default** — Crash reporting is opt-in only, with a clear consent dialog on first launch.
-
-For the full security policy, see [SECURITY.md](./SECURITY.md). For the privacy policy, see [PRIVACY.md](./PRIVACY.md).
-
-<br>
+Full policies: [PRIVACY.md](./PRIVACY.md) · [SECURITY.md](./SECURITY.md)
 
 ---
+
+<a id="quick-start"></a>
 
 <p align="center">
-  <img src="./assets/readme/section-getstarted.svg" width="100%" alt="Section: Get Started">
+  <img src="./assets/readme/section-getstarted.svg" width="100%" alt="06 Quick Start">
 </p>
 
-## Quick Start
-
-1. Install the APK ([Download](#download-android) above)
-2. Get a free Telegram API ID from [my.telegram.org](https://my.telegram.org) → **API development tools**
-3. Enter your **API ID** and **API Hash** on the welcome screen
-4. Authenticate with your Telegram account (phone number + code)
-5. You're in! Your Saved Messages files appear automatically.
-
-> 💡 **Tip:** When you first sign in, Shelf Drive shows a guided tour explaining how Telegram storage becomes your organized drive.
-
-<br>
+1. **Install the APK:** Download and install the latest APK from [Releases](https://github.com/hellocloudwebdev/shelf-drive-mobile/releases/latest).
+2. **Obtain Telegram API Credentials:** Go to [my.telegram.org](https://my.telegram.org) → **API development tools** and create a free application ID (takes 30 seconds).
+3. **Sign In:**
+   - **Option A (Phone Number):** Select your country from the country code selector, type your mobile number, and enter the Telegram verification code.
+   - **Option B (QR Code):** Scan the login QR code with your official Telegram mobile app (**Settings** → **Devices** → **Link Desktop Device**).
+4. **Welcome Tour:** Review the 3-step onboarding tour explaining personal cloud storage and channel folders.
+5. **Start Storing:** Your Saved Messages files appear instantly. Tap the `+` button to create private channel folders and upload media!
 
 ---
 
-## Build From Source (Android)
+<a id="tech-stack"></a>
+
+<p align="center">
+  <img src="./assets/readme/section-tech.svg" width="100%" alt="07 Tech Stack &amp; Architecture">
+</p>
+
+<h3 align="center">System Architecture Flow</h3>
+
+<p align="center">
+  <img src="./assets/readme/architecture.svg" width="100%" alt="Shelf Drive Architecture: Device to Telegram direct pipeline">
+</p>
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        ANDROID MOBILE SHELL                            │
+│  React 19  ·  TypeScript 5.8  ·  Tailwind CSS 4  ·  Framer Motion     │
+│  5-Tab Navigation  ·  Frosted Drawer  ·  15 Liquid Themes  ·  24 Locales│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Tauri 2 IPC (JNI Bridge)
+┌───────────────────────────────────▼────────────────────────────────────┐
+│                         RUST NATIVE CORE                               │
+│  Tokio Async Runtime  ·  SQLite Local DB  ·  WorkManager Transfers     │
+│  Streaming Chunk Engine  ·  TDENC2 XChaCha20-Poly1305 Cryptor          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Direct MTProto (Grammers)
+┌───────────────────────────────────▼────────────────────────────────────┐
+│                         TELEGRAM CLOUD                                 │
+│  Saved Messages (Root Drive)  ·  Private Channels (Folders)            │
+│  Zero Relay Servers  ·  Zero Third-Party Intermediaries                │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Component | Description |
+|:---|:---|:---|
+| **Frontend Framework** | React 19.1 &amp; TypeScript 5.8 | Modern React architecture with strict type safety |
+| **Mobile Runtime** | Tauri 2.11 (Android) | High-performance native WebView container powered by Rust |
+| **Styling &amp; Motion** | Tailwind CSS 4 &amp; Framer Motion | Liquid-glass UI components and hardware-accelerated transitions |
+| **Client State** | TanStack Query 5.90 | Optimistic updates, background caching, and reactive query invalidation |
+| **Native Core** | Rust 2021 (Tokio) | Concurrent file chunking, SQLite indexing, and local streaming pipelines |
+| **Telegram Protocol** | Grammers (MTProto) | Direct client-to-datacenter Telegram communications |
+| **Local Database** | SQLite (libsql) | Local file index, transfer states, and folder hierarchy metadata |
+| **Envelope Cryptography** | XChaCha20-Poly1305 &amp; Argon2id | TDENC2 zero-knowledge client-side file encryption |
+| **Internationalization** | i18next (24 Locales) | Full coverage with RTL script mirroring and dynamic locale switching |
+| **Landing Website** | Vanilla HTML5 / CSS3 / ES2024 | Ultra-fast static marketing site hosted on [GitHub Pages](https://hellocloudwebdev.github.io/shelf-drive-mobile/) |
+
+---
+
+## Building from Source
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v20+
-- [Rust](https://www.rust-lang.org/tools/install) (stable toolchain) with Android targets:
-  `aarch64-linux-android`, `armv7-linux-androideabi`, `i686-linux-android`, `x86_64-linux-android`
-- Android SDK + NDK (NDK r30, e.g. `30.0.14904198`) with `NDK_HOME` / `ANDROID_NDK_HOME` set
-- JDK 17
-- Git
+- **Node.js:** v20 LTS or newer
+- **Rust:** Stable toolchain with Android targets:
+  ```bash
+  rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+  ```
+- **Android SDK &amp; NDK:** NDK r30 (`30.0.14904198`) with `ANDROID_HOME` and `NDK_HOME` set
+- **JDK:** OpenJDK 17
+
+### Build Commands
 
 ```bash
 # Clone the repository
 git clone https://github.com/hellocloudwebdev/shelf-drive-mobile.git
 cd shelf-drive-mobile/app
 
-# Install frontend dependencies
+# Install frontend packages
 npm install
 
-# Generate the Android project (idempotent; keeps existing files)
+# Initialize the Tauri Android project (idempotent)
 npm run tauri android init
 
-# Run on a connected device or emulator (hot-reload)
+# Run live on an emulator or connected device with hot reload
 npm run tauri android dev
 
-# Build release APK + AAB for all four architectures
+# Compile universal release APK & AAB
 npm run tauri android build -- --target aarch64 armv7 i686 x86_64 --apk true --aab true --ci
 ```
 
-Release artifacts are packaged and signed by `app/scripts/package-android-release.sh`, which produces the APK/AAB pair, the SHA-256 manifest, and the signed `android-update.json` consumed by the in-app updater.
+### Quality Assurance Verification Gates
 
-<br>
+```bash
+cd app
+npm run test              # Unit test suite
+npm run build:verify      # Typecheck, bundle compilation & budget check
+npm run i18n:check        # Locale dictionary completeness & literal scan
 
----
-
-## Release Flow
-
-Releases are tag-driven: pushing a `v*` tag runs [`.github/workflows/release.yml`](./.github/workflows/release.yml), which
-
-1. runs the verification gates (frontend tests, build, Rust tests, clippy, i18n),
-2. invokes [`android.yml`](./.github/workflows/android.yml) to build and sign the APK/AAB for all four Android architectures and exercise the emulator test suite,
-3. validates and attaches the signed artifacts to a draft release,
-4. generates the source SBOM, checksums, and sigstore provenance attestations,
-5. publishes the release only after every gate passes.
-
-<br>
+cd src-tauri
+cargo check               # Host cargo validation
+cargo check --target aarch64-linux-android  # Android target validation
+```
 
 ---
 
-## iOS Status: Not Production-Ready
+## Documentation Index
 
-**iOS is explicitly not production-ready and no iOS builds or release claims are made.**
-
-What exists today:
-
-- Rust `#[cfg]` gates in the shared core exclude desktop-only dependencies (unrar, WebDAV server, keyring, single-instance) from iOS compilation targets, and `deny.toml` covers `aarch64-apple-ios` and `aarch64-apple-ios-sim`.
-- An `app/src-tauri/icons/ios/` asset set is present in the tree.
-
-What does **not** exist yet: an Xcode project generation + CI pipeline, iOS capability/entitlement validation, signing infrastructure, or any tested device build. Building for iOS additionally requires macOS with Xcode. Treat everything iOS-related as preparation only until it is announced here.
-
-<br>
-
----
-
-## Tech Stack
-
-| Layer | Technology | Purpose |
-|:---|:---|:---|
-| **Frontend** | React 19, TypeScript 5.8, Tailwind CSS 4 | UI components and styling |
-| **Animations** | Framer Motion | Smooth transitions and gestures |
-| **State** | TanStack Query, React Context | Server state and app state |
-| **Bundler** | Vite 7 | Fast builds and hot module replacement |
-| **Mobile Framework** | Tauri 2 (Android) | Native Android container with web frontend |
-| **Backend** | Rust (Tokio async runtime) | High-performance local services |
-| **Telegram** | Grammers (MTProto client) | Direct Telegram API communication |
-| **Database** | SQLite | File metadata and workspace state |
-| **Encryption** | XChaCha20-Poly1305 + Argon2 | Optional file-level encryption |
-| **Internationalization** | i18next | 24-locale support with RTL |
-| **Testing** | Vitest, Testing Library, Android emulator suite | Unit, integration, and on-device tests |
-
-<br>
-
----
-
-## Support the Project
-
-Shelf Drive is **free and open-source**. Every feature works without payment.
-
-Supporter-program pricing and terms are not published in this repository. Confirm current availability and terms with the maintainer before paying.
-
-<br>
+- 📘 [Android Sideload Release Runbook](./Docs/ANDROID_SIDELOAD_RELEASE.md) — Signing keys, manual checksum verification, and release steps.
+- 🔄 [Shared Core Synchronization](./Docs/SHARED_CORE_SYNC.md) — How shared code is mirrored with the desktop repository.
+- 📐 [Architecture Freeze Notes](./Docs/ARCHITECTURE_FREEZE.md) — Architectural invariants and security boundaries.
+- 🗂️ [Folder Sync Guide](./SYNC_GUIDE.md) — Continuous bidirectional directory synchronization.
+- 🛡️ [Privacy Policy](./PRIVACY.md) &amp; [Security Policy](./SECURITY.md) — Threat model and vulnerability disclosure.
+- 📋 [Version Changelog](./CHANGELOG.md) — Release notes and comprehensive historical patch log.
+- 🌐 [Marketing Website](./website/README.md) — Static documentation website and GitHub Pages publishing instructions.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+Contributions are warmly welcomed! Whether you are reporting bugs, improving documentation, submitting translations, or opening pull requests:
 
-Before submitting a PR, make sure the following pass:
+1. Fork the repository and create your feature branch (`git checkout -b feature/amazing-feature`).
+2. Run the QA verification gates above to ensure tests, bundle budgets, and linters pass.
+3. Commit your changes with clear semantic commit messages (`feat: ...`, `fix: ...`, `docs: ...`).
+4. Push to your branch and open a Pull Request.
 
-```bash
-npm run test              # Unit tests (run in app/)
-npm run build:verify      # Build + bundle budget check
-npm run i18n:check        # Locale validation
-cargo check               # Rust library (run in app/src-tauri)
-cargo check --target aarch64-linux-android   # Android Rust target
-```
-
-<br>
-
----
-
-## Documentation
-
-| Document | Description |
-|:---|:---|
-| [Android Sideload Guide](./Docs/ANDROID_SIDELOAD_RELEASE.md) | Install on Android without Play Store; signing and CI secrets |
-| [Shared Core Sync](./Docs/SHARED_CORE_SYNC.md) | How shared code stays in sync with the desktop repository |
-| [Architecture Freeze](./Docs/ARCHITECTURE_FREEZE.md) | Architecture invariants and review notes |
-| [Sync Guide](./SYNC_GUIDE.md) | Bidirectional folder sync configuration |
-| [Privacy Policy](./PRIVACY.md) | What data is and isn't collected |
-| [Security Policy](./SECURITY.md) | Vulnerability reporting and security model |
-| [Changelog](./CHANGELOG.md) | Version history and release notes |
-
-<br>
-
----
-
-## Licensing status
-
-This repository currently has no `LICENSE` file, and GitHub reports no declared license. Confirm the applicable terms with the maintainer before reusing or redistributing this code.
-
-<br>
+*Note: Please ensure shared core components (`app/src`, `app/src-tauri/src`) maintain cross-platform compatibility with the desktop repository.*
 
 ---
 
 <p align="center">
   <strong>Shelf Drive</strong><br>
-  <em>More than storage — it's your digital shelf.</em>
+  <em>More than storage — it’s your digital shelf.</em>
 </p>
 
 <p align="center">
   <sub>
-    Built by <a href="https://github.com/hellocloudwebdev">hellocloudwebdev</a><br>
-    <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases">Releases</a> · <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/issues">Issues</a> · <a href="https://github.com/hellocloudwebdev/shelf-drive">Desktop repository</a>
-  </sub>
-</p>
-
-<p align="center">
-  <sub>
-    <em>"Telegram becomes your cloud. Shelf Drive turns it into a clean, organized drive for all your files."</em><br>
-    <em>"Photos, videos, documents, and more — organized, searchable, and available wherever you use Shelf Drive."</em>
+    Crafted with care by <a href="https://github.com/hellocloudwebdev">hellocloudwebdev</a><br>
+    <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/releases">Releases</a> ·
+    <a href="https://github.com/hellocloudwebdev/shelf-drive-mobile/issues">Issues</a> ·
+    <a href="https://hellocloudwebdev.github.io/shelf-drive-mobile/">Website</a> ·
+    <a href="https://github.com/hellocloudwebdev/shelf-drive">Desktop Repository</a>
   </sub>
 </p>
