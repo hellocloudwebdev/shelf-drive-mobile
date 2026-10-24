@@ -250,7 +250,7 @@ Detailed release procedures and certificate fingerprints: [Docs/ANDROID_SIDELOAD
 - 🛡️ **Zero Relay Infrastructure:** Files travel directly between your Android device and Telegram servers over encrypted MTProto. Shelf Drive operates no relay servers, proxies, or storage nodes.
 - 🔑 **Hardware-Backed Keystore:** API credentials, session tokens, and master keys reside in the Android Keystore secure enclave.
 - 🔒 **TDENC2 Envelope Encryption:** Client-side XChaCha20-Poly1305 authenticated encryption with Argon2id key derivation adds military-grade confidentiality before files leave your phone.
-- 🎬 **Zero-Disk Encrypted Streaming:** Video, audio, and documents decrypt on-the-fly in memory; unencrypted files are never dumped into disk caches.
+- 🎬 **Zero-Disk Encrypted Streaming:** TDENC2-protected audio, video, and PDF content can stream without unencrypted files being dumped into disk caches; media decrypts on-the-fly in memory.
 - 📋 **Privacy-Safe Local Diagnostics:** Diagnostics are stored strictly in rotating, bounded local files on the device. Logs are never auto-uploaded. Crash reports require manual review and consent before copying to clipboard for GitHub submission.
 - 🚫 **No Tracking, No Telemetry:** No third-party ad SDKs, tracker pixels, or behavioral analytics libraries are compiled into the binary.
 
