@@ -4,7 +4,12 @@
 //   cd app && npm run dev -- --host 127.0.0.1 --port 4173      (terminal 1)
 //   node scripts/capture-readme-screenshots.mjs                 (terminal 2)
 //
-// Output: screenshots/live/*.png
+// Output: screenshots/live/*.png  (824 x 1830, Android 15 / Pixel 9 profile)
+//
+// The capture is deterministic: the mock layer pins the workspace fixture so
+// every run produces the same library, the same transfer queue and the same
+// storage counters. Set SHOT_PREFIX to namespace an experimental run, or
+// SHOT_DIR to write somewhere else.
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -15,17 +20,38 @@ const require = createRequire(path.join(root, 'app', 'package.json'));
 const { chromium } = require('@playwright/test');
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:4173';
-const OUT = path.join(root, 'screenshots', 'live');
+const OUT = process.env.SHOT_DIR
+  ? path.resolve(process.env.SHOT_DIR)
+  : path.join(root, 'screenshots', 'live');
+const PREFIX = process.env.SHOT_PREFIX ?? '';
 fs.mkdirSync(OUT, { recursive: true });
 
-function installMocks({ theme, lang }) {
+const VIEWPORT = { width: 412, height: 915 };
+const DEVICE = {
+  viewport: VIEWPORT,
+  deviceScaleFactor: 2,
+  isMobile: true,
+  hasTouch: true,
+  userAgent:
+    'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36',
+  locale: 'en-US',
+};
+
+const captured = [];
+const problems = [];
+const warnings = [];
+
+/** Mock Tauri IPC + plugin shims so the browser build renders a full workspace. */
+function installMocks({ theme, authed }) {
   const day = 86_400_000;
   const now = Date.now();
-  const thumb = (a, b, glyph) => `data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="400" height="400" fill="url(#g)"/><circle cx="290" cy="110" r="46" fill="#fff" opacity=".35"/><path d="M0 400V290l110-90 100 70 80-50 110 90v90z" fill="#000" opacity=".28"/><text x="200" y="215" font-size="60" text-anchor="middle" fill="#fff" opacity=".0">${glyph}</text></svg>`)}`;
+  const stamp = (offsetDays) =>
+    new Date(now - offsetDays * day).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
+  const thumb = (a, b) => `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="400" height="400" fill="url(#g)"/><circle cx="292" cy="104" r="44" fill="#fff" opacity=".34"/><path d="M0 400V290l110-90 100 70 80-50 110 90v90z" fill="#000" opacity=".26"/></svg>`)}`;
   const f = (id, name, size, mime, ext, ago, extra = {}) => ({
     id, name, size, sizeStr: '', mime_type: mime, file_ext: ext, type: 'file', icon_type: 'file',
-    created_at: new Date(now - ago * day).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC'), encryption_state: 'plain',
+    created_at: stamp(ago), encryption_state: 'plain',
     is_favorite: false, is_pinned: false, offline_available: false, ...extra,
   });
   const MB = 1024 * 1024;
@@ -47,7 +73,8 @@ function installMocks({ theme, lang }) {
     f(115, 'Snow_Peak_Sunrise.jpg', 4.1 * MB, 'image/jpeg', 'jpg', 8),
     f(116, 'City_Skyline_Dusk.jpg', 3.6 * MB, 'image/jpeg', 'jpg', 11),
   ];
-  const folders = [    { id: 11, name: 'Photos & Memories', is_public: false, display_order: 0 },
+  const folders = [
+    { id: 11, name: 'Photos & Memories', is_public: false, display_order: 0 },
     { id: 12, name: 'Work Projects', is_public: false, display_order: 1 },
     { id: 13, name: 'Movies & Shows', is_public: false, display_order: 2 },
     { id: 14, name: 'Music Library', is_public: false, display_order: 3 },
@@ -55,13 +82,14 @@ function installMocks({ theme, lang }) {
     { id: 16, name: 'Travel 2026', is_public: false, display_order: 5 },
   ];
   const thumbs = {
-    111: thumb('#a855f7', '#0ea5e9'), 112: thumb('#c084fc', '#f472b6'), 113: thumb('#fbbf24', '#b45309'), 114: thumb('#06b6d4', '#14b8a6'), 115: thumb('#e0f2fe', '#6366f1'), 116: thumb('#fb7185', '#7c3aed'),
-    101: thumb('#0ea5e9', '#6366f1'), 104: thumb('#f59e0b', '#ef4444'), 109: thumb('#10b981', '#0ea5e9'),
-    102: thumb('#7c3aed', '#ec4899'), 107: thumb('#f43f5e', '#f59e0b'),
+    101: thumb('#0ea5e9', '#6366f1'), 102: thumb('#7c3aed', '#ec4899'), 104: thumb('#f59e0b', '#ef4444'),
+    107: thumb('#f43f5e', '#f59e0b'), 109: thumb('#10b981', '#0ea5e9'), 111: thumb('#a855f7', '#0ea5e9'),
+    112: thumb('#c084fc', '#f472b6'), 113: thumb('#fbbf24', '#b45309'), 114: thumb('#06b6d4', '#14b8a6'),
+    115: thumb('#e0f2fe', '#6366f1'), 116: thumb('#fb7185', '#7c3aed'),
   };
   const mkJob = (id, direction, status, filename, progress, total, speed, pos) => ({
     id, ownerId: '1', direction, kind: direction === 'upload' ? 'local_upload' : 'download', status,
-    folderId: 11, filename, progress, transferredBytes: Math.round(total * progress / 100), totalBytes: total,
+    folderId: 11, filename, progress, transferredBytes: Math.round((total * progress) / 100), totalBytes: total,
     speedBytesPerSec: speed, queuePosition: pos, revision: 1, createdAt: now - 60000, updatedAt: now,
   });
   const jobs = [
@@ -129,82 +157,156 @@ function installMocks({ theme, lang }) {
       },
     },
   });
-  localStorage.setItem('shelf-drive-ui:store:config.json', JSON.stringify({ api_id: '12345' }));
+  if (authed) {
+    localStorage.setItem('shelf-drive-ui:store:config.json', JSON.stringify({ api_id: '12345' }));
+  }
   localStorage.setItem('theme', theme);
+  localStorage.setItem('theme-preference', theme);
+  // Skip the crash-reporting consent sheet; the tour is captured separately.
+  localStorage.setItem('shelf-drive-crash-consent', 'declined');
 }
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({
-  viewport: { width: 412, height: 892 },
-  deviceScaleFactor: 2,
-  isMobile: true,
-  hasTouch: true,
-  userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36',
-  colorScheme: 'dark',
-  locale: 'en-US',
-});
-const page = await ctx.newPage();
-page.on('console', (m) => { if (m.type() === 'error') console.log('[console.error]', m.text().slice(0, 200)); });
-page.on('pageerror', (e) => console.log('[pageerror]', e.message.slice(0, 200)));
-await page.addInitScript(installMocks, { theme: 'dark', lang: 'en' });
-const snap = async (name) => {
-  await page.waitForTimeout(1200);
-  await page.screenshot({ path: path.join(OUT, `${name}.png`) });
-  console.log('captured', name);
+
+async function openPage({ theme = 'dark', authed = true } = {}) {
+  const ctx = await browser.newContext({ ...DEVICE, colorScheme: theme });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message.slice(0, 200)}`));
+  // The browser build logs React DOM nesting warnings from the update banner;
+  // they are informational and must not fail a screenshot run.
+  page.on('console', (m) => { if (m.type() === 'error') warnings.push(m.text().slice(0, 160)); });
+  await page.addInitScript(installMocks, { theme, authed });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await page.waitForTimeout(4500);
+  return { ctx, page };
+}
+
+const snap = async (page, name, { settle = 1100 } = {}) => {
+  await page.waitForTimeout(settle);
+  const file = path.join(OUT, `${PREFIX}${name}.png`);
+  await page.screenshot({ path: file });
+  captured.push(`${PREFIX}${name}.png`);
+  console.log('captured', `${PREFIX}${name}.png`);
 };
-const click = async (locator) => { await locator.first().click({ timeout: 4000 }).catch((e) => console.log('click miss:', e.message.split('\n')[0])); };
 
-await page.goto(BASE + '/');
-await page.waitForTimeout(3500);
-await click(page.getByRole('button', { name: 'No thanks' }));
-await page.waitForTimeout(2000);
+const tap = async (page, name, label, { exact = true, optional = false } = {}) => {
+  const locator = page.getByRole('button', { name: label, exact }).last();
+  try {
+    await locator.click({ timeout: 6000 });
+    await page.waitForTimeout(700);
+    return true;
+  } catch (error) {
+    const note = `${name}: could not tap "${label}" (${error.message.split('\n')[0]})`;
+    if (optional) { console.log('skip', note); return false; }
+    problems.push(note);
+    return false;
+  }
+};
 
-// Onboarding tour
-await snap('01-tour-cloud');
-await click(page.getByRole('button', { name: 'Next' }));
-await snap('02-tour-private');
-await click(page.getByRole('button', { name: 'Next' }));
-await snap('03-tour-ready');
-await page.waitForTimeout(800);
-await page.getByRole('button', { name: /Finish/ }).click({ timeout: 5000, force: true }).catch((e) => console.log('finish miss', e.message.split('\n')[0]));
-await page.waitForTimeout(1800);
+/** Scroll the page's inner scroll container until `text` is in view. */
+const scrollToText = async (page, text) => {
+  const target = page.getByText(text, { exact: false }).first();
+  try {
+    await target.scrollIntoViewIfNeeded({ timeout: 5000 });
+    await page.waitForTimeout(600);
+    return true;
+  } catch {
+    await page.mouse.wheel(0, 900);
+    await page.waitForTimeout(600);
+    return false;
+  }
+};
 
-// Home
-await snap('04-home');
-await click(page.getByRole('button', { name: /Photos & Memories/ }));
-await snap('05-folder');
-await click(page.getByRole('button', { name: 'Photos', exact: true }).last());
-await snap('06-photos');
-await click(page.getByRole('button', { name: 'Videos', exact: true }).last());
-await snap('07-videos');
-await click(page.getByRole('button', { name: 'Documents', exact: true }).last());
-await snap('08-documents');
-await click(page.getByRole('button', { name: 'Settings', exact: true }).last());
-await snap('09-settings');
-await page.mouse.wheel(0, 900);
-await snap('10-settings-scrolled');
-await ctx.close();
+// ---------------------------------------------------------------- auth pass
+{
+  const { ctx, page } = await openPage({ theme: 'dark', authed: false });
+  await snap(page, '01-auth');
+  await ctx.close();
+}
 
-// Light theme pass
-const lightCtx = await browser.newContext({
-  viewport: { width: 412, height: 892 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
-  userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36',
-  colorScheme: 'light', locale: 'en-US',
-});
-const lp = await lightCtx.newPage();
-await lp.addInitScript(installMocks, { theme: 'light', lang: 'en' });
-await lp.addInitScript(() => { localStorage.setItem('theme-preference', 'light'); });
-await lp.goto(BASE + '/');
-await lp.waitForTimeout(3500);
-await lp.getByRole('button', { name: 'No thanks' }).click().catch(() => {});
-await lp.waitForTimeout(1500);
-for (let i = 0; i < 2; i++) { await lp.getByRole('button', { name: 'Next' }).click({ force: true }).catch(() => {}); await lp.waitForTimeout(700); }
-await lp.getByRole('button', { name: /Finish/ }).click({ force: true }).catch(() => {});
-await lp.waitForTimeout(1800);
-const lsnap = async (name) => { await lp.waitForTimeout(1200); await lp.screenshot({ path: path.join(OUT, `${name}.png`) }); console.log('captured', name); };
-await lsnap('11-light-home');
-await lp.getByRole('button', { name: 'Photos', exact: true }).last().click().catch(() => {});
-await lsnap('12-light-photos');
-await lp.getByRole('button', { name: 'Settings', exact: true }).last().click().catch(() => {});
-await lsnap('13-light-settings');
+// ---------------------------------------------------------------- dark pass
+{
+  const { ctx, page } = await openPage({ theme: 'dark' });
+
+  // First-run introduction (three slides)
+  await snap(page, '02-tour-cloud');
+  await tap(page, 'tour', 'Next');
+  await snap(page, '03-tour-private');
+  await tap(page, 'tour', 'Next');
+  await snap(page, '04-tour-ready');
+  await tap(page, 'tour', 'Finish');
+  await page.waitForTimeout(1200);
+
+  await snap(page, '05-home');
+
+  await tap(page, 'folder', 'Open folder Photos & Memories');
+  await snap(page, '06-folder');
+  await tap(page, 'home', 'Home');
+
+  await tap(page, 'photos', 'Photos');
+  await snap(page, '07-photos');
+
+  await tap(page, 'videos', 'Videos');
+  await snap(page, '08-videos');
+
+  await tap(page, 'documents', 'Documents');
+  await snap(page, '09-documents');
+
+  await tap(page, 'home', 'Home');
+  await tap(page, 'drawer', 'Open folders');
+  await snap(page, '10-drawer', { settle: 900 });
+  await tap(page, 'drawer-close', 'Close folders');
+
+  await tap(page, 'actions', 'Actions for Iceland_Aurora_2026.jpg', { exact: false });
+  await snap(page, '11-file-actions', { settle: 900 });
+  await tap(page, 'actions-close', 'Cancel');
+  await page.waitForTimeout(700);
+
+  await tap(page, 'upload', 'Upload');
+  await snap(page, '12-upload-sheet', { settle: 900 });
+  await tap(page, 'upload-close', 'Cancel');
+  await page.waitForTimeout(700);
+
+  await tap(page, 'settings', 'Settings');
+  await snap(page, '13-settings');
+  if (await scrollToText(page, 'Appearance')) {
+    await snap(page, '14-settings-appearance');
+  }
+
+  await ctx.close();
+}
+
+// --------------------------------------------------------------- light pass
+{
+  const { ctx, page } = await openPage({ theme: 'light' });
+
+  // Finish the tour without capturing it again.
+  await tap(page, 'tour', 'Next', { optional: true });
+  await tap(page, 'tour', 'Next', { optional: true });
+  await tap(page, 'tour', 'Finish', { optional: true });
+  await page.waitForTimeout(1400);
+
+  await snap(page, '15-light-home');
+  await tap(page, 'photos', 'Photos');
+  await snap(page, '16-light-photos');
+  await tap(page, 'settings', 'Settings');
+  await snap(page, '17-light-settings');
+
+  await ctx.close();
+}
+
 await browser.close();
+
+console.log(`\n${captured.length} screenshots written to ${OUT}`);
+if (warnings.length) {
+  const unique = [...new Set(warnings)];
+  console.log(`\n${warnings.length} browser console message(s), ${unique.length} unique:`);
+  for (const warning of unique.slice(0, 5)) {
+    console.log(' ·', warning.replace(/\s+/g, ' '));
+  }
+}
+if (problems.length) {
+  console.log('\nproblems:');
+  for (const problem of problems) console.log(' -', problem);
+  process.exitCode = 1;
+}

@@ -13,14 +13,14 @@ SHOTS = ROOT / "screenshots"
 OUT = ROOT / "assets" / "readme"
 
 SCREENS = [
-    ("04-home.png", "Touch-first home dashboard"),
-    ("05-folder.png", "Organized folders & 2-way sync"),
-    ("06-photos.png", "Vibrant photo gallery grid"),
-    ("07-videos.png", "4K video streaming & offline cache"),
-    ("08-documents.png", "TDENC2 encrypted document vault"),
-    ("09-settings.png", "Storage telemetry & bandwidth limits"),
-    ("11-light-home.png", "Pristine frosted light theme"),
-    ("01-tour-cloud.png", "Interactive onboarding tour"),
+    ("05-home.png", "Touch-first home dashboard"),
+    ("06-folder.png", "Organized folders & channel workspaces"),
+    ("07-photos.png", "Vibrant photo gallery grid"),
+    ("08-videos.png", "Video library & offline cache"),
+    ("09-documents.png", "Documents & encrypted vault"),
+    ("13-settings.png", "Storage telemetry & bandwidth limits"),
+    ("15-light-home.png", "Pristine frosted light theme"),
+    ("02-tour-cloud.png", "Guided onboarding tour"),
 ]
 
 W, H = 1100, 700
