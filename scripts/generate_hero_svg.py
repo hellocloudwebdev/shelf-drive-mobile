@@ -21,11 +21,11 @@ def generate():
     # Encode real live screenshots
     # Phone 1 (Front: Dark Home)
     p1_w, p1_h = 264, 572
-    b64_p1 = encode_image(LIVE_SHOTS / "04-home.png", (p1_w, p1_h))
+    b64_p1 = encode_image(LIVE_SHOTS / "05-home.png", (p1_w, p1_h))
 
     # Phone 2 (Back: Photos or Light Mode)
     p2_w, p2_h = 240, 520
-    b64_p2 = encode_image(LIVE_SHOTS / "06-photos.png", (p2_w, p2_h))
+    b64_p2 = encode_image(LIVE_SHOTS / "15-light-home.png", (p2_w, p2_h))
 
     svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 640" width="1280" height="640">
   <title>Shelf Drive — The Telegram-Powered Cloud Workspace</title>
@@ -368,7 +368,7 @@ def generate():
     <ellipse class="pulse-slow" cx="300" cy="420" rx="280" ry="180" fill="url(#phoneGlow)"/>
 
     <!--  -->
-    <!-- BACK PHONE: Media Gallery (06-photos.png)                     -->
+    <!-- BACK PHONE: Media Gallery (15-light-home.png)                     -->
     <!--  -->
     <g transform="translate(230, 20) rotate(4)" filter="url(#backPhoneShadow)" opacity="0.88">
       <!-- Outer Metal Frame -->
@@ -386,7 +386,7 @@ def generate():
     </g>
 
     <!--  -->
-    <!-- FRONT PHONE: Dark Home Screen (04-home.png)                   -->
+    <!-- FRONT PHONE: Dark Home Screen (05-home.png)                   -->
     <!--  -->
     <g transform="translate(30, 0)" filter="url(#shadowGlow)">
       <!-- Outer Titanium Chassis -->

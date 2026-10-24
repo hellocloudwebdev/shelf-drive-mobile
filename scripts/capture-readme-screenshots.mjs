@@ -280,7 +280,8 @@ const scrollToText = async (page, text) => {
 {
   const { ctx, page } = await openPage({ theme: 'light' });
 
-  // Finish the tour without capturing it again.
+  // Capture light theme tour slide
+  await snap(page, '18-light-tour');
   await tap(page, 'tour', 'Next', { optional: true });
   await tap(page, 'tour', 'Next', { optional: true });
   await tap(page, 'tour', 'Finish', { optional: true });
@@ -289,6 +290,14 @@ const scrollToText = async (page, text) => {
   await snap(page, '15-light-home');
   await tap(page, 'photos', 'Photos');
   await snap(page, '16-light-photos');
+
+  await tap(page, 'home', 'Home');
+  await tap(page, 'folder', 'Open folder Photos & Memories');
+  await snap(page, '19-light-folder');
+
+  await tap(page, 'documents', 'Documents');
+  await snap(page, '20-light-documents');
+
   await tap(page, 'settings', 'Settings');
   await snap(page, '17-light-settings');
 
