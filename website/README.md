@@ -55,8 +55,8 @@ download roughly 30 KB per screenshot instead of 300 KB.
 ## Deploy
 
 `.github/workflows/pages.yml` publishes this folder to GitHub Pages on every push to
-`main` that touches `website/**` or `screenshots/live/**`. In the repository settings,
-set **Pages → Build and deployment → Source** to **GitHub Actions** once.
+`main` that touches `website/**` or `screenshots/live/**`. The workflow now enables
+GitHub Pages automatically if it has not been configured yet.
 
 The site then lives at `https://<owner>.github.io/shelf-drive-mobile/`.
 
