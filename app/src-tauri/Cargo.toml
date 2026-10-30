@@ -106,6 +106,18 @@ windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 jni = "0.21"
 ndk-context = "0.1.1"
 
+# Android ships this crate as a single cdylib; optimize for size over speed
+# (media streaming is I/O-bound, not compute-bound) with thin LTO across the
+# crate graph. panic = "abort" is deliberately NOT set: the codebase relies on
+# unwinding across the FFI boundary (Tauri command handlers and JNI exports
+# must unwind into the framework's catch_unwind instead of aborting the
+# process), and a cdylib built with panic=abort must abort at its boundary.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
+
 # Remove once an upstream updater release supports patched zip >= 9.0.4.
 [patch.crates-io]
 tauri-plugin-updater = { path = "vendor/tauri-plugin-updater" }
