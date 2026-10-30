@@ -27,7 +27,12 @@ grammers-client = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a5
 grammers-session = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a579121c9025c728231bdd9bb9b7113c0b5" }
 grammers-mtsender = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a579121c9025c728231bdd9bb9b7113c0b5", features = ["proxy"] }
 grammers-tl-types = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a579121c9025c728231bdd9bb9b7113c0b5" }
-tokio = { version = "1", features = ["full"] }
+# Every tokio feature the workspace's own code uses, except signal (never
+# referenced). "full" also pulled in signal; transitive dependencies (tauri,
+# actix-web, reqwest, grammers) re-activate the shared core features through
+# unification either way, so this documents intent more than it shrinks the
+# binary.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time", "io-util", "net", "fs", "process"] }
 
 tauri-plugin-store = "2"
 tauri-plugin-shell = "2"
