@@ -6132,15 +6132,7 @@ async fn cmd_upload_from_url_owned(
         }
         let free_space = tokio::task::spawn_blocking({
             let temp_dir = temp_dir.clone();
-            move || {
-                let disks = sysinfo::Disks::new_with_refreshed_list();
-                disks
-                    .iter()
-                    .filter(|d| temp_dir.starts_with(d.mount_point()))
-                    .map(|d| d.available_space())
-                    .next()
-                    .unwrap_or(u64::MAX)
-            }
+            move || crate::workspace::device_cache::available_bytes(&temp_dir).unwrap_or(u64::MAX)
         })
         .await
         .map_err(|e| format!("Disk check panicked: {}", e))?;
