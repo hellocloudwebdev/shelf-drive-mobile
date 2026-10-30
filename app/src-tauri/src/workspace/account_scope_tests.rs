@@ -100,6 +100,54 @@ async fn concurrent_scoped_operations_keep_their_own_owner_and_clear_afterwards(
     assert!(operation_account().unwrap().is_none());
 }
 
+#[tokio::test]
+async fn account_guard_validates_owner_and_fails_across_in_flight_account_switch() {
+    let fixture = Fixture::new(100);
+    let guard = fixture.guard();
+    assert_eq!(guard.owner, 100);
+    assert!(guard.validate().is_ok());
+
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (switched_tx, switched_rx) = tokio::sync::oneshot::channel();
+    let in_flight_guard = guard.clone();
+
+    let in_flight_operation = async move {
+        in_flight_guard
+            .validate()
+            .expect("initial validation must succeed");
+        started_tx.send(()).unwrap();
+
+        switched_rx.await.unwrap();
+
+        // Validating the captured guard after owner changed to 200 must fail
+        in_flight_guard.validate()
+    };
+
+    let switcher = async {
+        started_rx.await.unwrap();
+        fixture.set_owner(200);
+        switched_tx.send(()).unwrap();
+    };
+
+    let (validation_result, ()) = tokio::join!(in_flight_operation, switcher);
+    let error = validation_result.unwrap_err();
+    assert!(
+        error.contains("ACCOUNT_CHANGED"),
+        "unexpected error: {error}"
+    );
+
+    // The original guard also fails validation
+    assert!(guard.validate().unwrap_err().contains("ACCOUNT_CHANGED"));
+
+    // Guard opened expecting owner 100 fails
+    assert!(AccountGuard::open(&fixture.0, Some("100")).is_err());
+
+    // Guard opened for current owner 200 succeeds
+    let new_guard = AccountGuard::open(&fixture.0, Some("200")).unwrap();
+    assert_eq!(new_guard.owner, 200);
+    assert!(new_guard.validate().is_ok());
+}
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod desktop_session_reads {
     use super::*;

@@ -602,6 +602,57 @@ mod tests {
     }
 
     #[test]
+    fn decrypt_operation_handle_and_session_invalidated_when_vault_locks_and_cannot_survive_reunlock(
+    ) {
+        let state = CryptoState::new(Box::new(MemoryVault::new()));
+        let session = state.create_vault(b"test passphrase").unwrap();
+        let download_handle = state
+            .create_operation_handle(session, OperationClass::Download)
+            .unwrap();
+
+        assert!(!state.is_locked());
+        assert!(state.validate_session(session).is_ok());
+        assert!(state
+            .operation_wrapping_key(download_handle, OperationClass::Download)
+            .is_ok());
+        assert!(state.get_wrapping_key(session).is_ok());
+        assert!(state.get_current_wrapping_key().is_ok());
+
+        // Vault locks mid-operation (e.g. timeout or explicit lock command)
+        state.lock();
+
+        assert!(state.is_locked());
+        assert!(state
+            .operation_wrapping_key(download_handle, OperationClass::Download)
+            .is_err());
+        assert!(state.validate_session(session).is_err());
+        assert!(state.get_wrapping_key(session).is_err());
+        assert!(state.get_current_wrapping_key().is_err());
+
+        // Re-unlocking the vault establishes a new session; old handle and session
+        // remain completely revoked and cannot access the newly unlocked vault.
+        let new_session = state.unlock(b"test passphrase").unwrap();
+        assert_ne!(new_session, session);
+        assert!(!state.is_locked());
+
+        assert!(
+            state.validate_session(session).is_err(),
+            "prior session must remain rejected after re-unlock"
+        );
+        assert!(
+            state.get_wrapping_key(session).is_err(),
+            "prior session wrapping key must remain inaccessible"
+        );
+        assert!(
+            state
+                .operation_wrapping_key(download_handle, OperationClass::Download)
+                .is_err(),
+            "prior operation handle must not be revived in a new session"
+        );
+        assert!(state.validate_session(new_session).is_ok());
+    }
+
+    #[test]
     fn foreground_activity_extends_an_active_deadline() {
         let state = CryptoState::new(Box::new(MemoryVault::new()));
         state.create_vault(b"test passphrase").unwrap();
