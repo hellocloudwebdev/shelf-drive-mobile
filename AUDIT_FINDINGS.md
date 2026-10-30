@@ -6,6 +6,27 @@ Consolidated code-audit results for the repository's `main` snapshot at audit ti
 
 > **Historical snapshot:** This audit records the code and configuration at the cited commit, when Android API 24 was the configured minimum. Since v4.4.8, the current support baseline is Android 12–16 (API 31–36), with `minSdk` 31 and `targetSdk` 36. References below to Android 7–9/API 24-era behavior describe that audited snapshot only; they neither promise current support for those versions nor establish that a finding has since been fixed.
 
+## Status at HEAD
+
+Re-verified against `main` at commit `a2f22d69` (2026-10-30) by re-reading the cited code paths; findings not listed below have **not** been re-verified at HEAD and must be treated as open until checked.
+
+| Finding | Status at HEAD | Evidence at HEAD |
+| --- | --- | --- |
+| #3 Mobile file mutations disabled (missing owner ID) | **Fixed** | `MobileDashboard.tsx:760` passes `accountId ?? undefined` as the sixth `useFileOperations` argument; hook owner guards in `useFileOperations.ts:15-22`; regression tests in `tests/unit/fileMutationOwnership.test.tsx` (hook level; component-level wiring tracked as a gap, see the optimization-pass mobile mutation integration tests). |
+| #4 Stream tokens not bound to source folder | **Fixed** | `commands/streaming.rs:33-60` binds `resource_key(owner, folder_id, file_id)`; `server.rs:615-634` validates the full tuple; `stream_token.rs:208-219` tests cross-folder/cross-owner rejection. |
+| #6 Mobile previews use browsing folder instead of file source | **Fixed** | `MobileDashboard.tsx:2311-2341` resolves `sourceFolder(file, activeFolderId)` for player/PDF/image previews; `fileSourceCallers.test.tsx:20-24` covers the explicit-null Saved Messages case. |
+| #7 Mobile single-file downloads use active folder | **Fixed** | `MobileDashboard.tsx:869-871` queues with `sourceFolder(file, activeFolderId)`; covered by `fileSourceCallers.test.tsx:41-49` (bulk) — single-file path has no dedicated component test. |
+| #8 Sync byte-range parser mishandles suffix ranges | **Partially fixed** | Suffix ranges (`bytes=-N`) parse correctly (`server.rs:67-73`) with tests (`server.rs:852-865`); absent-vs-unsatisfiable ranges are still not distinguished, so invalid/unsatisfiable headers fall back to byte 0 (200/206) instead of HTTP 416. Remainder tracked for follow-up. |
+| #9 WorkManager used without initialization | **Fixed** | `ShelfDriveApplication.kt:16-20` calls `WorkManager.initialize` in `onCreate`; instrumentation test `AndroidPlatformContractTest.kt:106-113` verifies initialization and the custom scheduler ID range. |
+| #10 Mobile delete callback discards file identity | **Fixed** | `MobileDashboard.tsx:873-875` passes the `TelegramFile` object to `handleDeleteOp`; `useFileOperations.ts:39-41` preserves object targets; `fileSourceCallers.test.tsx:33-37`. |
+| #11 Mobile bulk share hard-codes Saved Messages | **Fixed** | `MobileDashboard.tsx:951` uses `createOwnedShareLinks(ownerId, shareFiles, activeFolderId, isCurrent)`; `shareLinks.ts:25-38` resolves each file's source folder; `fileSourceCallers.test.tsx:25-32`. |
+| #12 Offline pin/remove coalesces Saved Messages null | **Fixed** | `MobileDashboard.tsx:896,908` use `sourceFolder(file, activeFolderId)` instead of `??`; explicit-null unit test in `fileSourceCallers.test.tsx:20-24`. |
+| #20 Android cached-share uploads queued without owner | **Fixed** | `MobileDashboard.tsx:596-615` aborts without an owner and stamps `ownerId: accountId` on every cached-share queue item; no dedicated regression test yet (general ownership capture is covered by `transferOwnerCapture.test.tsx`). |
+| #28 NAT64-embedded private IPv4 passes URL filter | **Fixed** | `commands/fs.rs:5864-5878` restricts IPv6 to global unicast `2000::/3`; regression test `remote_upload_blocks_local_and_reserved_addresses` (`commands/fs.rs:6866-6895`) covers `64:ff9b::808:808`. |
+| #44 Logout restores previous account's active folder | **Fixed** | `useTelegramConnection.ts:213-218` deletes `activeFolderId` (with `api_id`, `api_hash`, `folders`) on sign-out; `useTelegramConnectionLogout.test.tsx:160-199` verifies deletion and reset for the next account. |
+
+All other findings in this document are **unverified at HEAD**: they describe the audited snapshot and have not been re-checked against current code.
+
 ## Executive summary
 
 The consolidated reviews report **46 numbered code/configuration/documentation findings**: 4 high-severity, 32 medium-severity, and 10 low-severity. Separately, one **medium-priority dependency-security item** covers 12 `npm audit` advisories in development/build/test dependencies (7 high, 4 moderate, 1 low; fixes are available); those package advisory counts are not included in the 46 numbered findings. The most consequential findings include vault locking that does not revoke keys already copied into in-flight decrypt operations, stale deletion preconditions in sync and scheduled cleanup, and SSRF controls bypassable through a configured proxy or NAT64 translation. Other findings span account/session boundaries, Android sharing and publication, file moves/cache identity, upload cancellation, search, settings, playback, and desktop/mobile workflows.
