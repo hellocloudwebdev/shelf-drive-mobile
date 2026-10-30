@@ -39,7 +39,14 @@ image = { version = "0.25.10", default-features = false, features = ["bmp", "gif
 log = "0.4"
 env_logger = "0.11"
 tauri-plugin-updater = "2"
-actix-web = "4"
+# Default actix-web features include compress-brotli/gzip/zstd; the app never
+# registers actix's Compress middleware (its three loopback servers stream
+# through custom handlers), so those features only pulled vulnerable transitive
+# crates (zstd-safe 7.x / zstd-sys 2.x carry open RUSTSEC advisories with no
+# in-range fix) into every target's graph. cookies is required by
+# share_routes.rs (share-capability cookies); macros by the routing and test
+# attributes; unicode by the router.
+actix-web = { version = "4", default-features = false, features = ["macros", "unicode", "cookies"] }
 actix-cors = "0.7"
 actix-files = "0.6"
 actix-multipart = "0.7"
