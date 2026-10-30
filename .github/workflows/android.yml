@@ -33,6 +33,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Restores and saves ~/.gradle/caches and ~/.gradle/wrapper across runs;
+      # the Gradle project itself is generated later by `tauri android init`.
+      - name: Setup Gradle caching
+        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
         with:
@@ -42,16 +47,19 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      - name: Install Android SDK and NDK inputs
+      # Cargo registry/git and the four-ABI release target directory are the
+      # longest pole of this job; cache them keyed on the workspace lockfile.
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Install Android SDK and NDK build inputs
         shell: bash
         run: |
           sdkmanager \
             'platforms;android-36' \
             'build-tools;36.0.0' \
-            'emulator' \
-            'system-images;android-36;google_apis;x86_64' \
-            'system-images;android-36;google-tv;x86_64' \
-            'system-images;android-31;google_apis;x86_64' \
             "ndk;${NDK_VERSION}"
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
@@ -104,11 +112,11 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/telegram-drive.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/shelf-drive.jks"
           test -n "$ANDROID_KEY_ALIAS"
           test -n "$ANDROID_KEY_PASSWORD"
           if [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then ANDROID_KEYSTORE_PASSWORD="$ANDROID_KEY_PASSWORD"; fi
-          printf 'keyAlias=%s\nkeyPassword=%s\nstorePassword=%s\nstoreFile=%s\n' "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEYSTORE_PASSWORD" "$RUNNER_TEMP/telegram-drive.jks" > src-tauri/gen/android/app/keystore.properties
+          printf 'keyAlias=%s\nkeyPassword=%s\nstorePassword=%s\nstoreFile=%s\n' "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEYSTORE_PASSWORD" "$RUNNER_TEMP/shelf-drive.jks" > src-tauri/gen/android/app/keystore.properties
 
       - name: Prepare updater signing key
         if: env.HAS_ANDROID_SIGNING_KEY == 'true'
@@ -157,6 +165,19 @@ jobs:
       - name: Verify ABIs and 16 KB page-size compatibility
         working-directory: app
         run: bash scripts/verify-android-artifacts.sh
+
+      # Emulator and system images are only consumed by the instrumentation
+      # steps below; download them after the build, test compilation, and
+      # artifact verification succeeded so a build failure never pays for
+      # the multi-gigabyte image download.
+      - name: Install Android emulator and system images
+        shell: bash
+        run: |
+          sdkmanager \
+            'emulator' \
+            'system-images;android-36;google_apis;x86_64' \
+            'system-images;android-36;google-tv;x86_64' \
+            'system-images;android-31;google_apis;x86_64'
 
       - name: Allow hardware-accelerated Android emulators
         shell: bash
