@@ -1,3 +1,21 @@
+# Cargo resolves this config for every invocation made at or below the repo
+# root (dependency-assurance and quality-assurance run cargo from the root).
+# `app/src-tauri/.cargo/config.toml` is a byte-identical copy for the
+# invocations that resolve from the crate directory instead (the Gradle Rust
+# plugin runs cargo with workingDir app/src-tauri, and IDE tooling opened at
+# the crate skips the repo root). Keep the two copies in sync; there is no
+# third location: cargo is never invoked from `app/` itself, and the copy
+# under `android-overrides/` was removed because `rootDirRel = "../../../"`
+# in build.gradle.kts makes the Gradle-spawned cargo resolve from
+# app/src-tauri, never from gen/android/app where overrides are copied.
+#
+# Why --allow-multiple-definition / /FORCE:MULTIPLE is required: the app links
+# two independent bundled SQLite C amalgamations — the `sqlite` crate
+# (sqlite3-src, used by our own databases) and Grammers' libsql-ffi. Both
+# define the same `sqlite3_*` C symbols, so static linking fails with
+# duplicate-symbol errors on every platform unless the linker is told to keep
+# the first definition (see libsql_init.rs and commit f969280). Order of
+# symbol resolution stays deterministic; each Rust crate binds its own engine.
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-Wl,--allow-multiple-definition"]
 
