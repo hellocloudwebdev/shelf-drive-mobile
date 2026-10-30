@@ -50,10 +50,10 @@ import { fileQueryKey, invalidateFolderFileQueries, refreshFolderFiles } from '.
 import { effectiveVideoUploadMode } from '../../services/videoUploadMode';
 import i18n from '../../i18n';
 
-const LazyHelpCenterDialog = lazy(() => import('../desktop/dashboard/HelpCenterDialog').then((module) => ({ default: module.HelpCenterDialog })));
+const LazyHelpCenterDialog = lazy(() => import('../shared/HelpCenterDialog').then((module) => ({ default: module.HelpCenterDialog })));
 const LazyMobileMediaPlayer = lazy(() => import('./MobileMediaPlayer').then((module) => ({ default: module.MobileMediaPlayer })));
-const LazyPdfViewer = lazy(() => import('../desktop/dashboard/PdfViewer').then((module) => ({ default: module.PdfViewer })));
-const LazyPreviewModal = lazy(() => import('../desktop/dashboard/PreviewModal').then((module) => ({ default: module.PreviewModal })));
+const LazyPdfViewer = lazy(() => import('../shared/PdfViewer').then((module) => ({ default: module.PdfViewer })));
+const LazyPreviewModal = lazy(() => import('../shared/PreviewModal').then((module) => ({ default: module.PreviewModal })));
 
 // Drawer navigation views mirror the desktop sidebar; labels are i18n keys.
 const SMART_VIEW_ITEMS: Array<[SmartView, typeof Folder, string]> = [

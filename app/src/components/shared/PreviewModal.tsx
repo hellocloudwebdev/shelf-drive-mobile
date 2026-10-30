@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, File, Maximize, Scan, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
-import { convertFileSrc } from '../../../api/index';
-import { TelegramFile } from '../../../types';
-import { isImageFile } from '../../../utils';
-import { useSettings } from '../../../context/SettingsContext';
-import { userFacingError } from '../../../services/userFacingError';
+import { convertFileSrc } from '../../api/index';
+import { TelegramFile } from '../../types';
+import { isImageFile } from '../../utils';
+import { useSettings } from '../../context/SettingsContext';
+import { userFacingError } from '../../services/userFacingError';
 import {
     forgetPreview,
     forgetThumbnail,
@@ -14,8 +14,8 @@ import {
     getCachedThumbnail,
     loadPreview,
     loadThumbnail,
-} from '../../../services/imagePreviewCache';
-import i18n from '../../../i18n';
+} from '../../services/imagePreviewCache';
+import i18n from '../../i18n';
 
 const MAX_PREFETCH_BYTES = 25 * 1024 * 1024;
 const MIN_IMAGE_ZOOM = 0.25;

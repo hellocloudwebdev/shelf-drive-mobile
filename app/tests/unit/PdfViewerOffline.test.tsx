@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../src/i18n';
-import { PdfViewer } from '../../src/components/desktop/dashboard/PdfViewer';
+import { PdfViewer } from '../../src/components/shared/PdfViewer';
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), getDocument: vi.fn(), destroy: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke, convertFileSrc: (path: string) => `asset://localhost${path}` }));
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({ GlobalWorkerOptions: {}, getDocument: mocks.getDocument }));

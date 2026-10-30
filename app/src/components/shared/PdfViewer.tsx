@@ -1,15 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
-import { convertFileSrc, media as mediaApi, system } from '../../../api/index';
+import { convertFileSrc, media as mediaApi, system } from '../../api/index';
 // Use the legacy build — the modern build uses Map.getOrInsertComputed()
 // which isn't available in Tauri's WebKit WebView
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { TelegramFile } from '../../../types';
-import { isAndroidPlatform } from '../../../utils';
+import { TelegramFile } from '../../types';
+import { isAndroidPlatform } from '../../utils';
 
 // Use Vite's ?url suffix to get a properly bundled asset URL for the worker
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url';
-import i18n from '../../../i18n';
+import i18n from '../../i18n';
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 const PDF_CACHE_LIMIT_BYTES = 25 * 1024 * 1024;
