@@ -55,4 +55,28 @@ describe('target-specific Tauri capabilities', () => {
     expect(desktop.permissions).not.toContain('opener:default');
     expect(desktop.permissions).not.toContain('opener:allow-default-urls');
   });
+
+  it('scopes Android webview filesystem reads to media-cache folders only', () => {
+    // The frontend never imports @tauri-apps/plugin-fs; the read grant exists
+    // only to mirror the asset-protocol scope (previews, thumbnails, offline
+    // packs). A blanket $APPDATA/$APPCACHE grant would let the webview read
+    // telegram.session, shares.db, transfers.db, workspace.db and the
+    // plugin-store settings files, so both the write grant and the blanket
+    // read paths must stay out of the capability.
+    const mobile = readJson('src-tauri/capabilities/mobile.json') as {
+      permissions: Array<string | { identifier: string; allow?: Array<{ path: string }> }>;
+    };
+
+    const fsEntries = mobile.permissions.filter(
+      (permission) => typeof permission !== 'string' && permission.identifier.startsWith('fs:'),
+    ) as Array<{ identifier: string; allow?: Array<{ path: string }> }>;
+
+    expect(fsEntries).toHaveLength(1);
+    expect(fsEntries[0].identifier).toBe('fs:allow-read');
+    expect(fsEntries[0].allow).toEqual([
+      { path: '$APPCACHE/previews/**' },
+      { path: '$APPDATA/thumbnails/**' },
+      { path: '$APPDATA/workspace/*/offline/**' },
+    ]);
+  });
 });

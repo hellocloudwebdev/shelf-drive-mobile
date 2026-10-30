@@ -1,6 +1,6 @@
 {
   "identifier": "mobile-only",
-  "description": "Permissions required only on Android",
+  "description": "Permissions required only on Android. The webview never calls plugin-fs; the read grant is scoped to the same preview/thumbnail/offline folders the asset protocol already exposes so no session, database, or settings file is reachable.",
   "platforms": [
     "android"
   ],
@@ -16,15 +16,9 @@
     {
       "identifier": "fs:allow-read",
       "allow": [
-        { "path": "$APPCACHE/**" },
-        { "path": "$APPDATA/**" }
-      ]
-    },
-    {
-      "identifier": "fs:allow-write",
-      "allow": [
-        { "path": "$APPCACHE/**" },
-        { "path": "$APPDATA/**" }
+        { "path": "$APPCACHE/previews/**" },
+        { "path": "$APPDATA/thumbnails/**" },
+        { "path": "$APPDATA/workspace/*/offline/**" }
       ]
     },
     "dialog:allow-open",
