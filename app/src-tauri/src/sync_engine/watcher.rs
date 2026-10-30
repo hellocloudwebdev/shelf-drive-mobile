@@ -15,7 +15,7 @@ impl LocalWatcher {
         paths: Vec<(PathBuf, SyncPreferences)>,
         debounce: Duration,
         app: tauri::AppHandle,
-        mut shutdown: tokio::sync::watch::Receiver<bool>,
+        shutdown: tokio::sync::watch::Receiver<bool>,
         trigger: tokio::sync::mpsc::Sender<()>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
@@ -53,6 +53,7 @@ impl LocalWatcher {
         mut shutdown: tokio::sync::watch::Receiver<bool>,
         trigger: tokio::sync::mpsc::Sender<()>,
     ) {
+        // `Emitter` supplies AppHandle::emit for sync-fs-event notifications.
         use notify_debouncer_full::{
             new_debouncer,
             notify::{
@@ -61,6 +62,7 @@ impl LocalWatcher {
             },
             DebounceEventResult,
         };
+        use tauri::Emitter;
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
         let callback = move |result: DebounceEventResult| {
