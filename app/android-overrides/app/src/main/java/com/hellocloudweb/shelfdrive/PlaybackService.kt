@@ -61,7 +61,9 @@ class PlaybackService : MediaSessionService() {
   private fun persistCurrentPlayback(completed: Boolean = false) {
     if (!::player.isInitialized) return
     val item = player.currentMediaItem ?: return
-    val mediaId = item.mediaId.takeIf { it.isNotBlank() } ?: return
+    // Only account-scoped IDs are persisted; anything else would recreate
+    // app-wide history that cannot be attributed to a single account.
+    val mediaId = item.mediaId.takeIf { isCanonicalMediaId(it) } ?: return
     val duration = player.duration.coerceAtLeast(0L)
     val position = if (completed) 0L else player.currentPosition.coerceAtLeast(0L)
     val title = item.mediaMetadata.title?.toString() ?: "Private media"
@@ -72,6 +74,18 @@ class PlaybackService : MediaSessionService() {
     private const val PREFS = "telegram_drive_playback_v1"
     private const val HISTORY = "history"
     private const val MAX_HISTORY = 20
+
+    /**
+     * Canonical history IDs are `v2:{ownerId}:{folderId|saved}:{messageId}`
+     * (see app/src/services/playbackMediaId.ts). Legacy entries written before
+     * the account-scoped format carry no owner, so they can never be
+     * attributed to a specific account: they are ignored by every reader and
+     * purged here on the next history write so they cannot crowd out
+     * account-scoped entries. Nothing about them is logged.
+     */
+    private const val CANONICAL_MEDIA_ID_PREFIX = "v2:"
+
+    fun isCanonicalMediaId(mediaId: String): Boolean = mediaId.startsWith(CANONICAL_MEDIA_ID_PREFIX)
 
     fun getResumePosition(context: Context, mediaId: String): Long {
       val history = readHistory(context)
@@ -98,7 +112,8 @@ class PlaybackService : MediaSessionService() {
       })
       for (index in 0 until existing.length()) {
         val entry = existing.optJSONObject(index) ?: continue
-        if (entry.optString("mediaId") != mediaId && next.length() < MAX_HISTORY) next.put(entry)
+        val entryMediaId = entry.optString("mediaId")
+        if (entryMediaId != mediaId && next.length() < MAX_HISTORY && isCanonicalMediaId(entryMediaId)) next.put(entry)
       }
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(HISTORY, next.toString()).apply()
     }

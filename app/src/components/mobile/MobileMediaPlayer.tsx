@@ -7,11 +7,14 @@ import { isAudioFile, isVideoFile } from '../../utils';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { useTranslation } from 'react-i18next';
 import { userFacingError } from '../../services/userFacingError';
+import { buildPlaybackMediaId } from '../../services/playbackMediaId';
 import i18n from '../../i18n';
 
 interface MobileMediaPlayerProps {
   file: TelegramFile;
   activeFolderId: number | null;
+  /** Verified session owner; playback history is scoped per account. */
+  ownerId: string | null;
   onClose: () => void;
   preferences?: {
     privateMetadata: boolean;
@@ -37,7 +40,7 @@ const formatClock = (seconds: number) => {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 };
 
-export function MobileMediaPlayer({ file, activeFolderId, onClose, preferences }: MobileMediaPlayerProps) {
+export function MobileMediaPlayer({ file, activeFolderId, ownerId, onClose, preferences }: MobileMediaPlayerProps) {
   const { t } = useTranslation();
   const [localPath, setLocalPath] = useState<string | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
@@ -95,6 +98,11 @@ export function MobileMediaPlayer({ file, activeFolderId, onClose, preferences }
     const prepare = async () => {
       if ((isVideo || isAudio) && !usingDownloadFallback) {
         try {
+          // History must never be attributed across accounts, so native
+          // playback refuses to start without a verified owner.
+          if (!ownerId) {
+            throw new Error('ACCOUNT_REQUIRED');
+          }
           const streamInfo = await media.getStreamInfo(
             file.id,
             activeFolderId === null ? null : String(activeFolderId),
@@ -120,7 +128,7 @@ export function MobileMediaPlayer({ file, activeFolderId, onClose, preferences }
               if (ext === 'm4a' || ext === 'aac') return 'audio/mp4';
               return '';
             })(),
-            mediaId: `${activeFolderId ?? 'home'}:${file.id}`,
+            mediaId: buildPlaybackMediaId(ownerId, activeFolderId, file.id),
             preferencesJson: JSON.stringify(preferences ?? {
               privateMetadata: true,
               privacyScreen: false,
@@ -148,7 +156,7 @@ export function MobileMediaPlayer({ file, activeFolderId, onClose, preferences }
       videoRef.current?.pause();
       audioRef.current?.pause();
     };
-  }, [activeFolderId, attempt, file.id, file.mime_type, file.name, isAudio, isVideo, onClose, preferences, usingDownloadFallback]);
+  }, [activeFolderId, attempt, file.id, file.mime_type, file.name, isAudio, isVideo, onClose, ownerId, preferences, usingDownloadFallback]);
 
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   const downloadAndPlay = useCallback(() => {

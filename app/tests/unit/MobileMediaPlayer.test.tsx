@@ -33,20 +33,22 @@ describe('MobileMediaPlayer', () => {
     });
   });
 
-  it('opens video through the native Android range-stream player', async () => {
+  it('opens video through the native Android range-stream player with the canonical owner-scoped media ID', async () => {
     const onClose = vi.fn();
     invokeMock.mockImplementation((command: string) => {
       if (command === 'cmd_get_stream_info') return Promise.resolve({ base_url: 'http://localhost:1421', token: 'secret' });
       return Promise.resolve(undefined);
     });
-    render(<MobileMediaPlayer file={file} activeFolderId={null} onClose={onClose} />);
+    render(<MobileMediaPlayer file={file} activeFolderId={null} ownerId="100" onClose={onClose} />);
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(invokeMock).toHaveBeenCalledWith('cmd_open_android_stream_player', {
       streamUrl: 'http://localhost:1421/stream/home/42?token=secret',
       title: 'android-video.mp4',
       mimeType: 'video/mp4',
-      mediaId: 'home:42',
+      // Saved Messages (null folder) uses the reserved sentinel, and the
+      // verified owner scopes the persisted history row to this account.
+      mediaId: 'v2:100:saved:42',
       preferencesJson: JSON.stringify({
         privateMetadata: true,
         privacyScreen: false,
@@ -58,9 +60,34 @@ describe('MobileMediaPlayer', () => {
     expect(invokeMock.mock.calls.some(([command]) => command === 'cmd_get_preview')).toBe(false);
   });
 
+  it('scopes two accounts with identical folder and message numbers to distinct media IDs', async () => {
+    const onCloseA = vi.fn();
+    const onCloseB = vi.fn();
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'cmd_get_stream_info') return Promise.resolve({ base_url: 'http://localhost:1421', token: 'secret' });
+      return Promise.resolve(undefined);
+    });
+    const { unmount } = render(<MobileMediaPlayer file={file} activeFolderId={9} ownerId="100" onClose={onCloseA} />);
+    await waitFor(() => expect(onCloseA).toHaveBeenCalled());
+    unmount();
+    render(<MobileMediaPlayer file={file} activeFolderId={9} ownerId="200" onClose={onCloseB} />);
+    await waitFor(() => expect(onCloseB).toHaveBeenCalled());
+    const ids = invokeMock.mock.calls
+      .filter(([command]) => command === 'cmd_open_android_stream_player')
+      .map(([, payload]) => (payload as { mediaId: string }).mediaId);
+    expect(ids).toEqual(['v2:100:9:42', 'v2:200:9:42']);
+  });
+
+  it('refuses to start native playback without a verified owner instead of writing ownerless history', async () => {
+    render(<MobileMediaPlayer file={file} activeFolderId={null} ownerId={null} onClose={vi.fn()} />);
+    expect(await screen.findByText('The operation could not be completed. Try again or review the related settings.')).toBeTruthy();
+    expect(invokeMock.mock.calls.some(([command]) => command === 'cmd_open_android_stream_player')).toBe(false);
+    expect(invokeMock.mock.calls.some(([command]) => command === 'cmd_get_preview')).toBe(false);
+  });
+
   it('offers a bounded cached fallback when native streaming cannot start', async () => {
     invokeMock.mockRejectedValueOnce(new Error('player unavailable'));
-    const { container } = render(<MobileMediaPlayer file={file} activeFolderId={9} onClose={vi.fn()} />);
+    const { container } = render(<MobileMediaPlayer file={file} activeFolderId={9} ownerId="100" onClose={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: /download fallback/i }));
     await waitFor(() => expect(container.querySelector('video')).toBeTruthy());
     expect(invokeMock).toHaveBeenCalledWith('cmd_get_preview', { messageId: 42, folderId: 9 });
@@ -69,7 +96,7 @@ describe('MobileMediaPlayer', () => {
 
   it('does not download automatically when native streaming fails', async () => {
     invokeMock.mockRejectedValueOnce(new Error('temporary player error'));
-    render(<MobileMediaPlayer file={file} activeFolderId={9} onClose={vi.fn()} />);
+    render(<MobileMediaPlayer file={file} activeFolderId={9} ownerId="100" onClose={vi.fn()} />);
 
     expect(await screen.findByText('The operation could not be completed. Try again or review the related settings.')).toBeTruthy();
     expect(screen.queryByText(/temporary player error/i)).toBeNull();
@@ -83,7 +110,7 @@ describe('MobileMediaPlayer', () => {
       if (command === 'cmd_get_stream_info') return Promise.resolve({ base_url: 'http://localhost:1421', token: 'secret' });
       return Promise.resolve(undefined);
     });
-    render(<MobileMediaPlayer file={audio} activeFolderId={null} onClose={onClose} />);
+    render(<MobileMediaPlayer file={audio} activeFolderId={null} ownerId="100" onClose={onClose} />);
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(invokeMock).toHaveBeenCalledWith('cmd_open_android_stream_player', expect.objectContaining({ mimeType: 'audio/aac' }));
@@ -100,7 +127,7 @@ describe('MobileMediaPlayer', () => {
       });
       return Promise.resolve(undefined);
     });
-    render(<MobileMediaPlayer file={file} activeFolderId={null} onClose={onClose} />);
+    render(<MobileMediaPlayer file={file} activeFolderId={null} ownerId="100" onClose={onClose} />);
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(invokeMock).toHaveBeenCalledWith('cmd_open_android_stream_player', expect.objectContaining({
