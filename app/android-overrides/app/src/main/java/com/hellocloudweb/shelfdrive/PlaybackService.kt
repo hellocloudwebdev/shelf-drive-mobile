@@ -105,7 +105,9 @@ class PlaybackService : MediaSessionService() {
       next.put(JSONObject().apply {
         put("mediaId", mediaId)
         put("title", title)
-        put("positionMs", position)
+        // A completed item must never offer a resume position, even if a
+        // caller passes one; the player layer already sends 0 on STATE_ENDED.
+        put("positionMs", if (completed) 0L else position)
         put("durationMs", duration)
         put("completed", completed)
         put("lastPlayedAt", System.currentTimeMillis())
