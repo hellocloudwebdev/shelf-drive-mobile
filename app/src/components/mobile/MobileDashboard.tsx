@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { MobileBottomNav, type MobileTab } from './MobileBottomNav';
 import { applyAndroidWebViewZoomPolicy } from '../../services/androidWebViewZoomPolicy';
+import { parsePlaybackMediaId } from '../../services/playbackMediaId';
 import { TouchFileList } from './TouchFileList';
 import { ThemeSegmented } from './ThemeSegmented';
 import { DriveConceptTour } from '../desktop/dashboard/DriveConceptTour';
@@ -50,10 +51,10 @@ import { fileQueryKey, invalidateFolderFileQueries, refreshFolderFiles } from '.
 import { effectiveVideoUploadMode } from '../../services/videoUploadMode';
 import i18n from '../../i18n';
 
-const LazyHelpCenterDialog = lazy(() => import('../desktop/dashboard/HelpCenterDialog').then((module) => ({ default: module.HelpCenterDialog })));
+const LazyHelpCenterDialog = lazy(() => import('../shared/HelpCenterDialog').then((module) => ({ default: module.HelpCenterDialog })));
 const LazyMobileMediaPlayer = lazy(() => import('./MobileMediaPlayer').then((module) => ({ default: module.MobileMediaPlayer })));
-const LazyPdfViewer = lazy(() => import('../desktop/dashboard/PdfViewer').then((module) => ({ default: module.PdfViewer })));
-const LazyPreviewModal = lazy(() => import('../desktop/dashboard/PreviewModal').then((module) => ({ default: module.PreviewModal })));
+const LazyPdfViewer = lazy(() => import('../shared/PdfViewer').then((module) => ({ default: module.PdfViewer })));
+const LazyPreviewModal = lazy(() => import('../shared/PreviewModal').then((module) => ({ default: module.PreviewModal })));
 
 // Drawer navigation views mirror the desktop sidebar; labels are i18n keys.
 const SMART_VIEW_ITEMS: Array<[SmartView, typeof Folder, string]> = [
@@ -733,28 +734,34 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   });
 
   const { data: playbackHistory = [] } = useQuery({
-    queryKey: ['android-playback-history'],
+    queryKey: ['android-playback-history', accountId],
     queryFn: () => android.getPlaybackHistory(),
-    enabled: isAndroid && activeTab === 'home',
+    enabled: isAndroid && activeTab === 'home' && !!accountId,
     refetchOnWindowFocus: true,
   });
   useEffect(() => {
     if (!isAndroid) return;
-    const refreshHistory = () => void queryClient.invalidateQueries({ queryKey: ['android-playback-history'] });
+    const refreshHistory = () => void queryClient.invalidateQueries({ queryKey: ['android-playback-history', accountId] });
     window.addEventListener('android-playback-history-change', refreshHistory);
     return () => window.removeEventListener('android-playback-history-change', refreshHistory);
-  }, [isAndroid, queryClient]);
+  }, [isAndroid, queryClient, accountId]);
   const continueWatching = useMemo(() => {
-    const folderKey = String(activeFolderId ?? 'home');
+    // Playback history is app-wide storage; every row shown must parse to the
+    // canonical owner-scoped ID and match the signed-in account AND the
+    // browsing folder. Legacy entries (no v2: prefix) belong to no account and
+    // are never attributed.
+    if (!accountId) return [];
     return playbackHistory.flatMap(entry => {
-      if (entry.completed || entry.positionMs < 10_000 || !entry.mediaId.startsWith(`${folderKey}:`)) return [];
-      const messageId = Number(entry.mediaId.slice(folderKey.length + 1));
-      const file = allFiles.find(candidate => candidate.id === messageId);
+      const parsed = parsePlaybackMediaId(entry.mediaId);
+      if (!parsed || parsed.ownerId !== accountId) return [];
+      if (entry.completed || entry.positionMs < 10_000) return [];
+      if (parsed.folderId !== activeFolderId) return [];
+      const file = allFiles.find(candidate => candidate.id === parsed.messageId);
       if (!file) return [];
       const progress = entry.durationMs > 0 ? Math.min(100, Math.round(entry.positionMs / entry.durationMs * 100)) : 0;
       return [{ entry, file, progress }];
     }).slice(0, 5);
-  }, [activeFolderId, allFiles, playbackHistory]);
+  }, [accountId, activeFolderId, allFiles, playbackHistory]);
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const { handleDelete: handleDeleteOp, handleBulkDelete, handleBulkDownload, handleBulkMove, handleMoveFiles, handleRenameFile: handleRenameFileOp } = useFileOperations(activeFolderId, selectedIds, setSelectedIds, allFiles, queueBulkDownload, accountId ?? undefined);
@@ -2308,8 +2315,9 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       {playingFile && (
         <LazyFeatureBoundary>
           <LazyMobileMediaPlayer
-            key={`${sourceFolder(playingFile, activeFolderId) ?? 'home'}:${playingFile.id}`}
+            key={`${accountId ?? 'no-account'}:${sourceFolder(playingFile, activeFolderId) ?? 'saved'}:${playingFile.id}`}
             file={playingFile}
+            ownerId={accountId ?? null}
             onClose={() => setPlayingFile(null)}
             activeFolderId={sourceFolder(playingFile, activeFolderId)}
             preferences={{

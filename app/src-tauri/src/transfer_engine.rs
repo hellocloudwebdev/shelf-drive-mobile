@@ -1928,6 +1928,67 @@ mod tests {
     }
 
     #[test]
+    fn retry_and_interrupted_transfer_cancellation_clears_retry_timer_and_records_status() {
+        let mut transfer = job("retry-cancel", 1);
+
+        // 1. Flood wait puts transfer in Cooldown with a future retry timestamp
+        apply_failure(&mut transfer, "RPC FLOOD_WAIT_30".to_string(), 10_000);
+        assert_eq!(transfer.status, TransferStatus::Cooldown);
+        assert_eq!(transfer.retry_at, Some(40_000));
+        assert_eq!(
+            transfer.error_category,
+            Some(TransferErrorCategory::RateLimit)
+        );
+
+        // 2. A retry attempt hits cancellation mid-transfer
+        transfer.speed_bytes_per_sec = 1024 * 1024;
+        apply_failure(
+            &mut transfer,
+            "Transfer cancelled by user".to_string(),
+            25_000,
+        );
+
+        assert_eq!(transfer.status, TransferStatus::Cancelled);
+        assert_eq!(
+            transfer.error_category,
+            Some(TransferErrorCategory::Cancelled)
+        );
+        assert_eq!(
+            transfer.retry_at, None,
+            "cancellation must clear any pending retry deadline"
+        );
+        assert_eq!(
+            transfer.speed_bytes_per_sec, 0,
+            "cancellation must reset transfer speed"
+        );
+        assert_eq!(
+            transfer.error.as_deref(),
+            Some("Transfer cancelled by user")
+        );
+
+        // 3. Network interruption transitions to WaitingForNetwork
+        apply_failure(
+            &mut transfer,
+            "Client not connected to network".to_string(),
+            30_000,
+        );
+        assert_eq!(transfer.status, TransferStatus::WaitingForNetwork);
+        assert_eq!(
+            transfer.error_category,
+            Some(TransferErrorCategory::Network)
+        );
+        assert_eq!(transfer.retry_at, None);
+
+        // 4. Cancellation while waiting for network transitions to Cancelled
+        apply_failure(&mut transfer, "Transfer cancelled".to_string(), 35_000);
+        assert_eq!(transfer.status, TransferStatus::Cancelled);
+        assert_eq!(
+            transfer.error_category,
+            Some(TransferErrorCategory::Cancelled)
+        );
+    }
+
+    #[test]
     fn scheduler_is_fifo_and_enforces_directional_limits() {
         let mut jobs = HashMap::new();
         let mut upload_one = job("upload-one", 1);

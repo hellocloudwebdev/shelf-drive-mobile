@@ -61,6 +61,7 @@ Use **Saved Messages** as your personal file space and create **private Telegram
 | **Photos and documents** | Browse photo collections, video libraries and document views; open PDFs and inspect supported archives. |
 | **Folder synchronization** | Synchronize selected local Android folders with Telegram-backed folders. See the [Folder Sync Guide](./SYNC_GUIDE.md). |
 | **Optional file encryption** | TDENC2 uses XChaCha20-Poly1305 and Argon2id for client-side envelope encryption in supported workflows. |
+| **Zero-disk encrypted streaming** | TDENC2-protected audio, video, and PDF content can stream without unencrypted files being dumped into disk caches; media decrypts on-the-fly in memory. |
 | **Offline access** | Pin supported files and folders for local access when connectivity is unavailable. |
 | **Themes and languages** | Multiple interface themes and 24 locale dictionaries, including RTL language support. |
 | **TV navigation** | Large-screen layouts and remote-friendly focus navigation for Android TV and Google TV. |

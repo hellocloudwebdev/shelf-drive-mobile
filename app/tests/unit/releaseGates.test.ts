@@ -420,7 +420,7 @@ describe('release safety gates', () => {
     expect(bundleBudget.featureChunkBudgets).toMatchObject({
       'src/components/desktop/dashboard/SettingsModal.tsx': expect.any(Number),
       'src/components/desktop/dashboard/MediaPlayer.tsx': expect.any(Number),
-      'src/components/desktop/dashboard/PdfViewer.tsx': expect.any(Number),
+      'src/components/shared/PdfViewer.tsx': expect.any(Number),
       'node_modules/hls.js/dist/hls.mjs': expect.any(Number),
     });
   });

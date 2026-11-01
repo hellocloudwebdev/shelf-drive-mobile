@@ -1,3 +1,19 @@
+## [4.5.4] - 2026-10-31
+### Fixed
+- Scope Android playback history, resume positions and Continue Watching to the signed-in account using the canonical `v2:{owner}:{folder|saved}:{message}` identity; legacy ownerless rows are never attributed and are purged on the next write.
+- Close the zstd dependency advisory chain by dropping actix-web's unused compression features; `cargo deny` passes with no policy exceptions.
+- Scope the Android webview filesystem capability to preview, thumbnail and offline-pack folders only, removing webview read/write reach into session, database and settings files.
+- Restore the desktop-only sync watcher trait import so host builds compile.
+### Changed
+- Cut the release `libapp_lib.so` size by 56% with a size-oriented release profile (opt-level=s, thin LTO, stripped symbols; `panic=abort` deliberately not set to preserve the JNI safety nets).
+- Compile tray-icon, window-state, notify, notify-debouncer-full and sysinfo only for the targets that use them, and replace `tokio` `full` with the features the code actually uses.
+- Move PdfViewer, PreviewModal and HelpCenterDialog into `components/shared/` with byte-identical chunk sizes, re-enable MobileDashboard type-checking, consolidate the duplicate Cargo configs, add CI caching and a non-blocking Rust lint gate, and defer emulator downloads until after the build.
+- Add account-aware playback identity tests, dashboard mutation wiring tests with the real hook, and Rust regression tests for vault-lock, account-switch, transfer-cancellation and range-parser contracts.
+### Security
+- Retain the patched updater using ZIP 9.0.4; dependency policy passes with no new exceptions and the existing advisory ignores unchanged.
+### Release
+- Production Android universal APK and AAB only; retain the existing application identity, signing, signed updater, and Android API 31–36 compatibility gates.
+
 ## [4.5.3] - 2026-10-22
 ### Changed
 - Apply the approved black dark-mode appearance with a solid black canvas, darker surfaces, and refined navigation contrast.

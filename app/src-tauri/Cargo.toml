@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "4.5.3"
+version = "4.5.4"
 description = "A local-first file workspace for files stored in Telegram, built with Tauri, Rust, and React."
 authors = ["Cameron Amer"]
 edition = "2021"
@@ -17,7 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 serde = { version = "1", features = ["derive"] }
@@ -27,10 +27,14 @@ grammers-client = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a5
 grammers-session = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a579121c9025c728231bdd9bb9b7113c0b5" }
 grammers-mtsender = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a579121c9025c728231bdd9bb9b7113c0b5", features = ["proxy"] }
 grammers-tl-types = { git = "https://codeberg.org/Lonami/grammers", rev = "49019a579121c9025c728231bdd9bb9b7113c0b5" }
-tokio = { version = "1", features = ["full"] }
+# Every tokio feature the workspace's own code uses, except signal (never
+# referenced). "full" also pulled in signal; transitive dependencies (tauri,
+# actix-web, reqwest, grammers) re-activate the shared core features through
+# unification either way, so this documents intent more than it shrinks the
+# binary.
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time", "io-util", "net", "fs", "process"] }
 
 tauri-plugin-store = "2"
-tauri-plugin-window-state = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -40,7 +44,14 @@ image = { version = "0.25.10", default-features = false, features = ["bmp", "gif
 log = "0.4"
 env_logger = "0.11"
 tauri-plugin-updater = "2"
-actix-web = "4"
+# Default actix-web features include compress-brotli/gzip/zstd; the app never
+# registers actix's Compress middleware (its three loopback servers stream
+# through custom handlers), so those features only pulled vulnerable transitive
+# crates (zstd-safe 7.x / zstd-sys 2.x carry open RUSTSEC advisories with no
+# in-range fix) into every target's graph. cookies is required by
+# share_routes.rs (share-capability cookies); macros by the routing and test
+# attributes; unicode by the router.
+actix-web = { version = "4", default-features = false, features = ["macros", "unicode", "cookies"] }
 actix-cors = "0.7"
 actix-files = "0.6"
 actix-multipart = "0.7"
@@ -57,8 +68,6 @@ sha2 = "0.10"
 minisign-verify = "0.2.5"
 bcrypt = "0.16"
 constant_time_eq = "0.3"
-notify = "7"
-notify-debouncer-full = "0.5"
 uuid = { version = "1", features = ["v4"] }
 
 # Crypto: AEAD, KDF, secret zeroization
@@ -76,17 +85,31 @@ sqlite = { version = "0.37.0", features = ["bundled"] }
 mp4parse = "0.17"
 urlencoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "socks", "json"] }
-sysinfo = "0.30"
 tokio-rustls = "0.26"
 rustls = "0.23.45"
 webpki-roots = "1.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# Desktop-only tauri feature set: the tray-icon feature (and the plugins and
+# crates below) are compiled exclusively for desktop targets because every
+# call site is already #[cfg(not(any(target_os = "android", target_os = "ios")))]
+# gated (desktop_tray.rs, lib.rs window-state registration, sync_engine
+# watcher.rs). Feature additions here are additive to the common `tauri` dep.
+tauri = { version = "2", features = ["tray-icon"] }
 unrar = "0.5"
 dav-server = { version = "0.11", features = ["actix-compat"] }
 keyring = { version = "3.6", default-features = false, features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+notify = "7"
+notify-debouncer-full = "0.5"
+
+# sysinfo is used only by workspace/device_cache.rs, whose desktop branch is
+# gated cfg(not(target_os = "android")) — Android reads free space through the
+# JNI File.getUsableSpace() bridge instead. The gate here mirrors that branch.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+sysinfo = "0.30"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
@@ -94,6 +117,18 @@ windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 ndk-context = "0.1.1"
+
+# Android ships this crate as a single cdylib; optimize for size over speed
+# (media streaming is I/O-bound, not compute-bound) with thin LTO across the
+# crate graph. panic = "abort" is deliberately NOT set: the codebase relies on
+# unwinding across the FFI boundary (Tauri command handlers and JNI exports
+# must unwind into the framework's catch_unwind instead of aborting the
+# process), and a cdylib built with panic=abort must abort at its boundary.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
 
 # Remove once an upstream updater release supports patched zip >= 9.0.4.
 [patch.crates-io]

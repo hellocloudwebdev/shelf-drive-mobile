@@ -864,6 +864,32 @@ mod streaming_runtime_tests {
         assert_eq!(parse_range_header("bytes=1-2-3", 10), None);
     }
 
+    #[test]
+    fn invalid_and_unsatisfiable_range_headers_return_none_as_baseline() {
+        // Regression baseline: invalid and unsatisfiable range headers return None today.
+        // Callers treat None as an unranged request (serving 200/initial chunk) rather
+        // than HTTP 416 Range Not Satisfiable; distinguishing absent vs unsatisfiable
+        // headers is a tracked follow-up (see AUDIT_FINDINGS.md #8).
+
+        // Beyond EOF (unsatisfiable start offset)
+        assert_eq!(parse_range_header("bytes=999999999-", 100), None);
+        assert_eq!(parse_range_header("bytes=999999999-1000000000", 100), None);
+
+        // Malformed non-numeric ranges
+        assert_eq!(parse_range_header("bytes=a-b", 100), None);
+        assert_eq!(parse_range_header("bytes=0-b", 100), None);
+        assert_eq!(parse_range_header("bytes=a-10", 100), None);
+        assert_eq!(parse_range_header("bytes=-xyz", 100), None);
+        assert_eq!(parse_range_header("notbytes=0-10", 100), None);
+
+        // Inverted range (start > end)
+        assert_eq!(parse_range_header("bytes=5-2", 100), None);
+
+        // Multi-range requests (currently unsupported / rejected)
+        assert_eq!(parse_range_header("bytes=0-1,3-4", 100), None);
+        assert_eq!(parse_range_header("bytes=0-10, 20-30", 100), None);
+    }
+
     #[tokio::test]
     async fn protected_stream_stops_after_lock_and_reuses_credentials_across_ranges() {
         use crate::crypto::state::{CryptoState, OperationClass};

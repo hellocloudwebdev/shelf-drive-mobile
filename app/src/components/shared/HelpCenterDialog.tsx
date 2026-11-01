@@ -1,8 +1,8 @@
 import { useRef } from 'react';
 import { BookOpen, ExternalLink, X } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-shell';
-import { useModalFocus } from '../../../hooks/useModalFocus';
-import { AppDiagnosticsPanel } from '../../shared/AppDiagnosticsPanel';
+import { useModalFocus } from '../../hooks/useModalFocus';
+import { AppDiagnosticsPanel } from './AppDiagnosticsPanel';
 
 const topics = [
   ['Where are my files stored?', 'Files are Telegram messages in Saved Messages or private channels created as folders. Shelf Drive does not operate a separate cloud storage account.'],
