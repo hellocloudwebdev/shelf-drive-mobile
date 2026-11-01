@@ -1,3 +1,9 @@
+## [4.5.5] - 2026-11-02
+### Testing
+- Make the Android upload lifecycle instrumentation harness tolerate a cloud device destroying its shared Activity mid-suite by allowing one guarded relaunch; the regression gate still rejects unguarded or repeated launches.
+### Release
+- No Android production runtime code changes since 4.5.4. Production distribution remains one universal APK and one AAB only, with the existing app identity, signing, signed updater, and Android API 31–36 compatibility gates.
+
 ## [4.5.4] - 2026-10-31
 ### Fixed
 - Scope Android playback history, resume positions and Continue Watching to the signed-in account using the canonical `v2:{owner}:{folder|saved}:{message}` identity; legacy ownerless rows are never attributed and are purged on the next write.
