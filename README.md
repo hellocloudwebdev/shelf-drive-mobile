@@ -41,10 +41,12 @@ Use **Saved Messages** as your personal file space and create **private Telegram
 
 ## Showcase
 
-<p align="center">
-  <a href="https://share.descript.com/view/tlUB7eiAk6o"><strong>▶ Watch the new Shelf Drive Android UI motion showcase</strong></a>
-</p>
-<p align="center"><sub>32-second vertical product walkthrough · 1080p · Built from the current Android app screenshots.</sub></p>
+<p align="center"><strong>▶ Shelf Drive — Android App Showcase</strong></p>
+<p align="center"><sub>32-second vertical product walkthrough · 1080p · Captured from the current Android app.</sub></p>
+
+https://github.com/user-attachments/assets/2ddb8d14-9784-4f39-bd2b-498edae48114
+
+<p align="center"><sub><a href="https://share.descript.com/view/tlUB7eiAk6o">Open the video in Descript</a></sub></p>
 <p align="center"><img src="./assets/readme/showcase.gif" width="100%" alt="Animated Shelf Drive interface showcase in dark and light themes"></p>
 <p align="center"><sub>Animated interface showcase. <a href="./assets/readme/showcase.mp4">Watch the MP4 version</a> · <a href="https://share.descript.com/view/tlUB7eiAk6o">Watch the latest mobile UI video</a>.</sub></p>
 <p align="center"><a href="./assets/readme/tour-feature.mp4"><img src="./assets/readme/tour-feature.gif" width="100%" alt="Animated walkthrough of Shelf Drive onboarding and the personal cloud concept"></a></p>
