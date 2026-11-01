@@ -89,6 +89,13 @@ jobs:
         working-directory: app
         run: npm run tauri android build -- --target "${{ inputs.target }}" --apk true --debug --ci
 
+      - name: Build instrumentation test APK
+        working-directory: app/src-tauri/gen/android
+        # The test APK packages test code only — the Rust JNI library is not
+        # part of it, and the gradle rust task re-invokes the tauri CLI, so
+        # exclude it (the main debug APK build above already built Rust).
+        run: ./gradlew :app:assembleUniversalDebugAndroidTest --console=plain -x :app:rustBuildArm64Debug
+
       - name: Verify APK exists and calculate SHA-256
         shell: bash
         run: |
