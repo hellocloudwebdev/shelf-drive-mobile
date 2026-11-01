@@ -89,6 +89,10 @@ jobs:
         working-directory: app
         run: npm run tauri android build -- --target "${{ inputs.target }}" --apk true --debug --ci
 
+      - name: Build instrumentation test APK
+        working-directory: app/src-tauri/gen/android
+        run: ./gradlew :app:assembleUniversalDebugAndroidTest --console=plain
+
       - name: Verify APK exists and calculate SHA-256
         shell: bash
         run: |
