@@ -10,7 +10,7 @@ on:
     branches: [main]
     paths:
       - 'website/**'
-      - 'screenshots/live/**'
+      - 'assets/readme/screenshots/**'
       - 'scripts/generate_website_assets.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:

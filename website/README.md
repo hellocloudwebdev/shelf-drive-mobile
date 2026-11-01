@@ -35,27 +35,16 @@ falls back to a static label because the GitHub API request is blocked by the br
 
 ## Regenerate the images
 
-The screenshots and the social card are generated from the live app captures, so the
-site never drifts from the product:
+The site ships pre-generated WebP screenshots and a social card, so deploys need no
+build step. The device captures used by the README live in `assets/readme/screenshots/`.
 
-```bash
-# 1. capture fresh screenshots (needs the Vite dev server on 127.0.0.1:4173)
-cd app && npm run dev -- --host 127.0.0.1 --port 4173   # terminal 1
-node scripts/capture-readme-screenshots.mjs             # terminal 2
-
-# 2. convert them to WebP and rebuild the social card
-python scripts/generate_website_assets.py
-```
-
-`scripts/generate_website_assets.py` reads `screenshots/live/*.png` and writes
-`website/assets/screens/<name>-sm.webp` (412 px wide) and `-lg.webp` (824 px wide),
-plus `website/assets/og.png`. Keep both widths — the markup uses `srcset` so phones
-download roughly 30 KB per screenshot instead of 300 KB.
+The legacy `scripts/generate_website_assets.py` predates the current capture set; it
+needs updating before it can rebuild the site images from those captures.
 
 ## Deploy
 
 `.github/workflows/pages.yml` publishes this folder to GitHub Pages on every push to
-`main` that touches `website/**` or `screenshots/live/**`. The workflow now enables
+`main` that touches `website/**` or `assets/readme/screenshots/**`. The workflow now enables
 GitHub Pages automatically if it has not been configured yet.
 
 The site then lives at `https://<owner>.github.io/shelf-drive-mobile/`.

@@ -41,14 +41,10 @@ Use **Saved Messages** as your personal file space and create **private Telegram
 
 ## Showcase
 
-<p align="center">
-  <a href="https://share.descript.com/view/tlUB7eiAk6o"><strong>▶ Watch the new Shelf Drive Android UI motion showcase</strong></a>
-</p>
-<p align="center"><sub>32-second vertical product walkthrough · 1080p · Built from the current Android app screenshots.</sub></p>
-<p align="center"><img src="./assets/readme/showcase.gif" width="100%" alt="Animated Shelf Drive interface showcase in dark and light themes"></p>
-<p align="center"><sub>Animated interface showcase. <a href="./assets/readme/showcase.mp4">Watch the MP4 version</a> · <a href="https://share.descript.com/view/tlUB7eiAk6o">Watch the latest mobile UI video</a>.</sub></p>
-<p align="center"><a href="./assets/readme/tour-feature.mp4"><img src="./assets/readme/tour-feature.gif" width="100%" alt="Animated walkthrough of Shelf Drive onboarding and the personal cloud concept"></a></p>
-<p align="center"><sub><a href="./assets/readme/tour-feature.mp4">Open the full onboarding walkthrough (MP4)</a></sub></p>
+<p align="center"><strong>▶ Shelf Drive — Android App Showcase</strong></p>
+<p align="center"><sub>32-second vertical product walkthrough · captured from the current Android app.</sub></p>
+
+https://github.com/user-attachments/assets/1cc94de1-4f27-4327-94b9-533e0919c63d
 
 ## Features
 
@@ -68,9 +64,10 @@ Use **Saved Messages** as your personal file space and create **private Telegram
 
 ## Screenshots
 
-<p align="center"><strong>Home</strong><br><img src="./screenshots/live/05-home.png" width="46%" alt="Shelf Drive home dashboard in dark theme"> &nbsp; <img src="./screenshots/live/15-light-home.png" width="46%" alt="Shelf Drive home dashboard in light theme"></p>
-<p align="center"><strong>Photos and folders</strong><br><img src="./screenshots/live/07-photos.png" width="46%" alt="Shelf Drive photo gallery in dark theme"> &nbsp; <img src="./screenshots/live/19-light-folder.png" width="46%" alt="Shelf Drive folder workspace in light theme"></p>
-<p align="center"><strong>Documents and settings</strong><br><img src="./screenshots/live/09-documents.png" width="46%" alt="Shelf Drive documents workspace in dark theme"> &nbsp; <img src="./screenshots/live/17-light-settings.png" width="46%" alt="Shelf Drive settings in light theme"></p>
+<p align="center"><strong>Light theme</strong></p>
+<p align="center"><img src="./assets/readme/screenshots/light-home.webp" width="31%" alt="Shelf Drive home dashboard in light theme"> <img src="./assets/readme/screenshots/light-drawer.webp" width="31%" alt="Shelf Drive navigation drawer in light theme"> <img src="./assets/readme/screenshots/light-upload.webp" width="31%" alt="Shelf Drive upload options in light theme"></p>
+<p align="center"><strong>Dark theme</strong></p>
+<p align="center"><img src="./assets/readme/screenshots/dark-home.webp" width="31%" alt="Shelf Drive home dashboard in dark theme"> <img src="./assets/readme/screenshots/dark-drawer.webp" width="31%" alt="Shelf Drive navigation drawer in dark theme"> <img src="./assets/readme/screenshots/dark-upload.webp" width="31%" alt="Shelf Drive upload options in dark theme"></p>
 
 ## Privacy
 
