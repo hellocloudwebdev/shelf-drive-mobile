@@ -96,7 +96,7 @@ jobs:
         # ABIs this workflow does not build (it panics on --target armv7), so
         # exclude every ABI's rust task; the main debug APK build above
         # already produced the Rust library this checkout needs.
-        run: ./gradlew :app:assembleUniversalDebugAndroidTest --console=plain -x :app:rustBuildArm64Debug -x :app:rustBuildArmDebug -x :app:rustBuildI686Debug -x :app:rustBuildX86_64Debug
+        run: ./gradlew :app:assembleUniversalDebugAndroidTest --console=plain -x :app:rustBuildArm64Debug -x :app:rustBuildArmDebug -x :app:rustBuildX86Debug -x :app:rustBuildX86_64Debug
 
       - name: Verify APK exists and calculate SHA-256
         shell: bash
