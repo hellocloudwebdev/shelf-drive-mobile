@@ -70,9 +70,10 @@ https://github.com/user-attachments/assets/2ddb8d14-9784-4f39-bd2b-498edae48114
 
 ## Screenshots
 
-<p align="center"><strong>Home</strong><br><img src="./screenshots/live/05-home.png" width="46%" alt="Shelf Drive home dashboard in dark theme"> &nbsp; <img src="./screenshots/live/15-light-home.png" width="46%" alt="Shelf Drive home dashboard in light theme"></p>
-<p align="center"><strong>Photos and folders</strong><br><img src="./screenshots/live/07-photos.png" width="46%" alt="Shelf Drive photo gallery in dark theme"> &nbsp; <img src="./screenshots/live/19-light-folder.png" width="46%" alt="Shelf Drive folder workspace in light theme"></p>
-<p align="center"><strong>Documents and settings</strong><br><img src="./screenshots/live/09-documents.png" width="46%" alt="Shelf Drive documents workspace in dark theme"> &nbsp; <img src="./screenshots/live/17-light-settings.png" width="46%" alt="Shelf Drive settings in light theme"></p>
+<p align="center"><strong>Home dashboard</strong><br><img src="./screenshots/live/15-light-home.png" width="31%" alt="Shelf Drive light home dashboard"> <img src="./screenshots/live/05-home.png" width="31%" alt="Shelf Drive home dashboard in dark theme"> <img src="./screenshots/live/10-drawer.png" width="31%" alt="Shelf Drive navigation drawer"></p>
+<p align="center"><strong>Your library</strong><br><img src="./screenshots/live/07-photos.png" width="31%" alt="Shelf Drive photo gallery"> <img src="./screenshots/live/08-videos.png" width="31%" alt="Shelf Drive video library"> <img src="./screenshots/live/09-documents.png" width="31%" alt="Shelf Drive documents view"></p>
+<p align="center"><strong>Organize and personalize</strong><br><img src="./screenshots/live/06-folder.png" width="31%" alt="Shelf Drive folder view"> <img src="./screenshots/live/12-upload-sheet.png" width="31%" alt="Shelf Drive upload options"> <img src="./screenshots/live/17-light-settings.png" width="31%" alt="Shelf Drive appearance and settings"></p>
+<p align="center"><sub>More screens: <a href="./screenshots/live/">browse all Android screenshots</a>, including onboarding, file actions, light-theme views and settings.</sub></p>
 
 ## Privacy
 
