@@ -7,7 +7,12 @@ const appFile = (...parts: string[]) => readFileSync(resolve(process.cwd(), ...p
 describe('Android native lifecycle instrumentation', () => {
   it('shares the native runtime instead of destroying its last Activity between cases', () => {
     const suite = appFile('android-overrides', 'app', 'src', 'androidTest', 'java', 'com', 'hellocloudweb', 'shelfdrive', 'UploadLifecycleInstrumentationTest.kt');
-    expect(suite.match(/ActivityScenario\.launch\(MainActivity::class\.java\)/g)).toHaveLength(1);
+    // One launch in @BeforeClass; a second is permitted only inside the @After
+    // guard that recreates the shared Activity when a device (Firebase Test
+    // Lab cloud phones) destroys it mid-suite despite it never being closed.
+    const launches = suite.match(/ActivityScenario\.launch\(MainActivity::class\.java\)/g) ?? [];
+    expect(launches.length).toBeLessThanOrEqual(2);
+    expect(suite).toContain('catch (illegalState: IllegalStateException)');
     expect(suite).toContain('@BeforeClass');
     expect(suite).not.toContain('.use {');
     expect(suite).not.toContain('scenario.close()');
