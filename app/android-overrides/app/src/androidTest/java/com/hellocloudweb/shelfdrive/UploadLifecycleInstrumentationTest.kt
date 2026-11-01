@@ -45,7 +45,16 @@ class UploadLifecycleInstrumentationTest {
   @After
   fun resetServiceAndBackgroundActivity() {
     UploadForegroundService.stopService(context)
-    scenario.moveToState(Lifecycle.State.CREATED)
+    try {
+      scenario.moveToState(Lifecycle.State.CREATED)
+    } catch (illegalState: IllegalStateException) {
+      // Some devices (Firebase Test Lab cloud phones in particular) destroy
+      // the shared Activity mid-suite despite it never being closed here.
+      // Relaunch so the remaining cases exercise upload behavior instead of
+      // failing on harness state; the fresh instance replaces the destroyed
+      // one for every later moveToState call.
+      scenario = ActivityScenario.launch(MainActivity::class.java)
+    }
   }
 
   private val context = ApplicationProvider.getApplicationContext<Context>()
