@@ -70,13 +70,7 @@ https://github.com/user-attachments/assets/2ddb8d14-9784-4f39-bd2b-498edae48114
 
 ## Screenshots
 
-The following preview uses the committed app-capture animation so the images load directly from this repository.
 
-<p align="center"><a href="./assets/readme/showcase.mp4"><img src="./assets/readme/showcase.gif" width="100%" alt="Shelf Drive Android app screens: home, navigation, media library and appearance themes"></a></p>
-<p align="center"><sub><a href="./assets/readme/showcase.mp4">Watch the full-resolution Android showcase (MP4)</a></sub></p>
-
-<p align="center"><a href="./assets/readme/tour-feature.mp4"><img src="./assets/readme/tour-feature.gif" width="100%" alt="Shelf Drive onboarding screens and personal cloud setup walkthrough"></a></p>
-<p align="center"><sub><a href="./assets/readme/tour-feature.mp4">Watch the onboarding walkthrough (MP4)</a></sub></p>
 
 ## Privacy
 
