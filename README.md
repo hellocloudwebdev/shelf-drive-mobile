@@ -65,10 +65,9 @@ https://github.com/user-attachments/assets/1cc94de1-4f27-4327-94b9-533e0919c63d
 ## Screenshots
 
 <p align="center"><strong>Light theme</strong></p>
-<p align="center"><img src="./screenshots/live/light-home.jpg" width="31%" alt="Shelf Drive home dashboard in light theme"></p>
-<p align="center"><img src="./screenshots/live/light-drawer.jpg" width="31%" alt="Shelf Drive navigation drawer in light theme"> <img src="./screenshots/live/light-upload.jpg" width="31%" alt="Shelf Drive upload options in light theme"></p>
+<p align="center"><img src="./assets/readme/screenshots/light-home.jpg" width="31%" alt="Shelf Drive home dashboard in light theme"> <img src="./assets/readme/screenshots/light-drawer.jpg" width="31%" alt="Shelf Drive navigation drawer in light theme"> <img src="./assets/readme/screenshots/light-upload.jpg" width="31%" alt="Shelf Drive upload options in light theme"></p>
 <p align="center"><strong>Dark theme</strong></p>
-<p align="center"><img src="./screenshots/live/dark-home.jpg" width="31%" alt="Shelf Drive home dashboard in dark theme"> <img src="./screenshots/live/dark-drawer.jpg" width="31%" alt="Shelf Drive navigation drawer in dark theme"> <img src="./screenshots/live/dark-upload.jpg" width="31%" alt="Shelf Drive upload options in dark theme"></p>
+<p align="center"><img src="./assets/readme/screenshots/dark-home.jpg" width="31%" alt="Shelf Drive home dashboard in dark theme"> <img src="./assets/readme/screenshots/dark-drawer.jpg" width="31%" alt="Shelf Drive navigation drawer in dark theme"> <img src="./assets/readme/screenshots/dark-upload.jpg" width="31%" alt="Shelf Drive upload options in dark theme"></p>
 
 ## Privacy
 
