@@ -70,10 +70,13 @@ https://github.com/user-attachments/assets/2ddb8d14-9784-4f39-bd2b-498edae48114
 
 ## Screenshots
 
-<p align="center"><strong>Home dashboard</strong><br><img src="./screenshots/live/15-light-home.png" width="31%" alt="Shelf Drive light home dashboard"> <img src="./screenshots/live/05-home.png" width="31%" alt="Shelf Drive home dashboard in dark theme"> <img src="./screenshots/live/10-drawer.png" width="31%" alt="Shelf Drive navigation drawer"></p>
-<p align="center"><strong>Your library</strong><br><img src="./screenshots/live/07-photos.png" width="31%" alt="Shelf Drive photo gallery"> <img src="./screenshots/live/08-videos.png" width="31%" alt="Shelf Drive video library"> <img src="./screenshots/live/09-documents.png" width="31%" alt="Shelf Drive documents view"></p>
-<p align="center"><strong>Organize and personalize</strong><br><img src="./screenshots/live/06-folder.png" width="31%" alt="Shelf Drive folder view"> <img src="./screenshots/live/12-upload-sheet.png" width="31%" alt="Shelf Drive upload options"> <img src="./screenshots/live/17-light-settings.png" width="31%" alt="Shelf Drive appearance and settings"></p>
-<p align="center"><sub>More screens: <a href="./screenshots/live/">browse all Android screenshots</a>, including onboarding, file actions, light-theme views and settings.</sub></p>
+The following preview uses the committed app-capture animation so the images load directly from this repository.
+
+<p align="center"><a href="./assets/readme/showcase.mp4"><img src="./assets/readme/showcase.gif" width="100%" alt="Shelf Drive Android app screens: home, navigation, media library and appearance themes"></a></p>
+<p align="center"><sub><a href="./assets/readme/showcase.mp4">Watch the full-resolution Android showcase (MP4)</a></sub></p>
+
+<p align="center"><a href="./assets/readme/tour-feature.mp4"><img src="./assets/readme/tour-feature.gif" width="100%" alt="Shelf Drive onboarding screens and personal cloud setup walkthrough"></a></p>
+<p align="center"><sub><a href="./assets/readme/tour-feature.mp4">Watch the onboarding walkthrough (MP4)</a></sub></p>
 
 ## Privacy
 
