@@ -39,11 +39,7 @@ The screenshots and the social card are generated from the live app captures, so
 site never drifts from the product:
 
 ```bash
-# 1. capture fresh screenshots (needs the Vite dev server on 127.0.0.1:4173)
-cd app && npm run dev -- --host 127.0.0.1 --port 4173   # terminal 1
-node scripts/capture-readme-screenshots.mjs             # terminal 2
-
-# 2. convert them to WebP and rebuild the social card
+# regenerate the WebP screenshots and the social card from the device captures
 python scripts/generate_website_assets.py
 ```
 
