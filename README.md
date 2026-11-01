@@ -62,7 +62,11 @@ Use **Saved Messages** as your personal file space and create **private Telegram
 
 ## Screenshots
 
-
+<p align="center"><strong>Light theme</strong></p>
+<p align="center"><img src="./screenshots/live/light-home.jpg" width="31%" alt="Shelf Drive home dashboard in light theme"> <img src="./screenshots/live/light-photos.jpg" width="31%" alt="Shelf Drive photo gallery in light theme"> <img src="./screenshots/live/light-settings.jpg" width="31%" alt="Shelf Drive settings in light theme"></p>
+<p align="center"><img src="./screenshots/live/light-drawer.jpg" width="31%" alt="Shelf Drive navigation drawer in light theme"> <img src="./screenshots/live/light-upload.jpg" width="31%" alt="Shelf Drive upload options in light theme"></p>
+<p align="center"><strong>Dark theme</strong></p>
+<p align="center"><img src="./screenshots/live/dark-home.jpg" width="31%" alt="Shelf Drive home dashboard in dark theme"> <img src="./screenshots/live/dark-drawer.jpg" width="31%" alt="Shelf Drive navigation drawer in dark theme"> <img src="./screenshots/live/dark-upload.jpg" width="31%" alt="Shelf Drive upload options in dark theme"></p>
 
 ## Privacy
 
