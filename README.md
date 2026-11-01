@@ -41,8 +41,10 @@ Use **Saved Messages** as your personal file space and create **private Telegram
 
 ## Showcase
 
+<p align="center"><strong>▶ Shelf Drive — Android App Showcase</strong></p>
+<p align="center"><sub>32-second vertical product walkthrough · captured from the current Android app.</sub></p>
 
-
+https://github.com/user-attachments/assets/1cc94de1-4f27-4327-94b9-533e0919c63d
 
 ## Features
 
